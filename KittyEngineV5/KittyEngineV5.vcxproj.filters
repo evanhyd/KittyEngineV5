@@ -10,15 +10,12 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="bitboard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="move.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="utility.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="board.h">
+    <ClInclude Include="bitboard.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
