@@ -1,6 +1,7 @@
 #include "board.h"
-#include <sstream>
 #include <format>
+#include <iostream>
+#include <sstream>
 
 Board Board::fromFEN(const std::string& fen) {
   Board board{};
@@ -27,7 +28,6 @@ Board Board::fromFEN(const std::string& fen) {
     board.occupancy_[kWhite] |= board.bitboards_[kWhite][piece];
     board.occupancy_[kBlack] |= board.bitboards_[kBlack][piece];
   }
-  board.totalOccupancy_ = board.occupancy_[kWhite] | board.occupancy_[kBlack];
 
   // Parse team.
   std::string team; ss >> team;
