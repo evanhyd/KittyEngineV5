@@ -5,7 +5,6 @@
 
 Board Board::fromFEN(const std::string& fen) {
   Board board{};
-
   std::istringstream ss(fen);
 
   // Parse positions.
@@ -28,6 +27,7 @@ Board Board::fromFEN(const std::string& fen) {
     board.occupancy_[kWhite] |= board.bitboards_[kWhite][piece];
     board.occupancy_[kBlack] |= board.bitboards_[kBlack][piece];
   }
+  board.bothOccupancy_ = board.occupancy_[kWhite] | board.occupancy_[kBlack];
 
   // Parse team.
   std::string team; ss >> team;
@@ -40,30 +40,33 @@ Board Board::fromFEN(const std::string& fen) {
   // Parse castle permisison.
   std::string castlePermission; ss >> castlePermission;
   if (castlePermission.find("K") != std::string::npos) {
-    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kWhiteKingCastle);
+    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kWhiteKingCastlePermission);
   }
   if (castlePermission.find("Q") != std::string::npos) {
-    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kWhiteQueenCastle);
+    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kWhiteQueenCastlePermission);
   }
   if (castlePermission.find("k") != std::string::npos) {
-    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kBlackKingCastle);
+    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kBlackKingCastlePermission);
   }
   if (castlePermission.find("q") != std::string::npos) {
-    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kBlackQueenCastle);
+    board.castlePermission_ = static_cast<CastlePermission>(board.castlePermission_ | kBlackQueenCastlePermission);
   }
 
   // Parse enpassant square.
   std::string enpassantSquare; ss >> enpassantSquare;
-  board.enpassant_ = (enpassantSquare == "-" ? NO_SQUARE : squareStringToSquare(enpassantSquare));
+  board.enpassant_ = (enpassantSquare == "-" ? NO_SQUARE : stringToSquare(enpassantSquare));
 
-  // Parse half move.
-  std::string halfmove; ss >> halfmove;
-  board.halfmove_ = std::stoi(halfmove);
+  try {
+    // Parse half move.
+    std::string halfmove; ss >> halfmove;
+    board.halfmove_ = std::stoi(halfmove);
 
-  // Parse full move.
-  std::string fullmove; ss >> fullmove;
-  board.fullmove_= std::stoi(fullmove);
-
+    // Parse full move.
+    std::string fullmove; ss >> fullmove;
+    board.fullmove_ = std::stoi(fullmove);
+  } catch (...) {
+    // Most likely half move and full move are missing from the FEN.
+  }
   return board;
 }
 
@@ -74,7 +77,7 @@ std::ostream& operator<<(std::ostream& out, const Board& board) {
     for (Team team : { kWhite, kBlack }) {
       for (Piece piece : {kPawn, kKnight, kBishop, kRook, kQueen, kKing}) {
         if (isSquareSet(board.bitboards_[team][piece], square)) {
-          return pieceToAscii(team, piece);
+          return pieceToAsciiVisualOnly(team, piece);
         }
       }
     }
@@ -84,11 +87,11 @@ std::ostream& operator<<(std::ostream& out, const Board& board) {
   for (uint32_t i = 0; i < kSideSize; ++i) {
     out << format("{}|", kSideSize - i);
     for (uint32_t j = 0; j < kSideSize; ++j) {
-      out << format(" {}", findPieceAscii(i * kSideSize + j));
+      out << format(" {}", findPieceAscii(rankFileToSquare(i, j)));
     }
     out << '\n';
   }
-  out << format("   A B C D E F G H\nTeam: {}\nCastle: {}\nEnpassant: {}\nhalfmove: {}\nfullmove: {}", 
+  out << format("   a b c d e f g h\nTeam: {}\nCastle: {}\nEnpassant: {}\nhalfmove: {}\nfullmove: {}", 
                 teamToString(board.team_),
                 castleToString(board.castlePermission_),
                 squareToString(board.enpassant_),

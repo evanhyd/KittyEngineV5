@@ -1,6 +1,16 @@
 #include "bitboard.h"
-#include <iostream>
+#include <cassert>
 #include <format>
+#include <iostream>
+
+// Only used in printing out the UI
+char pieceToAsciiVisualOnly(Team team, Piece piece) {
+  constexpr std::array<std::array<char, kPieceSize>, kTeamSize> table = { {
+    {'A', 'N', 'B', 'R', 'Q', 'K'},
+    {'v', 'n', 'b', 'r', 'q', 'k'},
+  } };
+  return table[team][piece];
+}
 
 char pieceToAscii(Team team, Piece piece) {
   constexpr std::array<std::array<char, kPieceSize>, kTeamSize> table = { {
@@ -30,7 +40,7 @@ std::string teamToString(Team team) {
   return table[team];
 }
 
-std::string squareToString(Square square) {
+std::string squareToString(uint32_t square) {
   static const std::array<std::string, kSquareSize + 1> table = {
     "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8",
     "a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7",
@@ -45,14 +55,14 @@ std::string squareToString(Square square) {
   return table[square];
 }
 
-Square squareStringToSquare(const std::string& squareString) {
+uint32_t stringToSquare(const std::string& squareString) {
   for (uint32_t i = 0; i < kSquareSize; ++i) {
-    if (squareToString(static_cast<Square>(i)) == squareString) {
-      return static_cast<Square>(i);
+    if (squareToString(i) == squareString) {
+      return i;
     }
   }
   assert(false && "invalid square");
-  return {};
+  return NO_SQUARE;
 }
 
 std::string castleToString(CastlePermission permission) {
@@ -77,15 +87,15 @@ std::string castleToString(CastlePermission permission) {
   return table[permission];
 }
 
-void printBitboard(uint64_t bitboard) {
+void printBitboard(Bitboard bitboard) {
   using std::cout;
   using std::format;
   for (uint32_t i = 0; i < kSideSize; ++i) {
     cout << format("{}|", kSideSize - i);
     for (uint32_t j = 0; j < kSideSize; ++j) {
-      cout << format(" {:d}", isSquareSet(bitboard, i * kSideSize + j));
+      cout << format(" {:d}", isSquareSet(bitboard, rankFileToSquare(i, j)));
     }
     cout << '\n';
   }
-  cout << format("   A B C D E F G H\nBitboard Hex: {:#018x}\n\n", bitboard);
+  cout << format("   a b c d e f g h\nBitboard Hex: {:#018x}\n\n", bitboard);
 }

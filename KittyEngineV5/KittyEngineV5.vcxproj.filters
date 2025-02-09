@@ -16,12 +16,18 @@
     <ClCompile Include="board.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="move.h">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitboard.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="board.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="attack.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

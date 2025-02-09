@@ -1,10 +1,14 @@
-#include <iostream>
 #include "bitboard.h"
 #include "board.h"
+#include <iostream>
 
 using namespace std;
 
 int main() {
-  Board board = Board::fromFEN("rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2");
+  Board board = Board::fromFEN(Board::kKiwipeteFEN);
   cout << board << '\n';
+
+  MoveList moveList{};
+  board.getPseudoMove<kWhite>(moveList);
+  cout << moveList << '\n';
 }
