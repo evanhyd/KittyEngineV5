@@ -64,17 +64,17 @@ inline constexpr Bitboard kRank3Mask = kRank8Mask << 40;
 inline constexpr Bitboard kRank2Mask = kRank8Mask << 48;
 inline constexpr Bitboard kRank1Mask = kRank8Mask << 56;
 
-template <typename ...Squares>
-[[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, Squares... squares) { return bitboard | ((1ull << squares) | ...); }
-
-template <typename ...Squares>
-[[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, Squares... squares) { return bitboard & ~((1ull << squares) | ...); }
+// Funny optimization: https://godbolt.org/z/GnbKzd33s
+// Fine tuned: https://godbolt.org/z/Pozqvn169
+[[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, uint32_t square) { return bitboard | 1ull << square; }
+[[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, uint32_t square) { return bitboard & ~(1ull << square); }
+[[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, uint32_t from, uint32_t to) { return bitboard & ~(1ull << from) | (1ull << to); }
 [[nodiscard]] inline constexpr int countPiece(Bitboard bitboard) { return std::popcount(bitboard); }
 [[nodiscard]] inline constexpr uint32_t findFirstPiece(Bitboard bitboard) { return static_cast<uint32_t>(std::countr_zero(bitboard)); }
 [[nodiscard]] inline constexpr Bitboard removeFirstPiece(Bitboard bitboard) { return bitboard & (bitboard - 1); }
 [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, uint32_t square) { return bitboard >> square & 1; }
 [[nodiscard]] inline constexpr uint32_t getSquareRank(uint32_t square) { return square / 8; }
-[[nodiscard]] inline constexpr uint32_t getSquareFile(uint32_t square) { return square % 8; } // Compiler optimize it to & 7 
+[[nodiscard]] inline constexpr uint32_t getSquareFile(uint32_t square) { return square % 8; }
 [[nodiscard]] inline constexpr uint32_t rankFileToSquare(uint32_t rank, uint32_t file) { return rank * 8 + file; }
 [[nodiscard]] inline constexpr Bitboard shiftUp(Bitboard bitboard) { return bitboard >> 8; }
 [[nodiscard]] inline constexpr Bitboard shiftDown(Bitboard bitboard) { return bitboard << 8; }

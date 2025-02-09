@@ -2,22 +2,20 @@
 #include "attack.h"
 #include "move.h"
 #include <array>
-#include <format>
-#include <iostream>
+#include <type_traits>
 
 ///////////////////////////////////////////////////////
-//                 CHESS BOARD
+//                 CHESS BOARD STATE
 ///////////////////////////////////////////////////////
-
-class Board {
+class BoardState {
   std::array<std::array<Bitboard, kPieceSize>, kTeamSize> bitboards_;
   std::array<Bitboard, kTeamSize> occupancy_;
   Bitboard bothOccupancy_;
   Team team_;
   CastlePermission castlePermission_;
   uint32_t enpassant_;
-  uint32_t halfmove_;
-  uint32_t fullmove_;
+  uint16_t halfmove_;
+  uint16_t fullmove_;
 
   template <Team attacker>
   constexpr bool isSquareAttacked(uint32_t square) const {
@@ -28,12 +26,12 @@ class Board {
     const Bitboard rookAttack = SliderTable::getAttack<kRook>(square, bothOccupancy_);
     const Bitboard queenAttack = bishopAttack | rookAttack;
 
-    return  kAttackTable<kPawn>[defender][square] & bitboards_[attacker][kPawn] |
-      kAttackTable<kKnight>[square] & bitboards_[attacker][kKnight] |
-      kAttackTable<kKing>[square] & bitboards_[attacker][kKing] |
-      bishopAttack & bitboards_[attacker][kBishop] |
-      rookAttack & bitboards_[attacker][kRook] |
-      queenAttack & bitboards_[attacker][kQueen];
+    return  bitboards_[attacker][kPawn] & kAttackTable<kPawn>[defender][square] |
+            bitboards_[attacker][kKnight] & kAttackTable<kKnight>[square] |
+            bitboards_[attacker][kKing] & kAttackTable<kKing>[square] |
+            bitboards_[attacker][kBishop] & bishopAttack |
+            bitboards_[attacker][kRook] & rookAttack |
+            bitboards_[attacker][kQueen] & queenAttack;
   }
 
   template <Team attacker, Piece piece>
@@ -69,7 +67,6 @@ class Board {
     }
   }
 
-public:
   // TODO: consider put NO_SQUARE in kPawnAttackTable and give it an empty mask
   // TODO: separate capture move, promotion, and quiet move
   // TODO: generate all pawn moves at once
@@ -188,6 +185,89 @@ public:
   static inline const std::string kWhiteQueenCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R3KBNR w KQkq - 0 1";
   static inline const std::string kNoCastleFEN = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w - - 0 1";
   static inline const std::string kCastleBlockedByCheckFEN = "rnb1kbnr/pppp1ppp/8/4p3/2B1P3/3P3q/PPP2P1P/RNBQK2R w KQkq - 0 5";
-  static Board fromFEN(const std::string& fen);
-  friend std::ostream& operator<<(std::ostream& out, const Board& board);
+  static BoardState fromFEN(const std::string& fen);
+
+  friend class Board;
+  friend std::ostream& operator<<(std::ostream& out, const BoardState& boardState);
+};
+
+static_assert(std::is_trivial_v<BoardState>, "BoardState is not POD type, may affect performance");
+
+class Board {
+  BoardState currentState_;
+  std::array<BoardState, 512> states_;
+  size_t stateSize_;
+
+  void pushState() {
+    states_[stateSize_] = currentState_;
+    ++stateSize_;
+  }
+
+  void popState() {
+    --stateSize_;
+    currentState_ = states_[stateSize_];
+  }
+
+  void setFEN(const std::string& fen) {
+    currentState_ = BoardState::fromFEN(fen);
+    stateSize_ = 0;
+  }
+
+  template <Team attacker>
+  bool tryMakeMove(Move move) {
+    constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
+
+    pushState();
+
+    const uint32_t source = move.getSourceSquare();
+    const uint32_t destination = move.getDestinationSquare();
+    const uint32_t movedPiece = move.getMovedPiece();
+
+    // Move the piece.
+    currentState_.bitboards_[attacker][movedPiece] = moveSquare(currentState_.bitboards_[attacker][movedPiece], source, destination);
+    currentState_.occupancy_[attacker] = moveSquare(currentState_.occupancy_[attacker], source, destination);
+
+    if (move.isCaptured()) {
+      // TODO: cache ~(1 << destination)
+      currentState_.bitboards_[defender][kPawn] = unsetSquare(currentState_.bitboards_[defender][kPawn], destination);
+      currentState_.bitboards_[defender][kKnight] = unsetSquare(currentState_.bitboards_[defender][kKnight], destination);
+      currentState_.bitboards_[defender][kBishop] = unsetSquare(currentState_.bitboards_[defender][kBishop], destination);
+      currentState_.bitboards_[defender][kRook] = unsetSquare(currentState_.bitboards_[defender][kRook], destination);
+      currentState_.bitboards_[defender][kQueen] = unsetSquare(currentState_.bitboards_[defender][kQueen], destination);
+      currentState_.occupancy_[defender] = unsetSquare(currentState_.occupancy_[defender], destination);
+    }
+
+    if (uint32_t promotedPiece = move.getPromotedPiece(); promotedPiece) {
+      currentState_.bitboards_[attacker][movedPiece] = unsetSquare(currentState_.bitboards_[attacker][movedPiece], source);
+      currentState_.bitboards_[attacker][promotedPiece] = setSquare(currentState_.bitboards_[attacker][promotedPiece], source);
+    }
+
+    if (move.isEnpassant()) {
+      uint32_t enpassantPawnSquare = (attacker == kWhite ? destination + 8 : destination - 8);
+      currentState_.bitboards_[defender][kPawn] = unsetSquare(currentState_.bitboards_[defender][kPawn], enpassantPawnSquare);
+      currentState_.occupancy_[defender] = unsetSquare(currentState_.occupancy_[defender], enpassantPawnSquare);
+    }
+
+    if (move.isDoublePush()) {
+      currentState_.enpassant_ = (attacker == kWhite ? destination + 8 : destination - 8);
+    } else {
+      currentState_.enpassant_ = NO_SQUARE;
+    }
+
+    if (move.isCastling()) {
+      std::pair<uint32_t, uint32_t> rookMove = [destination]() {
+        switch (destination) {
+        case G1: return { H1, F1 };
+        case G8: return { H8, F8 };
+        case C1: return { A1, D1 };
+        case C8: return { A8, D8 };
+        }
+      }();
+
+      currentState_.bitboards_[attacker][kRook] = moveSquare(currentState_.bitboards_[attacker][kRook], rookMove.first, rookMove.second);
+      currentState_.occupancy_[attacker] = move(currentState_.occupancy_[attacker], rookMove.first, rookMove.second);
+    }
+
+    currentState_.bothOccupancy_ = currentState_.occupancy_[kWhite] | currentState_.occupancy_[kBlack];
+  }
 };
