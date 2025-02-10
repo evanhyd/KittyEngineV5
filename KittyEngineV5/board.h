@@ -12,7 +12,7 @@ class BoardState {
   std::array<Bitboard, kTeamSize> occupancy_;
   Bitboard bothOccupancy_;
   Team team_;
-  CastlePermission castlePermission_;
+  uint32_t castlePermission_;
   uint32_t enpassant_;
   uint16_t halfmove_;
   uint16_t fullmove_;
@@ -153,8 +153,8 @@ class BoardState {
 
     // Castle
     {
-      constexpr CastlePermission kingCastlePermission = (attacker == kWhite ? kWhiteKingCastlePermission : kBlackKingCastlePermission);
-      constexpr CastlePermission queenCastlePermission = (attacker == kWhite ? kWhiteQueenCastlePermission : kBlackQueenCastlePermission);
+      constexpr uint32_t kingCastlePermission = (attacker == kWhite ? kWhiteKingCastlePermission : kBlackKingCastlePermission);
+      constexpr uint32_t queenCastlePermission = (attacker == kWhite ? kWhiteQueenCastlePermission : kBlackQueenCastlePermission);
       constexpr Bitboard kingCastleOccupancy = (attacker == kWhite ? 6917529027641081856ull : 96ul);
       constexpr Bitboard queenCastleOccupancy = (attacker == kWhite ? 1008806316530991104ull : 14ul);
       constexpr uint32_t kingSourceSquare = (attacker == kWhite ? E1 : E8);
@@ -177,16 +177,8 @@ class BoardState {
       }
     }
   }
-
-  static inline const std::string kStartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  static inline const std::string kKiwipeteFEN = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ";
-  static inline const std::string kEnpassantFEN = "rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3";
-  static inline const std::string kWhiteKingCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQK2R w KQkq - 0 1";
-  static inline const std::string kWhiteQueenCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R3KBNR w KQkq - 0 1";
-  static inline const std::string kNoCastleFEN = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w - - 0 1";
-  static inline const std::string kCastleBlockedByCheckFEN = "rnb1kbnr/pppp1ppp/8/4p3/2B1P3/3P3q/PPP2P1P/RNBQK2R w KQkq - 0 5";
+  
   static BoardState fromFEN(const std::string& fen);
-
   friend class Board;
   friend std::ostream& operator<<(std::ostream& out, const BoardState& boardState);
 };
@@ -208,17 +200,12 @@ class Board {
     currentState_ = states_[stateSize_];
   }
 
-  void setFEN(const std::string& fen) {
-    currentState_ = BoardState::fromFEN(fen);
-    stateSize_ = 0;
-  }
-
+public:
   template <Team attacker>
   bool tryMakeMove(Move move) {
-    constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
-
     pushState();
 
+    constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
     const uint32_t source = move.getSourceSquare();
     const uint32_t destination = move.getDestinationSquare();
     const uint32_t movedPiece = move.getMovedPiece();
@@ -228,7 +215,6 @@ class Board {
     currentState_.occupancy_[attacker] = moveSquare(currentState_.occupancy_[attacker], source, destination);
 
     if (move.isCaptured()) {
-      // TODO: cache ~(1 << destination)
       currentState_.bitboards_[defender][kPawn] = unsetSquare(currentState_.bitboards_[defender][kPawn], destination);
       currentState_.bitboards_[defender][kKnight] = unsetSquare(currentState_.bitboards_[defender][kKnight], destination);
       currentState_.bitboards_[defender][kBishop] = unsetSquare(currentState_.bitboards_[defender][kBishop], destination);
@@ -255,19 +241,72 @@ class Board {
     }
 
     if (move.isCastling()) {
-      std::pair<uint32_t, uint32_t> rookMove = [destination]() {
+      auto[rookSource, rookDestination] = [destination]() {
         switch (destination) {
-        case G1: return { H1, F1 };
-        case G8: return { H8, F8 };
-        case C1: return { A1, D1 };
-        case C8: return { A8, D8 };
+        case G1: return std::pair<uint32_t, uint32_t>{ H1, F1 };
+        case G8: return std::pair<uint32_t, uint32_t>{ H8, F8 };
+        case C1: return std::pair<uint32_t, uint32_t>{ A1, D1 };
+        case C8: return std::pair<uint32_t, uint32_t>{ A8, D8 };
+        [[unlikely]] default: 
+          assert(false && "bad king castling square");
+          return std::pair<uint32_t, uint32_t>{0, 0};
         }
       }();
-
-      currentState_.bitboards_[attacker][kRook] = moveSquare(currentState_.bitboards_[attacker][kRook], rookMove.first, rookMove.second);
-      currentState_.occupancy_[attacker] = move(currentState_.occupancy_[attacker], rookMove.first, rookMove.second);
+      currentState_.bitboards_[attacker][kRook] = moveSquare(currentState_.bitboards_[attacker][kRook], rookSource, rookDestination);
+      currentState_.occupancy_[attacker] = moveSquare(currentState_.occupancy_[attacker], rookSource, rookDestination);
     }
 
+    // Update castle permission
+    constexpr auto kCastlePermissionUpdateTable = []() {
+      std::array<uint32_t, kSquareSize> table{};
+      table.fill(kWhiteKingCastlePermission | kWhiteQueenCastlePermission | kBlackKingCastlePermission | kBlackQueenCastlePermission);
+      table[H1] = table[H1] & ~kWhiteKingCastlePermission;
+      table[A1] = table[A1] & ~kWhiteQueenCastlePermission;
+      table[E1] = table[E1] & ~(kWhiteKingCastlePermission | kWhiteQueenCastlePermission);
+      table[H8] = table[H8] & ~kBlackKingCastlePermission;
+      table[A8] = table[A8] & ~kBlackQueenCastlePermission;
+      table[E8] = table[E8] & ~(kBlackKingCastlePermission | kBlackQueenCastlePermission);
+      return table;
+    }();
+    currentState_.castlePermission_ &= kCastlePermissionUpdateTable[source];
+    currentState_.castlePermission_ &= kCastlePermissionUpdateTable[destination];
+
+    // Update the occupancy
     currentState_.bothOccupancy_ = currentState_.occupancy_[kWhite] | currentState_.occupancy_[kBlack];
+
+    // Update 50 moves rules
+    if (movedPiece == kPawn || move.isCaptured()) {
+      ++currentState_.halfmove_;
+    } else {
+      currentState_.halfmove_ = 0;
+    }
+    if constexpr (attacker == kBlack) {
+      ++currentState_.fullmove_;
+    }
+
+    // Check if the move is legal
+    const uint32_t kingSquare = findFirstPiece(currentState_.bitboards_[attacker][kKing]);
+    if (currentState_.isSquareAttacked<defender>(kingSquare)) {
+      popState();
+      return false;
+    }
+
+    currentState_.team_ = defender;
+    return true;
   }
+
+public:
+  void setFEN(const std::string& fen) {
+    currentState_ = BoardState::fromFEN(fen);
+    stateSize_ = 0;
+  }
+
+  static inline const std::string kStartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  static inline const std::string kKiwipeteFEN = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ";
+  static inline const std::string kEnpassantFEN = "rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3";
+  static inline const std::string kWhiteKingCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQK2R w KQkq - 0 1";
+  static inline const std::string kWhiteQueenCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R3KBNR w KQkq - 0 1";
+  static inline const std::string kNoCastleFEN = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w - - 0 1";
+  static inline const std::string kCastleBlockedByCheckFEN = "rnb1kbnr/pppp1ppp/8/4p3/2B1P3/3P3q/PPP2P1P/RNBQK2R w KQkq - 0 5";
+  friend std::ostream& operator<<(std::ostream& out, const Board& board);
 };

@@ -40,16 +40,16 @@ BoardState BoardState::fromFEN(const std::string& fen) {
   // Parse castle permisison.
   std::string castlePermission; ss >> castlePermission;
   if (castlePermission.find("K") != std::string::npos) {
-    boardState.castlePermission_ = static_cast<CastlePermission>(boardState.castlePermission_ | kWhiteKingCastlePermission);
+    boardState.castlePermission_ |= kWhiteKingCastlePermission;
   }
   if (castlePermission.find("Q") != std::string::npos) {
-    boardState.castlePermission_ = static_cast<CastlePermission>(boardState.castlePermission_ | kWhiteQueenCastlePermission);
+    boardState.castlePermission_ |= kWhiteQueenCastlePermission;
   }
   if (castlePermission.find("k") != std::string::npos) {
-    boardState.castlePermission_ = static_cast<CastlePermission>(boardState.castlePermission_ | kBlackKingCastlePermission);
+    boardState.castlePermission_ |= kBlackKingCastlePermission;
   }
   if (castlePermission.find("q") != std::string::npos) {
-    boardState.castlePermission_ = static_cast<CastlePermission>(boardState.castlePermission_ | kBlackQueenCastlePermission);
+    boardState.castlePermission_ |= kBlackQueenCastlePermission;
   }
 
   // Parse enpassant square.
@@ -91,11 +91,16 @@ std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
     }
     out << '\n';
   }
-  out << format("   a b c d e f g h\nTeam: {}\nCastle: {}\nEnpassant: {}\nhalfmove: {}\nfullmove: {}", 
+  out << format("   a b c d e f g h\nTeam: {}\nCastle: {}\nEnpassant: {}\nhalfmove: {}\nfullmove: {}",
                 teamToString(boardState.team_),
                 castleToString(boardState.castlePermission_),
                 squareToString(boardState.enpassant_),
                 boardState.halfmove_,
                 boardState.fullmove_);
+  return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const Board& board) {
+  out << board.currentState_ << '\n';
   return out;
 }

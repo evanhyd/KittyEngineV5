@@ -35,12 +35,10 @@ enum Piece : uint32_t {
   kKing,
 };
 
-enum CastlePermission : uint32_t {
-  kWhiteKingCastlePermission = 0b0001,
-  kWhiteQueenCastlePermission = 0b0010,
-  kBlackKingCastlePermission = 0b0100,
-  kBlackQueenCastlePermission = 0b1000,
-};
+inline constexpr uint32_t kWhiteKingCastlePermission = 0b0001ull;
+inline constexpr uint32_t kWhiteQueenCastlePermission = 0b0010ull;
+inline constexpr uint32_t kBlackKingCastlePermission = 0b0100ull;
+inline constexpr uint32_t kBlackQueenCastlePermission = 0b1000ull;
 
 inline constexpr uint32_t kTeamSize = 2;
 inline constexpr uint32_t kPieceSize = 6;
@@ -65,7 +63,7 @@ inline constexpr Bitboard kRank2Mask = kRank8Mask << 48;
 inline constexpr Bitboard kRank1Mask = kRank8Mask << 56;
 
 // Funny optimization: https://godbolt.org/z/GnbKzd33s
-// Fine tuned: https://godbolt.org/z/Pozqvn169
+// Fine tuned: https://godbolt.org/z/M9r1xb6vb
 [[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, uint32_t square) { return bitboard | 1ull << square; }
 [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, uint32_t square) { return bitboard & ~(1ull << square); }
 [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, uint32_t from, uint32_t to) { return bitboard & ~(1ull << from) | (1ull << to); }
@@ -143,5 +141,5 @@ std::pair<Team, Piece> asciiToPiece(char ascii);
 std::string teamToString(Team team);
 std::string squareToString(uint32_t square);
 uint32_t stringToSquare(const std::string& squareString);
-std::string castleToString(CastlePermission permission);
+std::string castleToString(uint32_t permission);
 void printBitboard(Bitboard bitboard);

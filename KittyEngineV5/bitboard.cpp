@@ -65,7 +65,7 @@ uint32_t stringToSquare(const std::string& squareString) {
   return NO_SQUARE;
 }
 
-std::string castleToString(CastlePermission permission) {
+std::string castleToString(uint32_t permission) {
   static const std::array<std::string, 1ull << 4> table = {
     "-",     // 0B0000
     "K",     // 0B0001
