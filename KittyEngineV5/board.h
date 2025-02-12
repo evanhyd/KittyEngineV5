@@ -2,12 +2,13 @@
 #include "attack.h"
 #include "move.h"
 #include <array>
-#include <type_traits>
+#include <set>
 
 ///////////////////////////////////////////////////////
 //                 CHESS BOARD STATE
 ///////////////////////////////////////////////////////
 class BoardState {
+public:
   std::array<std::array<Bitboard, kPieceSize>, kTeamSize> bitboards_;
   std::array<Bitboard, kTeamSize> occupancy_;
   Bitboard bothOccupancy_;
@@ -22,16 +23,24 @@ class BoardState {
     // Simulate all attacks at the square.
     // If you can attack the enemy piece with the same attack type, then they can attack you.
     constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
-    const Bitboard bishopAttack = SliderTable::getAttack<kBishop>(square, bothOccupancy_);
-    const Bitboard rookAttack = SliderTable::getAttack<kRook>(square, bothOccupancy_);
-    const Bitboard queenAttack = bishopAttack | rookAttack;
+    if ((bitboards_[attacker][kPawn] & kAttackTable<kPawn>[defender][square]) |
+        (bitboards_[attacker][kKnight] & kAttackTable<kKnight>[square]) |
+        (bitboards_[attacker][kKing] & kAttackTable<kKing>[square])) {
+      return true;
+    }
 
-    return  bitboards_[attacker][kPawn] & kAttackTable<kPawn>[defender][square] |
-            bitboards_[attacker][kKnight] & kAttackTable<kKnight>[square] |
-            bitboards_[attacker][kKing] & kAttackTable<kKing>[square] |
-            bitboards_[attacker][kBishop] & bishopAttack |
-            bitboards_[attacker][kRook] & rookAttack |
-            bitboards_[attacker][kQueen] & queenAttack;
+    const Bitboard bishopAttack = SliderTable::getAttack<kBishop>(square, bothOccupancy_);
+    if (bitboards_[attacker][kBishop] & bishopAttack) {
+      return true;
+    }
+
+    const Bitboard rookAttack = SliderTable::getAttack<kRook>(square, bothOccupancy_);
+    if (bitboards_[attacker][kRook] & rookAttack) {
+      return true;
+    }
+
+    const Bitboard queenAttack = bishopAttack | rookAttack;
+    return bitboards_[attacker][kQueen] & queenAttack;
   }
 
   template <Team attacker, Piece piece>
@@ -155,8 +164,8 @@ class BoardState {
     {
       constexpr uint32_t kingCastlePermission = (attacker == kWhite ? kWhiteKingCastlePermission : kBlackKingCastlePermission);
       constexpr uint32_t queenCastlePermission = (attacker == kWhite ? kWhiteQueenCastlePermission : kBlackQueenCastlePermission);
-      constexpr Bitboard kingCastleOccupancy = (attacker == kWhite ? 6917529027641081856ull : 96ul);
-      constexpr Bitboard queenCastleOccupancy = (attacker == kWhite ? 1008806316530991104ull : 14ul);
+      constexpr Bitboard kingCastleOccupancy = (attacker == kWhite ? 0x6000000000000000ull : 0x60ul);
+      constexpr Bitboard queenCastleOccupancy = (attacker == kWhite ? 0xE00000000000000ull : 0xEull);
       constexpr uint32_t kingSourceSquare = (attacker == kWhite ? E1 : E8);
       constexpr uint32_t kingSideMiddleSquare = (attacker == kWhite ? F1 : F8);
       constexpr uint32_t kingSideDestinationSquare = (attacker == kWhite ? G1 : G8);
@@ -176,31 +185,43 @@ class BoardState {
         moveList.push(Move(kingSourceSquare, queenSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }
     }
+
+    // Check duplicated moves.
+    assert(std::set<Move>(moveList.begin(), moveList.end()).size() == moveList.size());
   }
   
   static BoardState fromFEN(const std::string& fen);
-  friend class Board;
+
   friend std::ostream& operator<<(std::ostream& out, const BoardState& boardState);
 };
-
 static_assert(std::is_trivial_v<BoardState>, "BoardState is not POD type, may affect performance");
 
+
+///////////////////////////////////////////////////////
+//                 CHESS BOARD
+///////////////////////////////////////////////////////
 class Board {
-  BoardState currentState_;
+protected:
   std::array<BoardState, 512> states_;
   size_t stateSize_;
 
+  constexpr BoardState& currentState() {
+    return states_[stateSize_ - 1];
+  }
+
+  constexpr const BoardState& currentState() const {
+    return states_[stateSize_ - 1];
+  }
+
   void pushState() {
-    states_[stateSize_] = currentState_;
+    states_[stateSize_] = states_[stateSize_ - 1];
     ++stateSize_;
   }
 
   void popState() {
     --stateSize_;
-    currentState_ = states_[stateSize_];
   }
 
-public:
   template <Team attacker>
   bool tryMakeMove(Move move) {
     pushState();
@@ -211,33 +232,34 @@ public:
     const uint32_t movedPiece = move.getMovedPiece();
 
     // Move the piece.
-    currentState_.bitboards_[attacker][movedPiece] = moveSquare(currentState_.bitboards_[attacker][movedPiece], source, destination);
-    currentState_.occupancy_[attacker] = moveSquare(currentState_.occupancy_[attacker], source, destination);
+    auto& currentStateRef = currentState();
+    currentStateRef.bitboards_[attacker][movedPiece] = moveSquare(currentStateRef.bitboards_[attacker][movedPiece], source, destination);
+    currentStateRef.occupancy_[attacker] = moveSquare(currentStateRef.occupancy_[attacker], source, destination);
 
     if (move.isCaptured()) {
-      currentState_.bitboards_[defender][kPawn] = unsetSquare(currentState_.bitboards_[defender][kPawn], destination);
-      currentState_.bitboards_[defender][kKnight] = unsetSquare(currentState_.bitboards_[defender][kKnight], destination);
-      currentState_.bitboards_[defender][kBishop] = unsetSquare(currentState_.bitboards_[defender][kBishop], destination);
-      currentState_.bitboards_[defender][kRook] = unsetSquare(currentState_.bitboards_[defender][kRook], destination);
-      currentState_.bitboards_[defender][kQueen] = unsetSquare(currentState_.bitboards_[defender][kQueen], destination);
-      currentState_.occupancy_[defender] = unsetSquare(currentState_.occupancy_[defender], destination);
+      currentStateRef.bitboards_[defender][kPawn] = unsetSquare(currentStateRef.bitboards_[defender][kPawn], destination);
+      currentStateRef.bitboards_[defender][kKnight] = unsetSquare(currentStateRef.bitboards_[defender][kKnight], destination);
+      currentStateRef.bitboards_[defender][kBishop] = unsetSquare(currentStateRef.bitboards_[defender][kBishop], destination);
+      currentStateRef.bitboards_[defender][kRook] = unsetSquare(currentStateRef.bitboards_[defender][kRook], destination);
+      currentStateRef.bitboards_[defender][kQueen] = unsetSquare(currentStateRef.bitboards_[defender][kQueen], destination);
+      currentStateRef.occupancy_[defender] = unsetSquare(currentStateRef.occupancy_[defender], destination); // Does not affect enpassant
     }
 
     if (uint32_t promotedPiece = move.getPromotedPiece(); promotedPiece) {
-      currentState_.bitboards_[attacker][movedPiece] = unsetSquare(currentState_.bitboards_[attacker][movedPiece], source);
-      currentState_.bitboards_[attacker][promotedPiece] = setSquare(currentState_.bitboards_[attacker][promotedPiece], source);
+      currentStateRef.bitboards_[attacker][movedPiece] = unsetSquare(currentStateRef.bitboards_[attacker][movedPiece], destination);
+      currentStateRef.bitboards_[attacker][promotedPiece] = setSquare(currentStateRef.bitboards_[attacker][promotedPiece], destination);
     }
 
     if (move.isEnpassant()) {
       uint32_t enpassantPawnSquare = (attacker == kWhite ? destination + 8 : destination - 8);
-      currentState_.bitboards_[defender][kPawn] = unsetSquare(currentState_.bitboards_[defender][kPawn], enpassantPawnSquare);
-      currentState_.occupancy_[defender] = unsetSquare(currentState_.occupancy_[defender], enpassantPawnSquare);
+      currentStateRef.bitboards_[defender][kPawn] = unsetSquare(currentStateRef.bitboards_[defender][kPawn], enpassantPawnSquare);
+      currentStateRef.occupancy_[defender] = unsetSquare(currentStateRef.occupancy_[defender], enpassantPawnSquare);
     }
 
     if (move.isDoublePush()) {
-      currentState_.enpassant_ = (attacker == kWhite ? destination + 8 : destination - 8);
+      currentStateRef.enpassant_ = (attacker == kWhite ? destination + 8 : destination - 8);
     } else {
-      currentState_.enpassant_ = NO_SQUARE;
+      currentStateRef.enpassant_ = NO_SQUARE;
     }
 
     if (move.isCastling()) {
@@ -252,61 +274,70 @@ public:
           return std::pair<uint32_t, uint32_t>{0, 0};
         }
       }();
-      currentState_.bitboards_[attacker][kRook] = moveSquare(currentState_.bitboards_[attacker][kRook], rookSource, rookDestination);
-      currentState_.occupancy_[attacker] = moveSquare(currentState_.occupancy_[attacker], rookSource, rookDestination);
+      currentStateRef.bitboards_[attacker][kRook] = moveSquare(currentStateRef.bitboards_[attacker][kRook], rookSource, rookDestination);
+      currentStateRef.occupancy_[attacker] = moveSquare(currentStateRef.occupancy_[attacker], rookSource, rookDestination);
     }
 
     // Update castle permission
-    constexpr auto kCastlePermissionUpdateTable = []() {
-      std::array<uint32_t, kSquareSize> table{};
-      table.fill(kWhiteKingCastlePermission | kWhiteQueenCastlePermission | kBlackKingCastlePermission | kBlackQueenCastlePermission);
-      table[H1] = table[H1] & ~kWhiteKingCastlePermission;
-      table[A1] = table[A1] & ~kWhiteQueenCastlePermission;
-      table[E1] = table[E1] & ~(kWhiteKingCastlePermission | kWhiteQueenCastlePermission);
-      table[H8] = table[H8] & ~kBlackKingCastlePermission;
-      table[A8] = table[A8] & ~kBlackQueenCastlePermission;
-      table[E8] = table[E8] & ~(kBlackKingCastlePermission | kBlackQueenCastlePermission);
-      return table;
-    }();
-    currentState_.castlePermission_ &= kCastlePermissionUpdateTable[source];
-    currentState_.castlePermission_ &= kCastlePermissionUpdateTable[destination];
+    currentStateRef.castlePermission_ &= kCastlePermissionUpdateTable[source] & kCastlePermissionUpdateTable[destination];
 
     // Update the occupancy
-    currentState_.bothOccupancy_ = currentState_.occupancy_[kWhite] | currentState_.occupancy_[kBlack];
+    currentStateRef.bothOccupancy_ = currentStateRef.occupancy_[kWhite] | currentStateRef.occupancy_[kBlack];
+
+#ifdef _DEBUG
+    // Check occupancy consistency.
+    for (Team team : {kWhite, kBlack}) {
+      Bitboard occupancy = 0;
+      for (Bitboard bb : currentStateRef.bitboards_[team]) {
+        occupancy |= bb;
+      }
+      if (occupancy != currentStateRef.occupancy_[team]) {
+        std::cout << move.toString() << '\n';
+        printBitboard(occupancy);
+        printBitboard(currentStateRef.occupancy_[team]);
+        assert(false && "occupancy inconsistent");
+      }
+    }
+#endif
 
     // Update 50 moves rules
     if (movedPiece == kPawn || move.isCaptured()) {
-      ++currentState_.halfmove_;
+      currentStateRef.halfmove_ = 0;
     } else {
-      currentState_.halfmove_ = 0;
+      ++currentStateRef.halfmove_;
     }
     if constexpr (attacker == kBlack) {
-      ++currentState_.fullmove_;
+      ++currentStateRef.fullmove_;
     }
 
     // Check if the move is legal
-    const uint32_t kingSquare = findFirstPiece(currentState_.bitboards_[attacker][kKing]);
-    if (currentState_.isSquareAttacked<defender>(kingSquare)) {
+    const uint32_t kingSquare = findFirstPiece(currentStateRef.bitboards_[attacker][kKing]);
+    if (currentStateRef.isSquareAttacked<defender>(kingSquare)) {
       popState();
       return false;
     }
 
-    currentState_.team_ = defender;
+    currentStateRef.team_ = defender;
     return true;
   }
 
 public:
-  void setFEN(const std::string& fen) {
-    currentState_ = BoardState::fromFEN(fen);
-    stateSize_ = 0;
+  explicit Board(const std::string& fen) {
+    setFEN(fen);
   }
 
+  void setFEN(const std::string& fen) {
+    stateSize_ = 1;
+    currentState() = BoardState::fromFEN(fen);
+  }
+
+  // https://www.chessprogramming.org/Perft_Results
   static inline const std::string kStartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   static inline const std::string kKiwipeteFEN = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ";
-  static inline const std::string kEnpassantFEN = "rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3";
-  static inline const std::string kWhiteKingCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQK2R w KQkq - 0 1";
-  static inline const std::string kWhiteQueenCastleFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R3KBNR w KQkq - 0 1";
-  static inline const std::string kNoCastleFEN = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w - - 0 1";
-  static inline const std::string kCastleBlockedByCheckFEN = "rnb1kbnr/pppp1ppp/8/4p3/2B1P3/3P3q/PPP2P1P/RNBQK2R w KQkq - 0 5";
+  static inline const std::string kRookEndGameFEN = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ";
+  static inline const std::string kMirrorViewFEN = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
+  static inline const std::string kTalkChessBugFEN = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
+  static inline const std::string kStevenAltFEN = "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10";
+
   friend std::ostream& operator<<(std::ostream& out, const Board& board);
 };

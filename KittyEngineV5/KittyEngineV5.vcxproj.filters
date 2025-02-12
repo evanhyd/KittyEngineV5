@@ -30,5 +30,8 @@
     <ClInclude Include="attack.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="perft_driver.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

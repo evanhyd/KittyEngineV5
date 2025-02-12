@@ -33,6 +33,7 @@ public:
     : move_(sourceSquare | destinationSquare << 6 | movedPiece << 12 | promotedPiece << 16 | flag) {
   }
 
+  bool operator<(const Move& move) const { return move_ < move.move_; }
   constexpr uint32_t getSourceSquare() const { return move_ & 0b111111; }
   constexpr uint32_t getDestinationSquare() const { return move_ >> 6 & 0b111111; }
   constexpr uint32_t getMovedPiece() const { return move_ >> 12 & 0b1111; }
@@ -44,10 +45,11 @@ public:
 
   std::string toString() const {
     uint32_t promotedPiece = getPromotedPiece();
-    return std::format("{}{}{}", 
-              squareToString(getSourceSquare()), 
-              squareToString(getDestinationSquare()), 
-              (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, static_cast<Piece>(promotedPiece))));
+    return std::format("{}{}{} {}",
+                       squareToString(getSourceSquare()),
+                       squareToString(getDestinationSquare()),
+                       (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, static_cast<Piece>(promotedPiece))),
+                       (isEnpassant() == 0 ? " " : "ENP"));
   }
 };
 static_assert(std::is_trivial_v<Move>, "Move is not POD type, may affect performance");
@@ -62,10 +64,15 @@ public:
     ++size_;
   }
 
+  constexpr Move operator[](size_t i) const { return moves_[i]; }
+  constexpr size_t size() const { return size_; }
+  constexpr auto begin() const { return moves_.begin(); }
+  constexpr auto end() const { return moves_.begin() + size_; }
+
   inline friend std::ostream& operator<<(std::ostream& out, const MoveList& moveList) {
-    out << std::format("Total Moves: {}\n", moveList.size_);
-    for (size_t i = 0; i < moveList.size_; ++i) {
-      out << std::format("{}\n", moveList.moves_[i].toString());
+    out << std::format("Total Moves: {}\n", moveList.size());
+    for (Move move : moveList) {
+      out << std::format("{}\n", move.toString());
     }
     return out;
   }

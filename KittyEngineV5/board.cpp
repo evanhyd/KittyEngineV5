@@ -56,16 +56,9 @@ BoardState BoardState::fromFEN(const std::string& fen) {
   std::string enpassantSquare; ss >> enpassantSquare;
   boardState.enpassant_ = (enpassantSquare == "-" ? NO_SQUARE : stringToSquare(enpassantSquare));
 
-  try {
-    // Parse half move.
-    std::string halfmove; ss >> halfmove;
-    boardState.halfmove_ = static_cast<uint16_t>(std::stoi(halfmove));
-
-    // Parse full move.
-    std::string fullmove; ss >> fullmove;
-    boardState.fullmove_ = static_cast<uint16_t>(std::stoi(fullmove));
-  } catch (...) {
-    // Most likely half move and full move are missing from the FEN.
+  // Parse half move and full move.
+  if (ss >> boardState.halfmove_) {
+    ss >> boardState.fullmove_;
   }
   return boardState;
 }
@@ -101,6 +94,6 @@ std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
 }
 
 std::ostream& operator<<(std::ostream& out, const Board& board) {
-  out << board.currentState_ << '\n';
+  out << board.currentState() << '\n';
   return out;
 }
