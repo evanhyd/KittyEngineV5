@@ -202,30 +202,24 @@ static_assert(std::is_trivial_v<BoardState>, "BoardState is not POD type, may af
 ///////////////////////////////////////////////////////
 class Board {
 protected:
-  std::array<BoardState, 512> states_;
-  size_t stateSize_;
+  BoardState currentState_;
 
   constexpr BoardState& currentState() {
-    return states_[stateSize_ - 1];
+    return currentState_;
   }
 
   constexpr const BoardState& currentState() const {
-    return states_[stateSize_ - 1];
+    return currentState_;
   }
 
-  void pushState() {
-    states_[stateSize_] = states_[stateSize_ - 1];
-    ++stateSize_;
+  void setState(const BoardState& state) {
+    currentState_ = state;
   }
 
-  void popState() {
-    --stateSize_;
-  }
-
+  // Play the move and change the current state regardless its legality.
+  // Return true if the move is legal, false otherwise.
   template <Team attacker>
   bool tryMakeMove(Move move) {
-    pushState();
-
     constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
     const uint32_t source = move.getSourceSquare();
     const uint32_t destination = move.getDestinationSquare();
@@ -310,15 +304,12 @@ protected:
       ++currentStateRef.fullmove_;
     }
 
-    // Check if the move is legal
-    const uint32_t kingSquare = findFirstPiece(currentStateRef.bitboards_[attacker][kKing]);
-    if (currentStateRef.isSquareAttacked<defender>(kingSquare)) {
-      popState();
-      return false;
-    }
 
     currentStateRef.team_ = defender;
-    return true;
+
+    // Check if the move is legal
+    const uint32_t kingSquare = findFirstPiece(currentStateRef.bitboards_[attacker][kKing]);
+    return !currentStateRef.isSquareAttacked<defender>(kingSquare);
   }
 
 public:
@@ -327,17 +318,8 @@ public:
   }
 
   void setFEN(const std::string& fen) {
-    stateSize_ = 1;
-    currentState() = BoardState::fromFEN(fen);
+    setState(BoardState::fromFEN(fen));
   }
-
-  // https://www.chessprogramming.org/Perft_Results
-  static inline const std::string kStartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  static inline const std::string kKiwipeteFEN = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ";
-  static inline const std::string kRookEndGameFEN = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ";
-  static inline const std::string kMirrorViewFEN = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
-  static inline const std::string kTalkChessBugFEN = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
-  static inline const std::string kStevenAltFEN = "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10";
 
   friend std::ostream& operator<<(std::ostream& out, const Board& board);
 };
