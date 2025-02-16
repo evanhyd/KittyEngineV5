@@ -91,22 +91,19 @@ namespace internal {
 // Avoid using PEXT on AMD due to slow implementation.
 //#define USE_PEXT
 class SliderTable {
-  Bitboard maxAttackNoEdge;   // Maximum attack pattern excludes the border
-
 #ifndef USE_PEXT
   Bitboard magicNum;          // Magic bitboard hashing
-  uint32_t relevantBitsCount; // Magic bitboard hashing
 #endif
-
+  Bitboard mask;              // Maximum attack pattern excludes the border
   Bitboard* attackReachable;  // Reachable attack table range, indexed by magic shifting
 
   template <Piece piece>
   size_t getKey(Bitboard occupancy) const {
 #ifdef USE_PEXT
-    return _pext_u64(occupancy, maxAttackNoEdge);
+    return _pext_u64(occupancy, mask);
 #else
     constexpr size_t relevantBitsInverse = (piece == kBishop ? kSquareSize - 9 : kSquareSize - 12);
-    return ((occupancy & maxAttackNoEdge) * magicNum) >> relevantBitsInverse;
+    return ((occupancy | mask) * magicNum) >> relevantBitsInverse;
 #endif
   }
 
@@ -115,89 +112,204 @@ class SliderTable {
     return attackReachable[getKey<piece>(occupancy)];
   }
 
-  inline static std::array<Bitboard, 64 * 512> bishopAttackReachableTable{};
-  inline static std::array<Bitboard, 64 * 4096> rookAttackReachableTable{};
+#ifdef USE_PEXT
+  inline static std::array<Bitboard, 0x19000 + 0x1480> sliderReachableTable{};
+#else
+  inline static std::array<Bitboard, 87988> sliderReachableTable{};
+#endif
+
   static const std::array<std::array<SliderTable, 2>, kSquareSize> magicTable;
 
   static constexpr auto generateMagic() {
 #ifndef USE_PEXT
-    constexpr std::array<std::array<Bitboard, kSquareSize>, kTeamSize> kMagicNumTable = { {
+    struct BlackMagicConfig {
+      Bitboard magic;
+      size_t index;
+    };
+    constexpr std::array<std::array<BlackMagicConfig, kSquareSize>, kTeamSize> blackMagicConfig = { {
       {
-        0x40040844404084ULL, 0x2004208a004208ULL, 0x10190041080202ULL, 0x108060845042010ULL,
-        0x581104180800210ULL, 0x2112080446200010ULL, 0x1080820820060210ULL, 0x3c0808410220200ULL,
-        0x4050404440404ULL, 0x21001420088ULL, 0x24d0080801082102ULL, 0x1020a0a020400ULL,
-        0x40308200402ULL, 0x4011002100800ULL, 0x401484104104005ULL, 0x801010402020200ULL,
-        0x400210c3880100ULL, 0x404022024108200ULL, 0x810018200204102ULL, 0x4002801a02003ULL,
-        0x85040820080400ULL, 0x810102c808880400ULL, 0xe900410884800ULL, 0x8002020480840102ULL,
-        0x220200865090201ULL, 0x2010100a02021202ULL, 0x152048408022401ULL, 0x20080002081110ULL,
-        0x4001001021004000ULL, 0x800040400a011002ULL, 0xe4004081011002ULL, 0x1c004001012080ULL,
-        0x8004200962a00220ULL, 0x8422100208500202ULL, 0x2000402200300c08ULL, 0x8646020080080080ULL,
-        0x80020a0200100808ULL, 0x2010004880111000ULL, 0x623000a080011400ULL, 0x42008c0340209202ULL,
-        0x209188240001000ULL, 0x400408a884001800ULL, 0x110400a6080400ULL, 0x1840060a44020800ULL,
-        0x90080104000041ULL, 0x201011000808101ULL, 0x1a2208080504f080ULL, 0x8012020600211212ULL,
-        0x500861011240000ULL, 0x180806108200800ULL, 0x4000020e01040044ULL, 0x300000261044000aULL,
-        0x802241102020002ULL, 0x20906061210001ULL, 0x5a84841004010310ULL, 0x4010801011c04ULL,
-        0xa010109502200ULL, 0x4a02012000ULL, 0x500201010098b028ULL, 0x8040002811040900ULL,
-        0x28000010020204ULL, 0x6000020202d0240ULL, 0x8918844842082200ULL, 0x4010011029020020ULL
+        BlackMagicConfig{ 0xa7020080601803d8ull, 60984 },
+        BlackMagicConfig{ 0x13802040400801f1ull, 66046 },
+        BlackMagicConfig{ 0x0a0080181001f60cull, 32910 },
+        BlackMagicConfig{ 0x1840802004238008ull, 16369 },
+        BlackMagicConfig{ 0xc03fe00100000000ull, 42115 },
+        BlackMagicConfig{ 0x24c00bffff400000ull,   835 },
+        BlackMagicConfig{ 0x0808101f40007f04ull, 18910 },
+        BlackMagicConfig{ 0x100808201ec00080ull, 25911 },
+        BlackMagicConfig{ 0xffa2feffbfefb7ffull, 63301 },
+        BlackMagicConfig{ 0x083e3ee040080801ull, 16063 },
+        BlackMagicConfig{ 0xc0800080181001f8ull, 17481 },
+        BlackMagicConfig{ 0x0440007fe0031000ull, 59361 },
+        BlackMagicConfig{ 0x2010007ffc000000ull, 18735 },
+        BlackMagicConfig{ 0x1079ffe000ff8000ull, 61249 },
+        BlackMagicConfig{ 0x3c0708101f400080ull, 68938 },
+        BlackMagicConfig{ 0x080614080fa00040ull, 61791 },
+        BlackMagicConfig{ 0x7ffe7fff817fcff9ull, 21893 },
+        BlackMagicConfig{ 0x7ffebfffa01027fdull, 62068 },
+        BlackMagicConfig{ 0x53018080c00f4001ull, 19829 },
+        BlackMagicConfig{ 0x407e0001000ffb8aull, 26091 },
+        BlackMagicConfig{ 0x201fe000fff80010ull, 15815 },
+        BlackMagicConfig{ 0xffdfefffde39ffefull, 16419 },
+        BlackMagicConfig{ 0xcc8808000fbf8002ull, 59777 },
+        BlackMagicConfig{ 0x7ff7fbfff8203fffull, 16288 },
+        BlackMagicConfig{ 0x8800013e8300c030ull, 33235 },
+        BlackMagicConfig{ 0x0420009701806018ull, 15459 },
+        BlackMagicConfig{ 0x7ffeff7f7f01f7fdull, 15863 },
+        BlackMagicConfig{ 0x8700303010c0c006ull, 75555 },
+        BlackMagicConfig{ 0xc800181810606000ull, 79445 },
+        BlackMagicConfig{ 0x20002038001c8010ull, 15917 },
+        BlackMagicConfig{ 0x087ff038000fc001ull,  8512 },
+        BlackMagicConfig{ 0x00080c0c00083007ull, 73069 },
+        BlackMagicConfig{ 0x00000080fc82c040ull, 16078 },
+        BlackMagicConfig{ 0x000000407e416020ull, 19168 },
+        BlackMagicConfig{ 0x00600203f8008020ull, 11056 },
+        BlackMagicConfig{ 0xd003fefe04404080ull, 62544 },
+        BlackMagicConfig{ 0xa00020c018003088ull, 80477 },
+        BlackMagicConfig{ 0x7fbffe700bffe800ull, 75049 },
+        BlackMagicConfig{ 0x107ff00fe4000f90ull, 32947 },
+        BlackMagicConfig{ 0x7f8fffcff1d007f8ull, 59172 },
+        BlackMagicConfig{ 0x0000004100f88080ull, 55845 },
+        BlackMagicConfig{ 0x00000020807c4040ull, 61806 },
+        BlackMagicConfig{ 0x00000041018700c0ull, 73601 },
+        BlackMagicConfig{ 0x0010000080fc4080ull, 15546 },
+        BlackMagicConfig{ 0x1000003c80180030ull, 45243 },
+        BlackMagicConfig{ 0xc10000df80280050ull, 20333 },
+        BlackMagicConfig{ 0xffffffbfeff80fdcull, 33402 },
+        BlackMagicConfig{ 0x000000101003f812ull, 25917 },
+        BlackMagicConfig{ 0x0800001f40808200ull, 32875 },
+        BlackMagicConfig{ 0x084000101f3fd208ull,  4639 },
+        BlackMagicConfig{ 0x080000000f808081ull, 17077 },
+        BlackMagicConfig{ 0x0004000008003f80ull, 62324 },
+        BlackMagicConfig{ 0x08000001001fe040ull, 18159 },
+        BlackMagicConfig{ 0x72dd000040900a00ull, 61436 },
+        BlackMagicConfig{ 0xfffffeffbfeff81dull, 57073 },
+        BlackMagicConfig{ 0xcd8000200febf209ull, 61025 },
+        BlackMagicConfig{ 0x100000101ec10082ull, 81259 },
+        BlackMagicConfig{ 0x7fbaffffefe0c02full, 64083 },
+        BlackMagicConfig{ 0x7f83fffffff07f7full, 56114 },
+        BlackMagicConfig{ 0xfff1fffffff7ffc1ull, 57058 },
+        BlackMagicConfig{ 0x0878040000ffe01full, 58912 },
+        BlackMagicConfig{ 0x945e388000801012ull, 22194 },
+        BlackMagicConfig{ 0x0840800080200fdaull, 70880 },
+        BlackMagicConfig{ 0x100000c05f582008ull, 11140 }
       },
       {
-        0x8a80104000800020ULL, 0x140002000100040ULL, 0x2801880a0017001ULL, 0x100081001000420ULL,
-        0x200020010080420ULL, 0x3001c0002010008ULL, 0x8480008002000100ULL, 0x2080088004402900ULL,
-        0x800098204000ULL, 0x2024401000200040ULL, 0x100802000801000ULL, 0x120800800801000ULL,
-        0x208808088000400ULL, 0x2802200800400ULL, 0x2200800100020080ULL, 0x801000060821100ULL,
-        0x80044006422000ULL, 0x100808020004000ULL, 0x12108a0010204200ULL, 0x140848010000802ULL,
-        0x481828014002800ULL, 0x8094004002004100ULL, 0x4010040010010802ULL, 0x20008806104ULL,
-        0x100400080208000ULL, 0x2040002120081000ULL, 0x21200680100081ULL, 0x20100080080080ULL,
-        0x2000a00200410ULL, 0x20080800400ULL, 0x80088400100102ULL, 0x80004600042881ULL,
-        0x4040008040800020ULL, 0x440003000200801ULL, 0x4200011004500ULL, 0x188020010100100ULL,
-        0x14800401802800ULL, 0x2080040080800200ULL, 0x124080204001001ULL, 0x200046502000484ULL,
-        0x480400080088020ULL, 0x1000422010034000ULL, 0x30200100110040ULL, 0x100021010009ULL,
-        0x2002080100110004ULL, 0x202008004008002ULL, 0x20020004010100ULL, 0x2048440040820001ULL,
-        0x101002200408200ULL, 0x40802000401080ULL, 0x4008142004410100ULL, 0x2060820c0120200ULL,
-        0x1001004080100ULL, 0x20c020080040080ULL, 0x2935610830022400ULL, 0x44440041009200ULL,
-        0x280001040802101ULL, 0x2100190040002085ULL, 0x80c0084100102001ULL, 0x4024081001000421ULL,
-        0x20030a0244872ULL, 0x12001008414402ULL, 0x2006104900a0804ULL, 0x1004081002402ULL
+        BlackMagicConfig{ 0x80280013ff84ffffull, 10890 },
+        BlackMagicConfig{ 0x5ffbfefdfef67fffull, 50579 },
+        BlackMagicConfig{ 0xffeffaffeffdffffull, 62020 },
+        BlackMagicConfig{ 0x003000900300008aull, 67322 },
+        BlackMagicConfig{ 0x0050028010500023ull, 80251 },
+        BlackMagicConfig{ 0x0020012120a00020ull, 58503 },
+        BlackMagicConfig{ 0x0030006000c00030ull, 51175 },
+        BlackMagicConfig{ 0x0058005806b00002ull, 83130 },
+        BlackMagicConfig{ 0x7fbff7fbfbeafffcull, 50430 },
+        BlackMagicConfig{ 0x0000140081050002ull, 21613 },
+        BlackMagicConfig{ 0x0000180043800048ull, 72625 },
+        BlackMagicConfig{ 0x7fffe800021fffb8ull, 80755 },
+        BlackMagicConfig{ 0xffffcffe7fcfffafull, 69753 },
+        BlackMagicConfig{ 0x00001800c0180060ull, 26973 },
+        BlackMagicConfig{ 0x4f8018005fd00018ull, 84972 },
+        BlackMagicConfig{ 0x0000180030620018ull, 31958 },
+        BlackMagicConfig{ 0x00300018010c0003ull, 69272 },
+        BlackMagicConfig{ 0x0003000c0085ffffull, 48372 },
+        BlackMagicConfig{ 0xfffdfff7fbfefff7ull, 65477 },
+        BlackMagicConfig{ 0x7fc1ffdffc001fffull, 43972 },
+        BlackMagicConfig{ 0xfffeffdffdffdfffull, 57154 },
+        BlackMagicConfig{ 0x7c108007befff81full, 53521 },
+        BlackMagicConfig{ 0x20408007bfe00810ull, 30534 },
+        BlackMagicConfig{ 0x0400800558604100ull, 16548 },
+        BlackMagicConfig{ 0x0040200010080008ull, 46407 },
+        BlackMagicConfig{ 0x0010020008040004ull, 11841 },
+        BlackMagicConfig{ 0xfffdfefff7fbfff7ull, 21112 },
+        BlackMagicConfig{ 0xfebf7dfff8fefff9ull, 44214 },
+        BlackMagicConfig{ 0xc00000ffe001ffe0ull, 57925 },
+        BlackMagicConfig{ 0x4af01f00078007c3ull, 29574 },
+        BlackMagicConfig{ 0xbffbfafffb683f7full, 17309 },
+        BlackMagicConfig{ 0x0807f67ffa102040ull, 40143 },
+        BlackMagicConfig{ 0x200008e800300030ull, 64659 },
+        BlackMagicConfig{ 0x0000008780180018ull, 70469 },
+        BlackMagicConfig{ 0x0000010300180018ull, 62917 },
+        BlackMagicConfig{ 0x4000008180180018ull, 60997 },
+        BlackMagicConfig{ 0x008080310005fffaull, 18554 },
+        BlackMagicConfig{ 0x4000188100060006ull, 14385 },
+        BlackMagicConfig{ 0xffffff7fffbfbfffull,     0 },
+        BlackMagicConfig{ 0x0000802000200040ull, 38091 },
+        BlackMagicConfig{ 0x20000202ec002800ull, 25122 },
+        BlackMagicConfig{ 0xfffff9ff7cfff3ffull, 60083 },
+        BlackMagicConfig{ 0x000000404b801800ull, 72209 },
+        BlackMagicConfig{ 0x2000002fe03fd000ull, 67875 },
+        BlackMagicConfig{ 0xffffff6ffe7fcffdull, 56290 },
+        BlackMagicConfig{ 0xbff7efffbfc00fffull, 43807 },
+        BlackMagicConfig{ 0x000000100800a804ull, 73365 },
+        BlackMagicConfig{ 0x6054000a58005805ull, 76398 },
+        BlackMagicConfig{ 0x0829000101150028ull, 20024 },
+        BlackMagicConfig{ 0x00000085008a0014ull,  9513 },
+        BlackMagicConfig{ 0x8000002b00408028ull, 24324 },
+        BlackMagicConfig{ 0x4000002040790028ull, 22996 },
+        BlackMagicConfig{ 0x7800002010288028ull, 23213 },
+        BlackMagicConfig{ 0x0000001800e08018ull, 56002 },
+        BlackMagicConfig{ 0xa3a80003f3a40048ull, 22809 },
+        BlackMagicConfig{ 0x2003d80000500028ull, 44545 },
+        BlackMagicConfig{ 0xfffff37eefefdfbeull, 36072 },
+        BlackMagicConfig{ 0x40000280090013c1ull,  4750 },
+        BlackMagicConfig{ 0xbf7ffeffbffaf71full,  6014 },
+        BlackMagicConfig{ 0xfffdffff777b7d6eull, 36054 },
+        BlackMagicConfig{ 0x48300007e8080c02ull, 78538 },
+        BlackMagicConfig{ 0xafe0000fff780402ull, 28745 },
+        BlackMagicConfig{ 0xee73fffbffbb77feull,  8555 },
+        BlackMagicConfig{ 0x0002000308482882ull,  1009 }
       }
-    } };
+    }};
+
 #endif
 
     std::array<std::array<SliderTable, kTeamSize>, kSquareSize> table{};
 
+#ifdef USE_PEXT
+    size_t offset = 0;
+#endif
+
     // Generate for both bishop and rook.
     for (Piece piece : {kBishop, kRook}) {
-      uint32_t offset = 0;
-
       for (uint32_t i = 0; i < kSquareSize; ++i) {
         // Remove the edge since the sliding piece must stop at the edge. This reduces the occupancy permutation size.
         SliderTable& magic = table[i][piece - kBishop];
         Bitboard edge = ((kRank1Mask | kRank8Mask) & ~kSquareToRankMaskTable[i]) | ((kFileAMask | kFileHMask) & ~kSquareToFileMaskTable[i]);
-        magic.maxAttackNoEdge = internal::generateSliderAttackReachable(piece, i, 0) & ~edge;
 
-#ifndef USE_PEXT
-        // Set up magic bitboard hashing factors.
-        magic.magicNum = kMagicNumTable[piece - kBishop][i];
-        magic.relevantBitsCount = kSquareSize - countPiece(magic.maxAttackNoEdge);
-#endif
-
-        // Assign the attack table segment range related to this square.
-        // The range size depends on the possible permutation.
-        magic.attackReachable = (piece == kBishop ? bishopAttackReachableTable.data() : rookAttackReachableTable.data()) + offset;
-        //offset += 1ull << countPiece(magic.maxAttackNoEdge);
-        uint32_t permutations = (piece == kBishop ? (1ull << 9) : (1ull << 12));
-        offset += permutations;
+#ifdef USE_PEXT
+        magic.mask = internal::generateSliderAttackReachable(piece, i, 0) & ~edge;
+        size_t permutation = 1ull << countPiece(magic.mask);
+        magic.attackReachable = sliderReachableTable.data() + offset;
 
         // Generate all occupancy combination for each attack pattern.
-        for (Bitboard occupancy = magic.maxAttackNoEdge; ; occupancy = (occupancy - 1) & magic.maxAttackNoEdge) {
+        for (Bitboard occupancy = magic.mask; ; occupancy = (occupancy - 1) & magic.mask) {
           size_t key = (piece == kBishop ? magic.getKey<kBishop>(occupancy) : magic.getKey<kRook>(occupancy));
           magic.attackReachable[key] = internal::generateSliderAttackReachable(piece, i, occupancy);
-          assert(key <= permutations);
+          assert(key < permutation);
           if (occupancy == 0) {
             break;
           }
         }
-      }
+        offset += permutation;
+#else
+        // Set up magic bitboard hashing factors.
+        magic.magicNum = blackMagicConfig[piece - kBishop][i].magic;
 
-      assert(offset == (piece == kBishop ? bishopAttackReachableTable.size() : rookAttackReachableTable.size()));
+        const Bitboard maxAttackNoEdge = internal::generateSliderAttackReachable(piece, i, 0) & ~edge;
+        magic.mask = ~maxAttackNoEdge;
+        magic.attackReachable = sliderReachableTable.data() + blackMagicConfig[piece - kBishop][i].index;
+
+        // Generate all occupancy combination for each attack pattern.
+        for (Bitboard occupancy = maxAttackNoEdge; ; occupancy = (occupancy - 1) & maxAttackNoEdge) {
+          size_t key = (piece == kBishop ? magic.getKey<kBishop>(occupancy) : magic.getKey<kRook>(occupancy));
+          magic.attackReachable[key] = internal::generateSliderAttackReachable(piece, i, occupancy);
+          assert(key < sliderReachableTable.size());
+          if (occupancy == 0) {
+            break;
+          }
+        }
+#endif
+      }
     }
     return table;
   }
