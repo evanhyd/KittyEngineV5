@@ -68,7 +68,7 @@ inline constexpr Bitboard kRank1Mask = kRank8Mask << 56;
 [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, uint32_t square) { return bitboard & ~(1ull << square); }
 [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, uint32_t from, uint32_t to) { return bitboard & ~(1ull << from) | (1ull << to); }
 [[nodiscard]] inline constexpr uint32_t countPiece(Bitboard bitboard) { return static_cast<uint32_t>(std::popcount(bitboard)); }
-[[nodiscard]] inline constexpr uint32_t findFirstPiece(Bitboard bitboard) { return static_cast<uint32_t>(std::countr_zero(bitboard)); }
+[[nodiscard]] inline constexpr uint32_t getFirstPiece(Bitboard bitboard) { return static_cast<uint32_t>(std::countr_zero(bitboard)); }
 [[nodiscard]] inline constexpr Bitboard removeFirstPiece(Bitboard bitboard) { return bitboard & (bitboard - 1); }
 [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, uint32_t square) { return bitboard >> square & 1; }
 [[nodiscard]] inline constexpr uint32_t getSquareRank(uint32_t square) { return square / 8; }

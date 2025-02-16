@@ -18,14 +18,23 @@ public:
   uint16_t halfmove_;
   uint16_t fullmove_;
 
+  template <Team team>
+  static consteval Team getOtherTeam() {
+    if constexpr (team == kWhite) {
+      return kBlack;
+    } else {
+      return kWhite;
+    }
+  }
+
   template <Team attacker>
-  constexpr bool isSquareAttacked(uint32_t square) const {
+  constexpr bool isAttackedBy(uint32_t square) const {
     // Simulate all attacks at the square.
     // If you can attack the enemy piece with the same attack type, then they can attack you.
-    constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
-    if ((bitboards_[attacker][kPawn] & kAttackTable<kPawn>[defender][square]) |
-        (bitboards_[attacker][kKnight] & kAttackTable<kKnight>[square]) |
-        (bitboards_[attacker][kKing] & kAttackTable<kKing>[square])) {
+    constexpr Team defender = getOtherTeam<attacker>();
+    if ((kAttackTable<kPawn>[defender][square] & bitboards_[attacker][kPawn]) |
+        (kAttackTable<kKnight>[square] & bitboards_[attacker][kKnight]) |
+        (kAttackTable<kKing>[square]) & bitboards_[attacker][kKing]) {
       return true;
     }
 
@@ -43,14 +52,32 @@ public:
     return bitboards_[attacker][kQueen] & queenAttack;
   }
 
+  // Return legal king moves.
+  template <Team attacker>
+  constexpr void getKingEvasionMove(MoveList& moveList) const {
+    constexpr Team defender = getOtherTeam<attacker>();
+
+    uint32_t source = getFirstPiece(bitboards_[attacker][kKing]);
+    for (Bitboard dbb = kAttackTable<kKing>[source] & ~occupancy_[attacker];
+         dbb;
+         dbb = removeFirstPiece(dbb)) {
+      uint32_t destination = getFirstPiece(dbb);
+      if (!isAttackedBy<defender>(destination)) {
+        uint32_t flag = (isSquareSet(occupancy_[defender], destination) ? Move::kCaptureFlag : 0);
+        moveList.push(Move(source, destination, kKing, 0, flag));
+      }
+    }
+  }
+
+
   template <Team attacker, Piece piece>
   constexpr void getPseudoPieceMove(MoveList& moveList) const {
-    constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
+    constexpr Team defender = getOtherTeam<attacker>();
 
     for (Bitboard sbb = bitboards_[attacker][piece];
          sbb;
          sbb = removeFirstPiece(sbb)) {
-      uint32_t source = findFirstPiece(sbb);
+      uint32_t source = getFirstPiece(sbb);
       Bitboard attackBB;
       if constexpr (piece == kBishop || piece == kRook || piece == kQueen) {
         attackBB = SliderTable::getAttack<piece>(source, bothOccupancy_);
@@ -62,7 +89,7 @@ public:
       for (Bitboard dbb = attackBB & ~bothOccupancy_;
            dbb;
            dbb = removeFirstPiece(dbb)) {
-        uint32_t destination = findFirstPiece(dbb);
+        uint32_t destination = getFirstPiece(dbb);
         moveList.push(Move(source, destination, piece));
       }
 
@@ -70,7 +97,7 @@ public:
       for (Bitboard dbb = attackBB & occupancy_[defender];
            dbb;
            dbb = removeFirstPiece(dbb)) {
-        uint32_t destination = findFirstPiece(dbb);
+        uint32_t destination = getFirstPiece(dbb);
         moveList.push(Move(source, destination, piece, 0, Move::kCaptureFlag));
       }
     }
@@ -91,7 +118,7 @@ public:
       for (Bitboard dbb = pushOnceBB & (attacker == kWhite ? ~kRank8Mask : ~kRank1Mask);
            dbb;
            dbb = removeFirstPiece(dbb)) {
-        uint32_t destination = findFirstPiece(dbb);
+        uint32_t destination = getFirstPiece(dbb);
         uint32_t source = (attacker == kWhite ? destination + kSideSize : destination - kSideSize);
         moveList.push(Move(source, destination, kPawn));
       }
@@ -100,7 +127,7 @@ public:
       for (Bitboard dbb = pushOnceBB & (attacker == kWhite ? kRank8Mask : kRank1Mask);
            dbb;
            dbb = removeFirstPiece(dbb)) {
-        uint32_t destination = findFirstPiece(dbb);
+        uint32_t destination = getFirstPiece(dbb);
         uint32_t source = (attacker == kWhite ? destination + kSideSize : destination - kSideSize);
         moveList.push(Move(source, destination, kPawn, kKnight));
         moveList.push(Move(source, destination, kPawn, kBishop));
@@ -112,7 +139,7 @@ public:
       for (Bitboard sbb = (attacker == kWhite ? shiftUp(pushOnceBB) & kRank4Mask : shiftDown(pushOnceBB) & kRank5Mask) & ~bothOccupancy_;
            sbb;
            sbb = removeFirstPiece(sbb)) {
-        uint32_t destination = findFirstPiece(sbb);
+        uint32_t destination = getFirstPiece(sbb);
         uint32_t source = (attacker == kWhite ? destination + 2 * kSideSize : destination - 2 * kSideSize);
         moveList.push(Move(source, destination, kPawn, 0, Move::kDoublePushFlag));
       }
@@ -121,9 +148,9 @@ public:
       for (Bitboard sbb = bitboards_[attacker][kPawn] & (attacker == kWhite ? ~kRank7Mask : ~kRank2Mask);
            sbb;
            sbb = removeFirstPiece(sbb)) {
-        uint32_t source = findFirstPiece(sbb);
+        uint32_t source = getFirstPiece(sbb);
         for (Bitboard dbb = kAttackTable<kPawn>[attacker][source] & occupancy_[defender]; dbb; dbb = removeFirstPiece(dbb)) {
-          uint32_t destination = findFirstPiece(dbb);
+          uint32_t destination = getFirstPiece(dbb);
           moveList.push(Move(source, destination, kPawn, 0, Move::kCaptureFlag));
         }
       }
@@ -132,9 +159,9 @@ public:
       for (Bitboard sbb = bitboards_[attacker][kPawn] & (attacker == kWhite ? kRank7Mask : kRank2Mask);
            sbb;
            sbb = removeFirstPiece(sbb)) {
-        uint32_t source = findFirstPiece(sbb);
+        uint32_t source = getFirstPiece(sbb);
         for (Bitboard dbb = kAttackTable<kPawn>[attacker][source] & occupancy_[defender]; dbb; dbb = removeFirstPiece(dbb)) {
-          uint32_t destination = findFirstPiece(dbb);
+          uint32_t destination = getFirstPiece(dbb);
           moveList.push(Move(source, destination, kPawn, kKnight, Move::kCaptureFlag));
           moveList.push(Move(source, destination, kPawn, kBishop, Move::kCaptureFlag));
           moveList.push(Move(source, destination, kPawn, kRook, Move::kCaptureFlag));
@@ -147,7 +174,7 @@ public:
         for (Bitboard enpassantBB = kAttackTable<kPawn>[defender][enpassant_] & bitboards_[attacker][kPawn];
              enpassantBB;
              enpassantBB = removeFirstPiece(enpassantBB)) {
-          uint32_t source = findFirstPiece(enpassantBB);
+          uint32_t source = getFirstPiece(enpassantBB);
           moveList.push(Move(source, enpassant_, kPawn, 0, Move::kCaptureFlag|Move::kEnpassantFlag));
         }
       }
@@ -176,12 +203,12 @@ public:
       // Must check the king and the adjacent square to prevent illegal castle that makes king safe.
       // No need to check the king square after castle, because it will get verified by the legal move generator later.
       if ((castlePermission_ & kingCastlePermission) && (kingCastleOccupancy & bothOccupancy_) == 0 &&
-          !isSquareAttacked<defender>(kingSourceSquare) && !isSquareAttacked<defender>(kingSideMiddleSquare)) {
+          !isAttackedBy<defender>(kingSourceSquare) && !isAttackedBy<defender>(kingSideMiddleSquare)) {
         moveList.push(Move(kingSourceSquare, kingSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }
 
       if ((castlePermission_ & queenCastlePermission) && (queenCastleOccupancy & bothOccupancy_) == 0 &&
-          !isSquareAttacked<defender>(kingSourceSquare) && !isSquareAttacked<defender>(queenSideMiddleSquare)) {
+          !isAttackedBy<defender>(kingSourceSquare) && !isAttackedBy<defender>(queenSideMiddleSquare)) {
         moveList.push(Move(kingSourceSquare, queenSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }
     }
@@ -308,8 +335,8 @@ protected:
     currentStateRef.team_ = defender;
 
     // Check if the move is legal
-    const uint32_t kingSquare = findFirstPiece(currentStateRef.bitboards_[attacker][kKing]);
-    return !currentStateRef.isSquareAttacked<defender>(kingSquare);
+    const uint32_t kingSquare = getFirstPiece(currentStateRef.bitboards_[attacker][kKing]);
+    return !currentStateRef.isAttackedBy<defender>(kingSquare);
   }
 
 public:
