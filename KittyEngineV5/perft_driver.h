@@ -10,6 +10,8 @@ public:
     uint64_t enpassants;
     uint64_t castles;
     uint64_t promotions;
+    uint64_t illegalMoves;
+    uint64_t totalMoves;
   };
 
   using Board::Board;
@@ -32,7 +34,9 @@ public:
     std::cout << std::format("depth {}, nodes {}, time {}, speed {} knps\n", depth, result.nodes, ms, knps);
 
     if constexpr (verbose) {
-      std::cout << std::format("captures {} enpassants {} castles {} promotions {}\n", result.captures, result.enpassants, result.castles, result.promotions);
+      std::cout << std::format("    captures {} enpassants {} castles {} promotions {} illegal moves {}/{} {:.3f}\n",
+                               result.captures, result.enpassants, result.castles, result.promotions, 
+                               result.illegalMoves, result.totalMoves, static_cast<double>(result.illegalMoves) / result.totalMoves);
     }
     return result;
   }
@@ -66,7 +70,14 @@ private:
             }
           }
         }
+      } else if constexpr (verbose) {
+        ++result.illegalMoves;
       }
+
+      if constexpr (verbose) {
+        ++result.totalMoves;
+      }
+
       setState(oldState);
     }
   }

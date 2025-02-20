@@ -5,7 +5,8 @@
 
 using namespace std;
 
-int main() {
+template <bool verbose>
+void perft() {
   const string kInitialPositionFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   const string kKiwipeteFEN = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ";
   const string kRookEndGameFEN = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ";
@@ -16,12 +17,25 @@ int main() {
   cout << "start perft\n";
 
   PerftDriver board{ kInitialPositionFEN };
-  for (int i = 0; i < 10; ++i) {
-    board.perft<false>(6);
+  for (int i = 0; i < 4; ++i) {
+    board.perft<verbose>(6);
+  }
+
+  for (int i = 0; i < 2; ++i) {
+    board.perft<verbose>(7);
+  }
+
+  board.setFEN(kRookEndGameFEN);
+  for (int i = 0; i < 2; ++i) {
+    board.perft<verbose>(7);
   }
 
   board.setFEN(kKiwipeteFEN);
-  for (int i = 0; i < 10; ++i) {
-    board.perft<false>(5);
+  for (int i = 0; i < 2; ++i) {
+    board.perft<verbose>(6);
   }
+}
+
+int main() {
+  perft<false>();
 }

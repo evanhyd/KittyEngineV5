@@ -11,9 +11,9 @@ int kAttackTable;
 
 template <>
 inline constexpr auto kAttackTable<kPawn> = []() {
-  constexpr auto generateAttack = [](Team team, uint32_t square) {
+  constexpr auto generateAttack = [](Team team, Square square) {
     Bitboard bitboard = setSquare(Bitboard{}, square);
-    if (team == Team::kWhite) {
+    if (team == kWhite) {
       return (shiftUpLeft(bitboard) & ~kFileHMask) | (shiftUpRight(bitboard) & ~kFileAMask);
     } else { // Team::kBlack
       return (shiftDownLeft(bitboard) & ~kFileHMask) | (shiftDownRight(bitboard) & ~kFileAMask);
@@ -21,7 +21,7 @@ inline constexpr auto kAttackTable<kPawn> = []() {
   };
 
   std::array<std::array<Bitboard, kSquareSize>, kTeamSize> table{};
-  for (uint32_t i = 0; i < kSquareSize; ++i) {
+  for (Square i = 0; i < kSquareSize; ++i) {
     table[kWhite][i] = generateAttack(kWhite, i);
     table[kBlack][i] = generateAttack(kBlack, i);
   }
@@ -30,7 +30,7 @@ inline constexpr auto kAttackTable<kPawn> = []() {
 
 template <>
 inline constexpr auto kAttackTable<kKnight> = []() {
-  constexpr auto generateAttack = [](uint32_t square) {
+  constexpr auto generateAttack = [](Square square) {
     Bitboard bitboard = setSquare(Bitboard{}, square);
     return (bitboard >> 17 & ~kFileHMask) | (bitboard >> 15 & ~kFileAMask) |
       (bitboard >> 10 & ~(kFileGMask | kFileHMask)) | (bitboard >> 6 & ~(kFileAMask | kFileBMask)) |
@@ -39,7 +39,7 @@ inline constexpr auto kAttackTable<kKnight> = []() {
   };
 
   std::array<Bitboard, kSquareSize> table{};
-  for (uint32_t i = 0; i < kSquareSize; ++i) {
+  for (Square i = 0; i < kSquareSize; ++i) {
     table[i] = generateAttack(i);
   }
   return table;
@@ -47,7 +47,7 @@ inline constexpr auto kAttackTable<kKnight> = []() {
 
 template <>
 inline constexpr auto kAttackTable<kKing> = []() {
-  constexpr auto generateAttack = [](uint32_t square) {
+  constexpr auto generateAttack = [](Square square) {
     Bitboard bitboard = setSquare(Bitboard{}, square);
     return (shiftUpLeft(bitboard) & ~kFileHMask) | shiftUp(bitboard) |
       (shiftUpRight(bitboard) & ~kFileAMask) | (shiftLeft(bitboard) & ~kFileHMask) |
@@ -56,14 +56,14 @@ inline constexpr auto kAttackTable<kKing> = []() {
   };
 
   std::array<Bitboard, kSquareSize> table{};
-  for (uint32_t i = 0; i < kSquareSize; ++i) {
+  for (Square i = 0; i < kSquareSize; ++i) {
     table[i] = generateAttack(i);
   }
   return table;
 }();
 
 namespace internal {
-  inline constexpr Bitboard generateSliderAttackReachable(Piece piece, uint32_t square, Bitboard occupancy) {
+  inline constexpr Bitboard generateSliderAttackReachable(Piece piece, Square square, Bitboard occupancy) {
     constexpr auto isInRange = [](int32_t r, int32_t f) {
       return 0 <= r && r < kSideSize && 0 <= f && f < kSideSize;
     };
@@ -71,8 +71,8 @@ namespace internal {
     // Cast to int to avoid underflow.
     int32_t rank = static_cast<int32_t>(getSquareRank(square));
     int32_t file = static_cast<int32_t>(getSquareFile(square));
-    constexpr std::pair<int32_t, int32_t> bishopDir[] = { {1, 1}, {1, -1}, {-1, 1}, {-1, -1} };
-    constexpr std::pair<int32_t, int32_t> rookDir[] = { {1, 0}, {-1, 0}, {0, -1}, {0, 1} };
+    constexpr std::pair<int32_t, int32_t> bishopDir[] = { {int32_t(1), int32_t(1)}, {int32_t(1), int32_t(-1)}, {int32_t(-1), int32_t(1)}, {int32_t(-1), int32_t(-1)} };
+    constexpr std::pair<int32_t, int32_t> rookDir[] = { {int32_t(1), int32_t(0)}, {int32_t(-1), int32_t(0)}, {int32_t(0), int32_t(-1)}, {int32_t(0), int32_t(1)} };
 
     Bitboard reachable = 0;
     for (const auto& [dx, dy] : (piece == kBishop ? bishopDir : rookDir)) {
@@ -89,7 +89,7 @@ namespace internal {
 
 // Use PEXT intrinsic to map the bitboards
 // Avoid using PEXT on AMD due to slow implementation.
-#define USE_PEXT
+//#define USE_PEXT
 class SliderTable {
 #ifndef USE_PEXT
   Bitboard magicNum;          // Magic bitboard hashing
@@ -166,9 +166,9 @@ class SliderTable {
 
     // Generate for both bishop and rook.
     for (Piece piece : {kBishop, kRook}) {
-      uint32_t offset = 0;
+      size_t offset = 0;
 
-      for (uint32_t i = 0; i < kSquareSize; ++i) {
+      for (Square i = 0; i < kSquareSize; ++i) {
         SliderTable& magic = table[i][piece - kBishop];
 
 #ifndef USE_PEXT
@@ -184,9 +184,9 @@ class SliderTable {
         magic.attackReachable = (piece == kBishop ? bishopAttackReachableTable.data() : rookAttackReachableTable.data()) + offset;
 
 #ifdef USE_PEXT
-        uint32_t permutations = 1ull << countPiece(magic.maxAttackNoEdge);
+        size_t permutations = 1ull << countPiece(magic.maxAttackNoEdge);
 #else
-        uint32_t permutations = (piece == kBishop ? (1ull << 9) : (1ull << 12));
+        size_t permutations = (piece == kBishop ? (1ull << 9) : (1ull << 12));
 #endif
         offset += permutations;
 
@@ -208,7 +208,7 @@ class SliderTable {
 
 public:
   template <Piece piece>
-  inline static Bitboard getAttack(uint32_t square, Bitboard occupancy) {
+  inline static Bitboard getAttack(Square square, Bitboard occupancy) {
     if constexpr (piece == kBishop) {
       return magicTable[square][0].getAttack<piece>(occupancy);
     } else if constexpr (piece == kRook) {

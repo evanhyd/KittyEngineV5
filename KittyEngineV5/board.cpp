@@ -10,7 +10,7 @@ BoardState BoardState::fromFEN(const std::string& fen) {
   // Parse positions.
   std::string position; ss >> position;
   auto letter = position.begin();
-  for (uint32_t i = 0; i < kSquareSize; ++letter) {
+  for (Square i = 0; i < kSquareSize; ++letter) {
     if (isdigit(*letter)) {
       // Skip empty square.
       i += *letter - '0';
@@ -66,7 +66,7 @@ BoardState BoardState::fromFEN(const std::string& fen) {
 std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
   using std::format;
 
-  const auto findPieceAscii = [&](uint32_t square) {
+  const auto findPieceAscii = [&](Square square) {
     for (Team team : { kWhite, kBlack }) {
       for (Piece piece : {kPawn, kKnight, kBishop, kRook, kQueen, kKing}) {
         if (isSquareSet(boardState.bitboards_[team][piece], square)) {
@@ -77,9 +77,9 @@ std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
     return '.';
   };
 
-  for (uint32_t i = 0; i < kSideSize; ++i) {
+  for (Square i = 0; i < kSideSize; ++i) {
     out << format("{}|", kSideSize - i);
-    for (uint32_t j = 0; j < kSideSize; ++j) {
+    for (Square j = 0; j < kSideSize; ++j) {
       out << format(" {}", findPieceAscii(rankFileToSquare(i, j)));
     }
     out << '\n';

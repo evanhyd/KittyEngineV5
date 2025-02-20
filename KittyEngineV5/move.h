@@ -29,26 +29,26 @@ public:
 
   Move() = default;
 
-  explicit constexpr Move(uint32_t sourceSquare, uint32_t destinationSquare, uint32_t movedPiece, uint32_t promotedPiece = 0, uint32_t flag = 0) 
-    : move_(sourceSquare | destinationSquare << 6 | movedPiece << 12 | promotedPiece << 16 | flag) {
+  explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece = 0, uint32_t flag = 0)
+    : move_(static_cast<uint32_t>(source) | static_cast<uint32_t>(destination) << 6 | static_cast<uint32_t>(movedPiece) << 12 | static_cast<uint32_t>(promotedPiece) << 16 | flag) {
   }
 
   bool operator<(const Move& move) const { return move_ < move.move_; }
-  constexpr uint32_t getSourceSquare() const { return move_ & 0b111111; }
-  constexpr uint32_t getDestinationSquare() const { return move_ >> 6 & 0b111111; }
-  constexpr uint32_t getMovedPiece() const { return move_ >> 12 & 0b1111; }
-  constexpr uint32_t getPromotedPiece() const { return move_ >> 16 & 0b1111; }
+  constexpr Square getSourceSquare() const { return move_ & 0b111111; }
+  constexpr Square getDestinationSquare() const { return move_ >> 6 & 0b111111; }
+  constexpr Piece getMovedPiece() const { return move_ >> 12 & 0b1111; }
+  constexpr Piece getPromotedPiece() const { return move_ >> 16 & 0b1111; }
   constexpr bool isCaptured() const { return move_ & kCaptureFlag; }
   constexpr bool isEnpassant() const { return move_ & kEnpassantFlag; }
   constexpr bool isDoublePush() const { return move_ & kDoublePushFlag; }
   constexpr bool isCastling() const { return move_ & kCastlingFlag; }
 
   std::string toString() const {
-    uint32_t promotedPiece = getPromotedPiece();
+    Piece promotedPiece = getPromotedPiece();
     return std::format("{}{}{} {}",
                        squareToString(getSourceSquare()),
                        squareToString(getDestinationSquare()),
-                       (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, static_cast<Piece>(promotedPiece))),
+                       (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, promotedPiece)),
                        (isEnpassant() == 0 ? " " : "ENP"));
   }
 };

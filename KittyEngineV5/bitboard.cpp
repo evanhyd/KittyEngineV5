@@ -40,7 +40,7 @@ std::string teamToString(Team team) {
   return table[team];
 }
 
-std::string squareToString(uint32_t square) {
+std::string squareToString(Square square) {
   static const std::array<std::string, kSquareSize + 1> table = {
     "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8",
     "a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7",
@@ -55,8 +55,8 @@ std::string squareToString(uint32_t square) {
   return table[square];
 }
 
-uint32_t stringToSquare(const std::string& squareString) {
-  for (uint32_t i = 0; i < kSquareSize; ++i) {
+Square stringToSquare(const std::string& squareString) {
+  for (Square i = 0; i < kSquareSize; ++i) {
     if (squareToString(i) == squareString) {
       return i;
     }
@@ -65,34 +65,32 @@ uint32_t stringToSquare(const std::string& squareString) {
   return NO_SQUARE;
 }
 
-std::string castleToString(uint32_t permission) {
-  static const std::array<std::string, 1ull << 4> table = {
-    "-",     // 0B0000
-    "K",     // 0B0001
-    "Q",     // 0B0010
-    "KQ",    // 0B0011
-    "k",     // 0B0100
-    "Kk",    // 0B0101
-    "Qk",    // 0B0110
-    "KQk",   // 0B0111
-    "q",     // 0B1000
-    "Kq",    // 0B1001
-    "Qq",    // 0B1010
-    "KQq",   // 0B1011
-    "kq",    // 0B1100
-    "Kkq",   // 0B1101
-    "Qkq",   // 0B1110
-    "KQkq"   // 0B1111
-  };
-  return table[permission];
+std::string castleToString(Bitboard permission) {
+  std::string str;
+  if (permission & kWhiteKingCastlePermission) {
+    str += 'K';
+  }
+  if (permission & kWhiteQueenCastlePermission) {
+    str += 'Q';
+  }
+  if (permission & kBlackKingCastlePermission) {
+    str += 'k';
+  }
+  if (permission & kBlackQueenCastlePermission) {
+    str += 'q';
+  }
+  if (str.empty()) {
+    str = "-";
+  }
+  return str;
 }
 
 void printBitboard(Bitboard bitboard) {
   using std::cout;
   using std::format;
-  for (uint32_t i = 0; i < kSideSize; ++i) {
+  for (Square i = 0; i < kSideSize; ++i) {
     cout << format("{}|", kSideSize - i);
-    for (uint32_t j = 0; j < kSideSize; ++j) {
+    for (Square j = 0; j < kSideSize; ++j) {
       cout << format(" {:d}", isSquareSet(bitboard, rankFileToSquare(i, j)));
     }
     cout << '\n';
