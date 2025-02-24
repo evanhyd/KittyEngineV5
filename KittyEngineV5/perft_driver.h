@@ -42,15 +42,15 @@ public:
   }
 
 private:
-  template <Color us, bool verbose>
+  template <Color our, bool verbose>
   void perftImpl(uint32_t depth, Result& result) {
-    constexpr Color defender = (us == kWhite ? kBlack : kWhite);
+    constexpr Color defender = (our == kWhite ? kBlack : kWhite);
     const BoardState oldState = currentState_;
     MoveList moveList{};
 
-    oldState.getPseudoMove<us>(moveList);
+    oldState.getPseudoMove<our>(moveList);
     for (Move move : moveList) {
-      if (tryMakeMove<us>(move)) {
+      if (tryMakeMove<our>(move)) {
         if (depth > 1) {
           perftImpl<defender, verbose>(depth - 1, result);
         } else {

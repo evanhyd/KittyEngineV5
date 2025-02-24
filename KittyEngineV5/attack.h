@@ -13,9 +13,9 @@ inline constexpr auto kAttackTable<kPawn> = []() {
   constexpr auto generateAttack = [](Color color, Square square) {
     Bitboard bitboard = toBitboard(square);
     if (color == kWhite) {
-      return (shiftUpLeft(bitboard) & ~kFileHMask) | (shiftUpRight(bitboard) & ~kFileAMask);
+      return shiftUpLeft(bitboard) | shiftUpRight(bitboard);
     } else {
-      return (shiftDownLeft(bitboard) & ~kFileHMask) | (shiftDownRight(bitboard) & ~kFileAMask);
+      return shiftDownLeft(bitboard) | shiftDownRight(bitboard);
     }
   };
 
@@ -48,10 +48,8 @@ template <>
 inline constexpr auto kAttackTable<kKing> = []() {
   constexpr auto generateAttack = [](Square square) {
     Bitboard bitboard = toBitboard(square);
-    return (shiftUpLeft(bitboard) & ~kFileHMask) | shiftUp(bitboard) |
-      (shiftUpRight(bitboard) & ~kFileAMask) | (shiftLeft(bitboard) & ~kFileHMask) |
-      (shiftDownRight(bitboard) & ~kFileAMask) | shiftDown(bitboard) |
-      (shiftDownLeft(bitboard) & ~kFileHMask) | (shiftRight(bitboard) & ~kFileAMask);
+    return shiftUpLeft(bitboard) | shiftUp(bitboard) | shiftUpRight(bitboard) | shiftLeft(bitboard) |
+           shiftDownRight(bitboard) | shiftDown(bitboard) | shiftDownLeft(bitboard) | shiftRight(bitboard);
   };
 
   std::array<Bitboard, kSquareSize> table{};
