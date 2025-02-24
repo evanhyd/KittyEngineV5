@@ -22,7 +22,7 @@ public:
 
     Result result{};
     auto start = high_resolution_clock::now();
-    if (currentState().team_ == kWhite) {
+    if (currentState_.color_ == kWhite) {
       perftImpl<kWhite, verbose>(depth, result);
     } else {
       perftImpl<kBlack, verbose>(depth, result);
@@ -42,15 +42,15 @@ public:
   }
 
 private:
-  template <Team attacker, bool verbose>
+  template <Color us, bool verbose>
   void perftImpl(uint32_t depth, Result& result) {
-    constexpr Team defender = (attacker == kWhite ? kBlack : kWhite);
-    const BoardState oldState = currentState();
+    constexpr Color defender = (us == kWhite ? kBlack : kWhite);
+    const BoardState oldState = currentState_;
     MoveList moveList{};
 
-    oldState.getPseudoMove<attacker>(moveList);
+    oldState.getPseudoMove<us>(moveList);
     for (Move move : moveList) {
-      if (tryMakeMove<attacker>(move)) {
+      if (tryMakeMove<us>(move)) {
         if (depth > 1) {
           perftImpl<defender, verbose>(depth - 1, result);
         } else {
@@ -78,7 +78,7 @@ private:
         ++result.totalMoves;
       }
 
-      setState(oldState);
+      currentState_ = oldState;
     }
   }
 };

@@ -9,124 +9,72 @@
 ///////////////////////////////////////////////////////
 class BoardState {
 public:
-  std::array<std::array<Bitboard, kPieceSize>, kTeamSize> bitboards_;
-  std::array<Bitboard, kTeamSize> occupancy_;
+  std::array<std::array<Bitboard, kPieceSize>, kColorSize> bitboards_;
+  std::array<Bitboard, kColorSize> occupancy_;
   Bitboard bothOccupancy_;
   Bitboard castlePermission_;
   Square enpassant_;
-  Team team_;
+  Color color_;
   int32_t halfmove_;
   int32_t fullmove_;
 
-  // Return all the attackers that attack the square.
-  template <Team attacker>
-  constexpr Bitboard getAllAttackers(Square square) const {
-    constexpr Team defender = getOtherTeam(attacker);
-    const Bitboard bishopAttack = SliderTable::getAttack<kBishop>(square, bothOccupancy_);
-    const Bitboard rookAttack = SliderTable::getAttack<kRook>(square, bothOccupancy_);
-    const Bitboard queenAttack = bishopAttack | rookAttack;
 
-    // Simulate all attacks at the square. If you can attack the enemy, then they can attack you.
-    return (kAttackTable<kPawn>[defender][square] & bitboards_[attacker][kPawn]) |
-           (kAttackTable<kKnight>[square] & bitboards_[attacker][kKnight]) |
-           (kAttackTable<kKing>[square] & bitboards_[attacker][kKing]) |
-           (bishopAttack & bitboards_[attacker][kBishop]) | 
-           (rookAttack & bitboards_[attacker][kRook]) | 
-           (queenAttack & bitboards_[attacker][kQueen]);
-  }
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ///////////////////////////////////////////////////////
+  //             PSEUDO MOVE GENERATOR
+  ///////////////////////////////////////////////////////
 
   // Return true if the square is attacked by the attacker.
-  template <Team attacker>
+  template <Color us>
   constexpr bool isAttacked(Square square) const {
-    constexpr Team defender = getOtherTeam(attacker);
+    constexpr Color them = getOtherColor(us);
 
-    if ((kAttackTable<kPawn>[defender][square] & bitboards_[attacker][kPawn]) |
-        (kAttackTable<kKnight>[square] & bitboards_[attacker][kKnight]) |
-        (kAttackTable<kKing>[square] & bitboards_[attacker][kKing])) {
+    if ((kAttackTable<kPawn>[them][square] & bitboards_[us][kPawn]) |
+        (kAttackTable<kKnight>[square] & bitboards_[us][kKnight]) |
+        (kAttackTable<kKing>[square] & bitboards_[us][kKing])) {
       return true;
     }
 
-    const Bitboard bishopAttack = SliderTable::getAttack<kBishop>(square, bothOccupancy_);
-    if (bishopAttack & bitboards_[attacker][kBishop]) {
+    const Bitboard diagonalAttack = SliderTable::getAttack<kBishop>(square, bothOccupancy_);
+    if (diagonalAttack & (bitboards_[us][kBishop] | bitboards_[us][kQueen])) {
       return true;
     }
 
-    const Bitboard rookAttack = SliderTable::getAttack<kRook>(square, bothOccupancy_);
-    if (rookAttack & bitboards_[attacker][kRook]) {
-      return true;
-    }
-
-    const Bitboard queenAttack = bishopAttack | rookAttack;
-    return queenAttack & bitboards_[attacker][kQueen];
+    const Bitboard lineAttack = SliderTable::getAttack<kRook>(square, bothOccupancy_);
+    return lineAttack & (bitboards_[us][kRook] | bitboards_[us][kQueen]);
   }
 
-  template <Team attacker>
-  constexpr void getLegalMove(MoveList& moveList) const {
-    constexpr Team defender = getOtherTeam(attacker);
-    const Square kingSquare = getFirstPieceSquare(bitboards_[attacker][kKing]);
-    const Bitboard allAttacks = getAllAttackers<defender>(kingSquare);
-
-    switch (countPiece(allAttacks)) {
-    case 0: 
-      // All moves except pinned pieces.
-
-      // Identify the pinned pieces.
-
-    case 1: 
-      // Single Check: Capture the pieces, block the attack ray, or King evasion.
-
-      // Identify the pinned pieces.
-
-
-    case 2: {
-      // Double Checks: king evasion.
-      for (Bitboard dbb = kAttackTable<kKing>[kingSquare] & ~occupancy_[attacker]; // Empty and enemy occupancy.
-            dbb;
-            dbb = removeFirstPiece(dbb)) {
-        Square destination = getFirstPieceSquare(dbb);
-        if (!isAttacked<defender>(destination)) {
-          uint32_t flag = (isSquareSet(occupancy_[defender], destination) ? Move::kCaptureFlag : 0);
-          moveList.push(Move(kingSquare, destination, kKing, 0, flag));
-        }
-      }
-      return;
-    }
-    }
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  template <Team attacker, Piece piece>
+  template <Color us, Piece piece>
   constexpr void getPseudoPieceMove(MoveList& moveList) const {
-    constexpr Team defender = getOtherTeam(attacker);
+    constexpr Color them = getOtherColor(us);
 
-    for (Bitboard sbb = bitboards_[attacker][piece];
+    for (Bitboard sbb = bitboards_[us][piece];
          sbb;
          sbb = removeFirstPiece(sbb)) {
       Square source = getFirstPieceSquare(sbb);
@@ -138,101 +86,76 @@ public:
       }
 
       // Non-capture
-      for (Bitboard dbb = attackBB & ~occupancy_[attacker];
+      for (Bitboard dbb = attackBB & ~occupancy_[us];
            dbb;
            dbb = removeFirstPiece(dbb)) {
         Square destination = getFirstPieceSquare(dbb);
-        uint32_t flag = isSquareSet(occupancy_[defender], destination) ? Move::kCaptureFlag : 0;
+        uint32_t flag = isSquareSet(occupancy_[them], destination) ? Move::kCaptureFlag : 0;
         moveList.push(Move(source, destination, piece, 0, flag));
       }
-
-      //// Non-capture
-      //for (Bitboard dbb = attackBB & ~bothOccupancy_;
-      //     dbb;
-      //     dbb = removeFirstPiece(dbb)) {
-      //  Square destination = getFirstPieceSquare(dbb);
-      //  moveList.push(Move(source, destination, piece));
-      //}
-
-      //// Capture
-      //for (Bitboard dbb = attackBB & occupancy_[defender];
-      //     dbb;
-      //     dbb = removeFirstPiece(dbb)) {
-      //  Square destination = getFirstPieceSquare(dbb);
-      //  moveList.push(Move(source, destination, piece, 0, Move::kCaptureFlag));
-      //}
     }
   }
 
   // TODO: consider put NO_SQUARE in kPawnAttackTable and give it an empty mask
   // TODO: separate capture move, promotion, and quiet move
   // TODO: generate all pawn moves at once
-  template <Team attacker>
+  template <Color us>
   constexpr void getPseudoMove(MoveList& moveList) const {
-    constexpr Team defender = getOtherTeam(attacker);
+    constexpr Color them = getOtherColor(us);
 
     // Pawn
     {
-      const Bitboard pushOnceBB = (attacker == kWhite ? shiftUp(bitboards_[attacker][kPawn]) : shiftDown(bitboards_[attacker][kPawn])) & ~bothOccupancy_;
+      const Bitboard pushOnceBB = (us == kWhite ? shiftUp(bitboards_[us][kPawn]) : shiftDown(bitboards_[us][kPawn])) & ~bothOccupancy_;
 
-      // Push once without promotion
-      for (Bitboard dbb = pushOnceBB & (attacker == kWhite ? ~kRank8Mask : ~kRank1Mask);
+      // Push once
+      for (Bitboard dbb = pushOnceBB;
            dbb;
            dbb = removeFirstPiece(dbb)) {
         Square destination = getFirstPieceSquare(dbb);
-        Square source = (attacker == kWhite ? destination + kSideSize : destination - kSideSize);
-        moveList.push(Move(source, destination, kPawn));
-      }
-
-      // Push once with promotion
-      for (Bitboard dbb = pushOnceBB & (attacker == kWhite ? kRank8Mask : kRank1Mask);
-           dbb;
-           dbb = removeFirstPiece(dbb)) {
-        Square destination = getFirstPieceSquare(dbb);
-        Square source = (attacker == kWhite ? destination + kSideSize : destination - kSideSize);
-        moveList.push(Move(source, destination, kPawn, kKnight));
-        moveList.push(Move(source, destination, kPawn, kBishop));
-        moveList.push(Move(source, destination, kPawn, kRook));
-        moveList.push(Move(source, destination, kPawn, kQueen));
-      }
-
-      // Push twice
-      for (Bitboard sbb = (attacker == kWhite ? shiftUp(pushOnceBB) & kRank4Mask : shiftDown(pushOnceBB) & kRank5Mask) & ~bothOccupancy_;
-           sbb;
-           sbb = removeFirstPiece(sbb)) {
-        Square destination = getFirstPieceSquare(sbb);
-        Square source = (attacker == kWhite ? destination + 2 * kSideSize : destination - 2 * kSideSize);
-        moveList.push(Move(source, destination, kPawn, 0, Move::kDoublePushFlag));
-      }
-
-      // Capture without promotion
-      for (Bitboard sbb = bitboards_[attacker][kPawn] & (attacker == kWhite ? ~kRank7Mask : ~kRank2Mask);
-           sbb;
-           sbb = removeFirstPiece(sbb)) {
-        Square source = getFirstPieceSquare(sbb);
-        for (Bitboard dbb = kAttackTable<kPawn>[attacker][source] & occupancy_[defender]; dbb; dbb = removeFirstPiece(dbb)) {
-          Square destination = getFirstPieceSquare(dbb);
-          moveList.push(Move(source, destination, kPawn, 0, Move::kCaptureFlag));
+        Square source = (us == kWhite ? destination + kSideSize : destination - kSideSize);
+        
+        constexpr Square promotionRank = (us == kWhite ? 0 : 7);
+        if (getSquareRank(destination) != promotionRank) {
+          moveList.push(Move(source, destination, kPawn));
+        } else {
+          moveList.push(Move(source, destination, kPawn, kKnight));
+          moveList.push(Move(source, destination, kPawn, kBishop));
+          moveList.push(Move(source, destination, kPawn, kRook));
+          moveList.push(Move(source, destination, kPawn, kQueen));
         }
       }
 
-      // Capture with promotion
-      for (Bitboard sbb = bitboards_[attacker][kPawn] & (attacker == kWhite ? kRank7Mask : kRank2Mask);
+      // Push twice
+      for (Bitboard dbb = (us == kWhite ? shiftUp(pushOnceBB) & kRank4Mask : shiftDown(pushOnceBB) & kRank5Mask) & ~bothOccupancy_;
+           dbb;
+           dbb = removeFirstPiece(dbb)) {
+        Square destination = getFirstPieceSquare(dbb);
+        Square source = (us == kWhite ? destination + 2 * kSideSize : destination - 2 * kSideSize);
+        moveList.push(Move(source, destination, kPawn, 0, Move::kDoublePushFlag));
+      }
+
+      // Capture and promotion
+      for (Bitboard sbb = bitboards_[us][kPawn];
            sbb;
            sbb = removeFirstPiece(sbb)) {
         Square source = getFirstPieceSquare(sbb);
-        for (Bitboard dbb = kAttackTable<kPawn>[attacker][source] & occupancy_[defender]; dbb; dbb = removeFirstPiece(dbb)) {
+        for (Bitboard dbb = kAttackTable<kPawn>[us][source] & occupancy_[them]; dbb; dbb = removeFirstPiece(dbb)) {
           Square destination = getFirstPieceSquare(dbb);
-          moveList.push(Move(source, destination, kPawn, kKnight, Move::kCaptureFlag));
-          moveList.push(Move(source, destination, kPawn, kBishop, Move::kCaptureFlag));
-          moveList.push(Move(source, destination, kPawn, kRook, Move::kCaptureFlag));
-          moveList.push(Move(source, destination, kPawn, kQueen, Move::kCaptureFlag));
+          constexpr Square promotionRank = (us == kWhite ? 0 : 7);
+          if (getSquareRank(destination) != promotionRank) {
+            moveList.push(Move(source, destination, kPawn, 0, Move::kCaptureFlag));
+          } else {
+            moveList.push(Move(source, destination, kPawn, kKnight, Move::kCaptureFlag));
+            moveList.push(Move(source, destination, kPawn, kBishop, Move::kCaptureFlag));
+            moveList.push(Move(source, destination, kPawn, kRook, Move::kCaptureFlag));
+            moveList.push(Move(source, destination, kPawn, kQueen, Move::kCaptureFlag));
+          }
         }
       }
 
       // Enpassant
       if (enpassant_ != NO_SQUARE) {
-        for (Bitboard enpassantBB = kAttackTable<kPawn>[defender][enpassant_] & bitboards_[attacker][kPawn];
+        for (Bitboard enpassantBB = kAttackTable<kPawn>[them][enpassant_] & bitboards_[us][kPawn];
              enpassantBB;
              enpassantBB = removeFirstPiece(enpassantBB)) {
           Square source = getFirstPieceSquare(enpassantBB);
@@ -242,34 +165,34 @@ public:
     }
 
     // Piece moves
-    getPseudoPieceMove<attacker, kKnight>(moveList);
-    getPseudoPieceMove<attacker, kKing>(moveList);
-    getPseudoPieceMove<attacker, kBishop>(moveList);
-    getPseudoPieceMove<attacker, kRook>(moveList);
-    getPseudoPieceMove<attacker, kQueen>(moveList);
+    getPseudoPieceMove<us, kKnight>(moveList);
+    getPseudoPieceMove<us, kKing>(moveList);
+    getPseudoPieceMove<us, kBishop>(moveList);
+    getPseudoPieceMove<us, kRook>(moveList);
+    getPseudoPieceMove<us, kQueen>(moveList);
 
     // Castle
     {
-      constexpr Bitboard kingCastlePermission = (attacker == kWhite ? kWhiteKingCastlePermission : kBlackKingCastlePermission);
-      constexpr Bitboard queenCastlePermission = (attacker == kWhite ? kWhiteQueenCastlePermission : kBlackQueenCastlePermission);
-      constexpr Bitboard kingCastleOccupancy = (attacker == kWhite ? 0x6000000000000000ull : 0x60ul);
-      constexpr Bitboard queenCastleOccupancy = (attacker == kWhite ? 0xE00000000000000ull : 0xEull);
-      constexpr Square kingSourceSquare = (attacker == kWhite ? E1 : E8);
-      constexpr Square kingSideMiddleSquare = (attacker == kWhite ? F1 : F8);
-      constexpr Square kingSideDestinationSquare = (attacker == kWhite ? G1 : G8);
-      constexpr Square queenSideMiddleSquare = (attacker == kWhite ? D1 : D8);
-      constexpr Square queenSideDestinationSquare = (attacker == kWhite ? C1 : C8);
+      constexpr Bitboard kingCastlePermission = (us == kWhite ? kWhiteKingCastlePermission : kBlackKingCastlePermission);
+      constexpr Bitboard queenCastlePermission = (us == kWhite ? kWhiteQueenCastlePermission : kBlackQueenCastlePermission);
+      constexpr Bitboard kingCastleOccupancy = (us == kWhite ? 0x6000000000000000ull : 0x60ul);
+      constexpr Bitboard queenCastleOccupancy = (us == kWhite ? 0xE00000000000000ull : 0xEull);
+      constexpr Square kingSourceSquare = (us == kWhite ? E1 : E8);
+      constexpr Square kingSideMiddleSquare = (us == kWhite ? F1 : F8);
+      constexpr Square kingSideDestinationSquare = (us == kWhite ? G1 : G8);
+      constexpr Square queenSideMiddleSquare = (us == kWhite ? D1 : D8);
+      constexpr Square queenSideDestinationSquare = (us == kWhite ? C1 : C8);
 
       // Check castle permission, blocker occupancy, and castle square safety.
       // Must check the king and the adjacent square to prevent illegal castle that makes king safe.
       // No need to check the king square after castle, because it will get verified by the legal move generator later.
       if (((castlePermission_ & kingCastlePermission) == kingCastlePermission) && (kingCastleOccupancy & bothOccupancy_) == 0 &&
-          !isAttacked<defender>(kingSourceSquare) && !isAttacked<defender>(kingSideMiddleSquare)) {
+          !isAttacked<them>(kingSourceSquare) && !isAttacked<them>(kingSideMiddleSquare)) {
         moveList.push(Move(kingSourceSquare, kingSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }
 
       if (((castlePermission_ & queenCastlePermission) == queenCastlePermission) && (queenCastleOccupancy & bothOccupancy_) == 0 &&
-          !isAttacked<defender>(kingSourceSquare) && !isAttacked<defender>(queenSideMiddleSquare)) {
+          !isAttacked<them>(kingSourceSquare) && !isAttacked<them>(queenSideMiddleSquare)) {
         moveList.push(Move(kingSourceSquare, queenSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }
     }
@@ -292,105 +215,101 @@ class Board {
 protected:
   BoardState currentState_;
 
-  constexpr BoardState& currentState() {
-    return currentState_;
-  }
-
-  constexpr const BoardState& currentState() const {
-    return currentState_;
-  }
-
-  void setState(const BoardState& state) {
-    currentState_ = state;
-  }
-
   // Play the move and change the current state regardless its legality.
   // Return true if the move is legal, false otherwise.
-  template <Team attacker>
+  template <Color us>
   bool tryMakeMove(Move move) {
-    constexpr Team defender = getOtherTeam(attacker);
+    constexpr Color them = getOtherColor(us);
     const Square source = move.getSourceSquare();
     const Square destination = move.getDestinationSquare();
     const Piece movedPiece = move.getMovedPiece();
 
     // Move the piece.
-    auto& currentStateRef = currentState();
-    currentStateRef.bitboards_[attacker][movedPiece] = moveSquare(currentStateRef.bitboards_[attacker][movedPiece], source, destination);
-    currentStateRef.occupancy_[attacker] = moveSquare(currentStateRef.occupancy_[attacker], source, destination);
-    currentStateRef.enpassant_ = NO_SQUARE;
-    ++currentStateRef.halfmove_;
-    if constexpr (attacker == kBlack) {
-      ++currentStateRef.fullmove_;
+    currentState_.bitboards_[us][movedPiece] = moveSquare(currentState_.bitboards_[us][movedPiece], source, destination);
+    currentState_.occupancy_[us] = moveSquare(currentState_.occupancy_[us], source, destination);
+    currentState_.enpassant_ = NO_SQUARE;
+    ++currentState_.halfmove_;
+    if constexpr (us == kBlack) {
+      ++currentState_.fullmove_;
     }
 
     if (move.isCaptured()) {
-      currentStateRef.bitboards_[defender][kPawn] = unsetSquare(currentStateRef.bitboards_[defender][kPawn], destination);
-      currentStateRef.bitboards_[defender][kKnight] = unsetSquare(currentStateRef.bitboards_[defender][kKnight], destination);
-      currentStateRef.bitboards_[defender][kBishop] = unsetSquare(currentStateRef.bitboards_[defender][kBishop], destination);
-      currentStateRef.bitboards_[defender][kRook] = unsetSquare(currentStateRef.bitboards_[defender][kRook], destination);
-      currentStateRef.bitboards_[defender][kQueen] = unsetSquare(currentStateRef.bitboards_[defender][kQueen], destination);
-      currentStateRef.occupancy_[defender] = unsetSquare(currentStateRef.occupancy_[defender], destination); // Does not affect enpassant
-      currentStateRef.halfmove_ = 0;
+      currentState_.bitboards_[them][kPawn] = unsetSquare(currentState_.bitboards_[them][kPawn], destination);
+      currentState_.bitboards_[them][kKnight] = unsetSquare(currentState_.bitboards_[them][kKnight], destination);
+      currentState_.bitboards_[them][kBishop] = unsetSquare(currentState_.bitboards_[them][kBishop], destination);
+      currentState_.bitboards_[them][kRook] = unsetSquare(currentState_.bitboards_[them][kRook], destination);
+      currentState_.bitboards_[them][kQueen] = unsetSquare(currentState_.bitboards_[them][kQueen], destination);
+      currentState_.occupancy_[them] = unsetSquare(currentState_.occupancy_[them], destination); // Does not affect enpassant
+      currentState_.halfmove_ = 0;
     }
 
     if (movedPiece == kPawn) {
-      currentStateRef.halfmove_ = 0;
+      currentState_.halfmove_ = 0;
     }
 
-    currentStateRef.halfmove_ = 0;
+    currentState_.halfmove_ = 0;
     if (move.isDoublePush()) {
-      currentStateRef.enpassant_ = (attacker == kWhite ? destination + 8 : destination - 8);
+      currentState_.enpassant_ = (us == kWhite ? destination + 8 : destination - 8);
 
     } else if (move.isEnpassant()) {
-      Square enpassantPawnSquare = (attacker == kWhite ? destination + 8 : destination - 8);
-      currentStateRef.bitboards_[defender][kPawn] = unsetSquare(currentStateRef.bitboards_[defender][kPawn], enpassantPawnSquare);
-      currentStateRef.occupancy_[defender] = unsetSquare(currentStateRef.occupancy_[defender], enpassantPawnSquare);
+      Square enpassantPawnSquare = (us == kWhite ? destination + 8 : destination - 8);
+      currentState_.bitboards_[them][kPawn] = unsetSquare(currentState_.bitboards_[them][kPawn], enpassantPawnSquare);
+      currentState_.occupancy_[them] = unsetSquare(currentState_.occupancy_[them], enpassantPawnSquare);
 
     } else if (Piece promotedPiece = move.getPromotedPiece(); promotedPiece) {
-      currentStateRef.bitboards_[attacker][movedPiece] = unsetSquare(currentStateRef.bitboards_[attacker][movedPiece], destination);
-      currentStateRef.bitboards_[attacker][promotedPiece] = setSquare(currentStateRef.bitboards_[attacker][promotedPiece], destination);
+      currentState_.bitboards_[us][movedPiece] = unsetSquare(currentState_.bitboards_[us][movedPiece], destination);
+      currentState_.bitboards_[us][promotedPiece] = setSquare(currentState_.bitboards_[us][promotedPiece], destination);
 
     } else if (move.isCastling()) {
-      auto [rookSource, rookDestination] = [destination]() {
-        switch (destination) {
-        case G1: return std::pair<Square, Square>{ H1, F1 };
-        case G8: return std::pair<Square, Square>{ H8, F8 };
-        case C1: return std::pair<Square, Square>{ A1, D1 };
-        case C8: return std::pair<Square, Square>{ A8, D8 };
-        [[unlikely]] default:
-          assert(false && "bad king castling square");
-          return std::pair<Square, Square>{static_cast<Square>(0), static_cast<Square>(0)};
+      Square rookSource;
+      Square rookDestination;
+      if constexpr (us == kWhite) {
+        if (destination == G1) {
+          rookSource = H1;
+          rookDestination = F1;
+        } else {
+          rookSource = A1;
+          rookDestination = D1;
         }
-      }();
-      currentStateRef.bitboards_[attacker][kRook] = moveSquare(currentStateRef.bitboards_[attacker][kRook], rookSource, rookDestination);
-      currentStateRef.occupancy_[attacker] = moveSquare(currentStateRef.occupancy_[attacker], rookSource, rookDestination);
+      } else {
+        if (destination == G8) {
+          rookSource = H8;
+          rookDestination = F8;
+        } else {
+          rookSource = A8;
+          rookDestination = D8;
+        }
+      }
+
+      currentState_.bitboards_[us][kRook] = moveSquare(currentState_.bitboards_[us][kRook], rookSource, rookDestination);
+      currentState_.occupancy_[us] = moveSquare(currentState_.occupancy_[us], rookSource, rookDestination);
     }
 
     // Update castle permission and occupancy
-    currentStateRef.castlePermission_ = unsetSquare(unsetSquare(currentStateRef.castlePermission_, source), destination);
-    currentStateRef.bothOccupancy_ = currentStateRef.occupancy_[kWhite] | currentStateRef.occupancy_[kBlack];
+    currentState_.castlePermission_ = unsetSquare(unsetSquare(currentState_.castlePermission_, source), destination);
+    currentState_.bothOccupancy_ = currentState_.occupancy_[kWhite] | currentState_.occupancy_[kBlack];
 
 #ifdef _DEBUG
     // Check occupancy consistency.
-    for (Team team : {kWhite, kBlack}) {
+    for (Color color : {kWhite, kBlack}) {
       Bitboard occupancy = 0;
-      for (Bitboard bb : currentStateRef.bitboards_[team]) {
+      for (Bitboard bb : currentState_.bitboards_[color]) {
         occupancy |= bb;
       }
-      if (occupancy != currentStateRef.occupancy_[team]) {
+      if (occupancy != currentState_.occupancy_[color]) {
         std::cout << move.toString() << '\n';
         printBitboard(occupancy);
-        printBitboard(currentStateRef.occupancy_[team]);
+        printBitboard(currentState_.occupancy_[color]);
         assert(false && "occupancy inconsistent");
       }
     }
 #endif
 
-    currentStateRef.team_ = defender;
+    currentState_.color_ = them;
 
     // Check if the move is legal
-    const Square kingSquare = getFirstPieceSquare(currentStateRef.bitboards_[attacker][kKing]);
-    return !currentStateRef.isAttacked<defender>(kingSquare);
+    const Square kingSquare = getFirstPieceSquare(currentState_.bitboards_[us][kKing]);
+    return !currentState_.isAttacked<them>(kingSquare);
   }
 
 public:
@@ -399,7 +318,7 @@ public:
   }
 
   void setFEN(const std::string& fen) {
-    setState(BoardState::fromFEN(fen));
+    currentState_ = BoardState::fromFEN(fen);
   }
 
   friend std::ostream& operator<<(std::ostream& out, const Board& board);

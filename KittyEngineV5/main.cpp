@@ -17,22 +17,27 @@ void perft() {
   cout << "start perft\n";
 
   PerftDriver board{ kInitialPositionFEN };
-  for (int i = 0; i < 4; ++i) {
-    board.perft<verbose>(6);
-  }
-
-  for (int i = 0; i < 2; ++i) {
-    board.perft<verbose>(7);
+  for (int i = 1; i <= 7; ++i) {
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
   }
 
   board.setFEN(kRookEndGameFEN);
-  for (int i = 0; i < 2; ++i) {
-    board.perft<verbose>(7);
+  for (int i = 1; i <= 7; ++i) {
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
   }
 
   board.setFEN(kKiwipeteFEN);
-  for (int i = 0; i < 2; ++i) {
-    board.perft<verbose>(6);
+  for (int i = 1; i <= 6; ++i) {
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
+    board.perft<verbose>(i);
   }
 }
 

@@ -1,4 +1,3 @@
-#include "../KittyEngineV5/bitboard.cpp"
 #include "../KittyEngineV5/board.cpp"
 #include "../KittyEngineV5/perft_driver.h"
 #include "gtest/gtest.h"

@@ -1,6 +1,5 @@
 #pragma once
 #include "bitboard.h"
-#include <cassert>
 #include <immintrin.h>
 
 ///////////////////////////////////////////////////////
@@ -11,16 +10,16 @@ int kAttackTable;
 
 template <>
 inline constexpr auto kAttackTable<kPawn> = []() {
-  constexpr auto generateAttack = [](Team team, Square square) {
-    Bitboard bitboard = setSquare(Bitboard{}, square);
-    if (team == kWhite) {
+  constexpr auto generateAttack = [](Color color, Square square) {
+    Bitboard bitboard = toBitboard(square);
+    if (color == kWhite) {
       return (shiftUpLeft(bitboard) & ~kFileHMask) | (shiftUpRight(bitboard) & ~kFileAMask);
-    } else { // Team::kBlack
+    } else {
       return (shiftDownLeft(bitboard) & ~kFileHMask) | (shiftDownRight(bitboard) & ~kFileAMask);
     }
   };
 
-  std::array<std::array<Bitboard, kSquareSize>, kTeamSize> table{};
+  std::array<std::array<Bitboard, kSquareSize>, kColorSize> table{};
   for (Square i = 0; i < kSquareSize; ++i) {
     table[kWhite][i] = generateAttack(kWhite, i);
     table[kBlack][i] = generateAttack(kBlack, i);
@@ -31,7 +30,7 @@ inline constexpr auto kAttackTable<kPawn> = []() {
 template <>
 inline constexpr auto kAttackTable<kKnight> = []() {
   constexpr auto generateAttack = [](Square square) {
-    Bitboard bitboard = setSquare(Bitboard{}, square);
+    Bitboard bitboard = toBitboard(square);
     return (bitboard >> 17 & ~kFileHMask) | (bitboard >> 15 & ~kFileAMask) |
       (bitboard >> 10 & ~(kFileGMask | kFileHMask)) | (bitboard >> 6 & ~(kFileAMask | kFileBMask)) |
       (bitboard << 17 & ~kFileAMask) | (bitboard << 15 & ~kFileHMask) |
@@ -48,7 +47,7 @@ inline constexpr auto kAttackTable<kKnight> = []() {
 template <>
 inline constexpr auto kAttackTable<kKing> = []() {
   constexpr auto generateAttack = [](Square square) {
-    Bitboard bitboard = setSquare(Bitboard{}, square);
+    Bitboard bitboard = toBitboard(square);
     return (shiftUpLeft(bitboard) & ~kFileHMask) | shiftUp(bitboard) |
       (shiftUpRight(bitboard) & ~kFileAMask) | (shiftLeft(bitboard) & ~kFileHMask) |
       (shiftDownRight(bitboard) & ~kFileAMask) | shiftDown(bitboard) |
@@ -122,7 +121,7 @@ class SliderTable {
 
   static constexpr auto generateMagic() {
 #ifndef USE_PEXT
-    constexpr std::array<std::array<Bitboard, kSquareSize>, kTeamSize> kMagicNumTable = { {
+    constexpr std::array<std::array<Bitboard, kSquareSize>, kColorSize> kMagicNumTable = { {
       {
         0x40040844404084ULL, 0x2004208a004208ULL, 0x10190041080202ULL, 0x108060845042010ULL,
         0x581104180800210ULL, 0x2112080446200010ULL, 0x1080820820060210ULL, 0x3c0808410220200ULL,
@@ -162,7 +161,7 @@ class SliderTable {
     }};
 #endif
 
-    std::array<std::array<SliderTable, kTeamSize>, kSquareSize> table{};
+    std::array<std::array<SliderTable, kColorSize>, kSquareSize> table{};
 
     // Generate for both bishop and rook.
     for (Piece piece : {kBishop, kRook}) {
@@ -177,7 +176,7 @@ class SliderTable {
 #endif
 
         // Remove the edge since the sliding piece must stop at the edge. This reduces the occupancy permutation size.
-        Bitboard edge = ((kRank1Mask | kRank8Mask) & ~kSquareToRankMaskTable[i]) | ((kFileAMask | kFileHMask) & ~kSquareToFileMaskTable[i]);
+        Bitboard edge = ((kRank1Mask | kRank8Mask) & ~kSquareToRankMasks[i]) | ((kFileAMask | kFileHMask) & ~kSquareToFileMasks[i]);
         magic.maxAttackNoEdge = internal::generateSliderAttackReachable(piece, i, 0) & ~edge;
 
         // Assign the attack table range.
@@ -222,3 +221,23 @@ public:
 };
 
 inline const std::array<std::array<SliderTable, 2>, kSquareSize> SliderTable::magicTable = SliderTable::generateMagic();
+
+///////////////////////////////////////////////////////
+//                   UTILITY TABLES
+///////////////////////////////////////////////////////
+inline const auto kSquareBetweenTable = []() {
+  std::array<std::array<Bitboard, kSquareSize>, kSquareSize> table{};
+  for (Square i = 0; i < kSquareSize; ++i) {
+    for (Square j = 0; j < kSquareSize; ++j) {
+      if (i == j) {
+        continue;
+      }
+      if (kSquareToDiagonalMasks[i] == kSquareToDiagonalMasks[j] || kSquareToAntiDiagonalMaskTable[i] == kSquareToAntiDiagonalMaskTable[j]) {
+        table[i][j] = SliderTable::getAttack<kBishop>(i, toBitboard(j)) & SliderTable::getAttack<kBishop>(j, toBitboard(i));
+      } else if (getSquareRank(i) == getSquareRank(j) || getSquareFile(i) == getSquareFile(j)) {
+        table[i][j] = SliderTable::getAttack<kRook>(i, toBitboard(j)) & SliderTable::getAttack<kRook>(j, toBitboard(i));
+      }
+    }
+  }
+  return table;
+}();

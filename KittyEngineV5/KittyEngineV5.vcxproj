@@ -151,7 +151,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="bitboard.cpp" />
     <ClCompile Include="board.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="move.h" />
