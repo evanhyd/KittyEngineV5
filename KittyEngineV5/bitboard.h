@@ -100,10 +100,12 @@ inline constexpr Square kSideSize = 8;
 inline constexpr Square kSquareSize = 64;
 inline constexpr std::array<Bitboard, kColorSize> kBackRank = {getSquareRank(A1), getSquareRank(A8) };
 inline constexpr std::array<Bitboard, kColorSize> kPromotionRank = { getSquareRank(A8), getSquareRank(A1) };
-inline constexpr Bitboard kWhiteKingCastlePermission = toBitboard(E1, H1);
-inline constexpr Bitboard kWhiteQueenCastlePermission = toBitboard(E1, A1);
-inline constexpr Bitboard kBlackKingCastlePermission = toBitboard(E8, H8);
-inline constexpr Bitboard kBlackQueenCastlePermission = toBitboard(E8, A8);
+inline constexpr std::array<Bitboard, kColorSize> kKingCastlePermission = { toBitboard(E1, H1) , toBitboard(E8, H8) };
+inline constexpr std::array<Bitboard, kColorSize> kQueenCastlePermission = { toBitboard(E1, A1) , toBitboard(E8, A8) };
+inline constexpr std::array<Bitboard, kColorSize> kKingCastleOccupancy = { toBitboard(F1, G1) , toBitboard(F8, G8) };
+inline constexpr std::array<Bitboard, kColorSize> kQueenCastleOccupancy = { toBitboard(B1, C1, D1) , toBitboard(B8, C8, D8) };
+inline constexpr std::array<Bitboard, kColorSize> kKingCastleSafety = { toBitboard(E1, F1, G1) , toBitboard(E8, F8, G8) };
+inline constexpr std::array<Bitboard, kColorSize> kQueenCastleSafety = { toBitboard(C1, D1, E1) , toBitboard(C8, D8, E8) };
 
 
 ///////////////////////////////////////////////////////
@@ -237,16 +239,16 @@ inline Square stringToSquare(const std::string& squareString) {
 
 inline std::string castleToString(Bitboard permission) {
   std::string str;
-  if (permission & kWhiteKingCastlePermission) {
+  if (permission & kKingCastlePermission[kWhite]) {
     str += 'K';
   }
-  if (permission & kWhiteQueenCastlePermission) {
+  if (permission & kQueenCastlePermission[kWhite]) {
     str += 'Q';
   }
-  if (permission & kBlackKingCastlePermission) {
+  if (permission & kKingCastlePermission[kBlack]) {
     str += 'k';
   }
-  if (permission & kBlackQueenCastlePermission) {
+  if (permission & kQueenCastlePermission[kBlack]) {
     str += 'q';
   }
   if (str.empty()) {

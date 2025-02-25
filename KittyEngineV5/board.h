@@ -95,7 +95,49 @@ public:
     return pinned;
   }
 
+  template <Color our>
+  constexpr void getLegalMove(MoveList& moves) const {
+    const Square kingSquare = getFirstPieceSquare(bitboards_[our][kKing]);
+    Bitboard attacked = getAttacked<our>();
+    Bitboard checkers = getCheckers<our>();
+    Bitboard pinned = getPinned<our>();
 
+    {
+      // King Moves
+      for (Bitboard bb = kAttackTable<kKing>[kingSquare] & ~occupancy_[our] & ~attacked;
+           bb;
+           bb = removeFirstPiece(bb)) {
+        moves.push(Move(kingSquare, getFirstPieceSquare(bb)));
+      }
+
+      // King Castling
+      if ((castlePermission_[our] & kKingCastlePermission[our]) == kKingCastlePermission[our] &&  // Check castle permission
+          (bothOccupancy_ & kKingCastleOccupancy[our]) == 0 &&                                    // Check castle blocker
+          (attacked & kKingCastleSafety[our]) == 0) {                                             // Check castle attacked squares
+        if constexpr (our == kWhite) {
+          moves.push(Move(E1, G1));
+        } else {
+          moves.push(Move(E8, G8));
+        }
+      }
+
+      // Queen Castling
+      if ((castlePermission_[our] & kQueenCastlePermission[our]) == kQueenCastlePermission[our] && // Check castle permission
+          (bothOccupancy_ & kQueenCastleOccupancy[our]) == 0 &&                                    // Check castle blocker
+          (attacked & kQueenCastleSafety[our]) == 0) {                                             // Check castle attacked squares
+        if constexpr (our == kWhite) {
+          moves.push(Move(E1, C1));
+        } else {
+          moves.push(Move(E8, C8));
+        }
+      }
+
+      constexpr Square kingSideMiddleSquare = (our == kWhite ? F1 : F8);
+      constexpr Square kingSideDestinationSquare = (our == kWhite ? G1 : G8);
+      constexpr Square queenSideMiddleSquare = (our == kWhite ? D1 : D8);
+      constexpr Square queenSideDestinationSquare = (our == kWhite ? C1 : C8);
+    }
+  }
 
 
 
@@ -244,10 +286,6 @@ public:
 
     // Castle
     {
-      constexpr Bitboard kingCastlePermission = (our == kWhite ? kWhiteKingCastlePermission : kBlackKingCastlePermission);
-      constexpr Bitboard queenCastlePermission = (our == kWhite ? kWhiteQueenCastlePermission : kBlackQueenCastlePermission);
-      constexpr Bitboard kingCastleOccupancy = (our == kWhite ? 0x6000000000000000ull : 0x60ul);
-      constexpr Bitboard queenCastleOccupancy = (our == kWhite ? 0xE00000000000000ull : 0xEull);
       constexpr Square kingSourceSquare = (our == kWhite ? E1 : E8);
       constexpr Square kingSideMiddleSquare = (our == kWhite ? F1 : F8);
       constexpr Square kingSideDestinationSquare = (our == kWhite ? G1 : G8);
@@ -257,12 +295,14 @@ public:
       // Check castle permission, blocker occupancy, and castle square safety.
       // Must check the king and the adjacent square to prevent illegal castle that makes king safe.
       // No need to check the king square after castle, because it will get verified by the legal move generator later.
-      if (((castlePermission_ & kingCastlePermission) == kingCastlePermission) && (kingCastleOccupancy & bothOccupancy_) == 0 &&
+      if ((castlePermission_ & kKingCastlePermission[our]) == kKingCastlePermission[our] && 
+          (kKingCastleOccupancy[our] & bothOccupancy_) == 0 &&
           !isAttacked<their>(kingSourceSquare) && !isAttacked<their>(kingSideMiddleSquare)) {
         moveList.push(Move(kingSourceSquare, kingSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }
 
-      if (((castlePermission_ & queenCastlePermission) == queenCastlePermission) && (queenCastleOccupancy & bothOccupancy_) == 0 &&
+      if ((castlePermission_ & kQueenCastlePermission[our]) == kQueenCastlePermission[our] && 
+          (kQueenCastleOccupancy[our] & bothOccupancy_) == 0 &&
           !isAttacked<their>(kingSourceSquare) && !isAttacked<their>(queenSideMiddleSquare)) {
         moveList.push(Move(kingSourceSquare, queenSideDestinationSquare, kKing, 0, Move::kCastlingFlag));
       }

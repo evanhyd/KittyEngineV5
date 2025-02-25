@@ -40,16 +40,16 @@ BoardState BoardState::fromFEN(const std::string& fen) {
   // Parse castle permisison.
   std::string castlePermission; ss >> castlePermission;
   if (castlePermission.find("K") != std::string::npos) {
-    boardState.castlePermission_ |= kWhiteKingCastlePermission;
+    boardState.castlePermission_ |= kKingCastlePermission[kWhite];
   }
   if (castlePermission.find("Q") != std::string::npos) {
-    boardState.castlePermission_ |= kWhiteQueenCastlePermission;
+    boardState.castlePermission_ |= kQueenCastlePermission[kWhite];
   }
   if (castlePermission.find("k") != std::string::npos) {
-    boardState.castlePermission_ |= kBlackKingCastlePermission;
+    boardState.castlePermission_ |= kKingCastlePermission[kBlack];
   }
   if (castlePermission.find("q") != std::string::npos) {
-    boardState.castlePermission_ |= kBlackQueenCastlePermission;
+    boardState.castlePermission_ |= kQueenCastlePermission[kBlack];
   }
 
   // Parse enpassant square.
