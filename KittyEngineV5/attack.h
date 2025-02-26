@@ -220,10 +220,33 @@ public:
 
 inline const std::array<std::array<SliderTable, 2>, kSquareSize> SliderTable::magicTable = SliderTable::generateMagic();
 
+
 ///////////////////////////////////////////////////////
 //                   UTILITY TABLES
 ///////////////////////////////////////////////////////
-inline const auto kSquareBetweenTable = []() {
+inline constexpr auto kLineOfSightMasks = []() {
+  std::array<std::array<Bitboard, kSquareSize>, kSquareSize> table{};
+  for (Square i = 0; i < kSquareSize; ++i) {
+    for (Square j = 0; j < kSquareSize; ++j) {
+      if (i == j) {
+        continue;
+      }
+
+      if (kSquareToRankMasks[i] == kSquareToRankMasks[j]) {
+        table[i][j] = kSquareToRankMasks[i];
+      } else if (kSquareToFileMasks[i] == kSquareToFileMasks[j]) {
+        table[i][j] = kSquareToFileMasks[i];
+      } else if (kSquareToDiagonalMasks[i] == kSquareToDiagonalMasks[j]) {
+        table[i][j] = kSquareToDiagonalMasks[i];
+      } else if (kSquareToAntiDiagonalMaskTable[i] == kSquareToAntiDiagonalMaskTable[j]) {
+        table[i][j] = kSquareToAntiDiagonalMaskTable[i];
+      }
+    }
+  }
+  return table;
+}();
+
+inline const auto kSquareBetweenMasks = []() {
   std::array<std::array<Bitboard, kSquareSize>, kSquareSize> table{};
   for (Square i = 0; i < kSquareSize; ++i) {
     for (Square j = 0; j < kSquareSize; ++j) {

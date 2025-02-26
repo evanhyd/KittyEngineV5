@@ -39,24 +39,24 @@ public:
     Bitboard attacked = getPawnAttack<their>();
 
     {
-      Square source = getFirstPieceSquare(bitboards_[their][kKing]);
-      attacked |= kAttackTable<kKing>[source];
+      Square srce = getFirstPieceSquare(bitboards_[their][kKing]);
+      attacked |= kAttackTable<kKing>[srce];
     }
-    for (Bitboard sbb = bitboards_[their][kKnight]; sbb; sbb = removeFirstPiece(sbb)) {
-      Square source = getFirstPieceSquare(sbb);
-      attacked |= kAttackTable<kKnight>[source];
+    for (Bitboard bb = bitboards_[their][kKnight]; bb; bb = removeFirstPiece(bb)) {
+      Square srce = getFirstPieceSquare(bb);
+      attacked |= kAttackTable<kKnight>[srce];
     }
-    for (Bitboard sbb = bitboards_[their][kBishop]; sbb; sbb = removeFirstPiece(sbb)) {
-      Square source = getFirstPieceSquare(sbb);
-      attacked |= SliderTable::getAttack<kBishop>(source, occupancy);
+    for (Bitboard bb = bitboards_[their][kBishop]; bb; bb = removeFirstPiece(bb)) {
+      Square srce = getFirstPieceSquare(bb);
+      attacked |= SliderTable::getAttack<kBishop>(srce, occupancy);
     }
-    for (Bitboard sbb = bitboards_[their][kRook]; sbb; sbb = removeFirstPiece(sbb)) {
-      Square source = getFirstPieceSquare(sbb);
-      attacked |= SliderTable::getAttack<kRook>(source, occupancy);
+    for (Bitboard bb = bitboards_[their][kRook]; bb; bb = removeFirstPiece(bb)) {
+      Square srce = getFirstPieceSquare(bb);
+      attacked |= SliderTable::getAttack<kRook>(srce, occupancy);
     }
-    for (Bitboard sbb = bitboards_[their][kQueen]; sbb; sbb = removeFirstPiece(sbb)) {
-      Square source = getFirstPieceSquare(sbb);
-      attacked |= SliderTable::getAttack<kQueen>(source, occupancy);
+    for (Bitboard bb = bitboards_[their][kQueen]; bb; bb = removeFirstPiece(bb)) {
+      Square srce = getFirstPieceSquare(bb);
+      attacked |= SliderTable::getAttack<kQueen>(srce, occupancy);
     }
 
     return attacked;
@@ -66,28 +66,28 @@ public:
   template <Color our>
   constexpr Bitboard getCheckers() const {
     constexpr Color their = getOtherColor(our);
-    Square kingSquare = getFirstPieceSquare(bitboards_[our][kKing]);
+    Square kingSq = getFirstPieceSquare(bitboards_[our][kKing]);
 
     // Ignore enemy king because king can't check king.
-    return (kAttackTable<kPawn>[our][kingSquare] & bitboards_[their][kPawn]) |
-           (kAttackTable<kKnight>[kingSquare] & bitboards_[their][kKnight]) |
-           (SliderTable::getAttack<kBishop>(kingSquare, bothOccupancy_) & (bitboards_[their][kBishop] | bitboards_[their][kQueen])) |
-           (SliderTable::getAttack<kRook>(kingSquare, bothOccupancy_) & (bitboards_[their][kRook] | bitboards_[their][kQueen]));
+    return (kAttackTable<kPawn>[our][kingSq] & bitboards_[their][kPawn]) |
+           (kAttackTable<kKnight>[kingSq] & bitboards_[their][kKnight]) |
+           (SliderTable::getAttack<kBishop>(kingSq, bothOccupancy_) & (bitboards_[their][kBishop] | bitboards_[their][kQueen])) |
+           (SliderTable::getAttack<kRook>(kingSq, bothOccupancy_) & (bitboards_[their][kRook] | bitboards_[their][kQueen]));
   }
 
   // Return a bitboard containing our pieces that are pinned.
   template <Color our>
   constexpr Bitboard getPinned() const {
     constexpr Color their = getOtherColor(our);
-    Square kingSquare = getFirstPieceSquare(bitboards_[our][kKing]);
+    Square kingSq = getFirstPieceSquare(bitboards_[our][kKing]);
 
     // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
     Bitboard pinned{};
-    Bitboard sliders = (SliderTable::getAttack<kBishop>(kingSquare, occupancy_[their]) & (bitboards_[their][kBishop] | bitboards_[their][kQueen])) |
-                            (SliderTable::getAttack<kRook>(kingSquare, occupancy_[their]) & (bitboards_[their][kRook] | bitboards_[their][kQueen]));
+    Bitboard sliders = (SliderTable::getAttack<kBishop>(kingSq, occupancy_[their]) & (bitboards_[their][kBishop] | bitboards_[their][kQueen])) |
+                            (SliderTable::getAttack<kRook>(kingSq, occupancy_[their]) & (bitboards_[their][kRook] | bitboards_[their][kQueen]));
     for (; sliders; sliders = removeFirstPiece(sliders)) {
       Square sliderSquare = getFirstPieceSquare(sliders);
-      Bitboard blockers = kSquareBetweenTable[kingSquare][sliderSquare] & occupancy_[our];
+      Bitboard blockers = kSquareBetweenMasks[kingSq][sliderSquare] & occupancy_[our];
       if (countPiece(blockers) == 1) {
         pinned |= blockers; // Does NOT handle enpassant edge case.
       }
@@ -95,19 +95,61 @@ public:
     return pinned;
   }
 
+  template <Color our, Piece piece>
+  constexpr void getLegalPieceMove(MoveList& moveList, Square kingSq, Bitboard blockOrCaptureMask, Bitboard pinned) {
+    Bitboard sbb = bitboards_[our][piece];
+    if constexpr (piece == kKnight) {
+      sbb &= ~pinned; // Pinned knight can never move.
+    }
+
+
+    for (; sbb; sbb = removeFirstPiece(sbb)) {
+      Square srce = getFirstPieceSquare(sbb);
+
+      // Don't attack our pieces, and must block or capture checker if there's any.
+      Bitboard dbb = ~occupancy_[our] & blockOrCaptureMask;
+
+      // Restirct the piece movement in the pinned direction.
+      if constexpr (piece == kBishop || piece == kRook || piece == kQueen) {
+        if (isSquareSet(pinned, srce)) {
+          dbb &= kLineOfSightMasks[kingSq][srce];
+        }
+      }
+
+      // Generate actual moves.
+      if constexpr (piece == kKnight) {
+        dbb &= kAttackTable<kKnight>[srce];
+      } else {
+        dbb &= SliderTable::getAttack<piece>(srce, bothOccupancy_);
+      }
+
+      for (; dbb; dbb = removeFirstPiece(dbb)) {
+        Square dest = getFirstPieceSquare(dbb);
+        moveList.push(Move(srce, dest));
+      }
+    }
+  }
+
   template <Color our>
   constexpr void getLegalMove(MoveList& moveList) const {
-    const Square kingSquare = getFirstPieceSquare(bitboards_[our][kKing]);
+    const Square kingSq = getFirstPieceSquare(bitboards_[our][kKing]);
     Bitboard attacked = getAttacked<our>();
-    Bitboard checkers = getCheckers<our>();
     Bitboard pinned = getPinned<our>();
+
+    // Our piece must block the check or capture the checker.
+    // Add the attack ray as the constraints.
+    Bitboard blockOrCaptureMask = ~Bitboard{};
+    for (Bitboard checkers = getCheckers<our>(); checkers; checkers = removeFirstPiece(checkers)) {
+      Square checkerSq = getFirstPieceSquare(checkers);
+      blockOrCaptureMask &= setSquare(kSquareBetweenMasks[kingSq][checkerSq], checkerSq);
+    }
 
     {
       // King Moves
-      for (Bitboard bb = kAttackTable<kKing>[kingSquare] & ~occupancy_[our] & ~attacked;
+      for (Bitboard bb = kAttackTable<kKing>[kingSq] & ~occupancy_[our] & ~attacked;
            bb;
            bb = removeFirstPiece(bb)) {
-        moveList.push(Move(kingSquare, getFirstPieceSquare(bb)));
+        moveList.push(Move(kingSq, getFirstPieceSquare(bb)));
       }
 
       // King Castling
@@ -132,6 +174,13 @@ public:
         }
       }
     }
+
+    // Knight, Bishop, Rook, Queen Moves
+    getLegalPieceMove<our, kKnight>(moveList, kingSq, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kBishop>(moveList, kingSq, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kRook>(moveList, kingSq, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kQueen>(moveList, kingSq, blockOrCaptureMask, pinned);
+
   }
 
 
