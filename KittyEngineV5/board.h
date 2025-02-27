@@ -18,7 +18,7 @@ public:
   int32_t halfmove_;
   int32_t fullmove_;
 
-  // Return our pawn attack bitboard.
+  // Return our pawns' attack bitboard.
   template <Color our>
   constexpr Bitboard getPawnAttack() const {
     if constexpr (our == kWhite) {
@@ -102,7 +102,6 @@ public:
       sbb &= ~pinned; // Pinned knight can never move.
     }
 
-
     for (; sbb; sbb = removeFirstPiece(sbb)) {
       Square srce = getFirstPieceSquare(sbb);
 
@@ -133,8 +132,7 @@ public:
   template <Color our>
   constexpr void getLegalMove(MoveList& moveList) const {
     const Square kingSq = getFirstPieceSquare(bitboards_[our][kKing]);
-    Bitboard attacked = getAttacked<our>();
-    Bitboard pinned = getPinned<our>();
+    const Bitboard pinned = getPinned<our>();
 
     // Our piece must block the check or capture the checker.
     // Add the attack ray as the constraints.
@@ -144,8 +142,52 @@ public:
       blockOrCaptureMask &= setSquare(kSquareBetweenMasks[kingSq][checkerSq], checkerSq);
     }
 
+    // Knight, Bishop, Rook, Queen Moves
+    getLegalPieceMove<our, kKnight>(moveList, kingSq, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kBishop>(moveList, kingSq, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kRook>(moveList, kingSq, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kQueen>(moveList, kingSq, blockOrCaptureMask, pinned);
+
+    
+    // Pawn Moves
     {
-      // King Moves
+      for (Bitboard sbb = bitboards_[our][kPawn]; sbb; sbb = removeFirstPiece(sbb)) {
+        const Square srce = getFirstPieceSquare(sbb);
+        const Bitboard srceBB = toBitboard(srce);
+
+        // Attack and Push.
+        const Bitboard attackBB = kAttackTable<kPawn>[our][srce] & occupancy_[their];
+        const Bitboard singlePushBB = (our == kWhite ? shiftUp(srceBB) : shiftDown(srceBB)) & ~bothOccupancy_;
+        const Bitboard doublePushBB = (our == kWhite ? shiftUp(singlePushBB) & kRank4Mask : shiftDown(singlePushBB) & kRank5Mask) & ~bothOccupancy_;
+        Bitboard dbb = (attackBB | singlePushBB | doublePushBB) & blockOrCaptureMask;
+
+        // Apply pins.
+        if (isSquareSet(pinned, srce)) {
+          dbb &= kLineOfSightMasks[kingSq][srce];
+        }
+
+        for (; dbb; dbb = removeFirstPiece(dbb)) {
+          Square dest = getFirstPieceSquare(dbb);
+          if (dest == kPromotionRank[our]) {
+            moveList.push(Move(srce, dest, kPawn, kKnight));
+            moveList.push(Move(srce, dest, kPawn, kBishop));
+            moveList.push(Move(srce, dest, kPawn, kRook));
+            moveList.push(Move(srce, dest, kPawn, kQueen));
+          } else {
+            moveList.(Move(srce, dest));
+          }
+        }
+      }
+
+      // Enpassant
+    }
+
+
+    // King Moves
+    {
+      const Bitboard attacked = getAttacked<our>();
+
+      // King Walk
       for (Bitboard bb = kAttackTable<kKing>[kingSq] & ~occupancy_[our] & ~attacked;
            bb;
            bb = removeFirstPiece(bb)) {
@@ -174,13 +216,6 @@ public:
         }
       }
     }
-
-    // Knight, Bishop, Rook, Queen Moves
-    getLegalPieceMove<our, kKnight>(moveList, kingSq, blockOrCaptureMask, pinned);
-    getLegalPieceMove<our, kBishop>(moveList, kingSq, blockOrCaptureMask, pinned);
-    getLegalPieceMove<our, kRook>(moveList, kingSq, blockOrCaptureMask, pinned);
-    getLegalPieceMove<our, kQueen>(moveList, kingSq, blockOrCaptureMask, pinned);
-
   }
 
 
@@ -330,30 +365,6 @@ public:
 
     // Castle
     {
-      // const Bitboard attacked = getAttacked<our>();
-      //// King Castling
-      //if ((castlePermission_ & kKingCastlePermission[our]) == kKingCastlePermission[our] &&  // Check castle permission
-      //    (bothOccupancy_ & kKingCastleOccupancy[our]) == 0 &&                                    // Check castle blocker
-      //    (attacked & kKingCastleSafety[our]) == 0) {                                             // Check castle attacked squares
-      //  if constexpr (our == kWhite) {
-      //    moveList.push(Move(E1, G1, kKing, 0, Move::kCastlingFlag));
-      //  } else {
-      //    moveList.push(Move(E8, G8, kKing, 0, Move::kCastlingFlag));
-      //  }
-      //}
-
-      //// Queen Castling
-      //if ((castlePermission_ & kQueenCastlePermission[our]) == kQueenCastlePermission[our] && // Check castle permission
-      //    (bothOccupancy_ & kQueenCastleOccupancy[our]) == 0 &&                                    // Check castle blocker
-      //    (attacked & kQueenCastleSafety[our]) == 0) {                                             // Check castle attacked squares
-      //  if constexpr (our == kWhite) {
-      //    moveList.push(Move(E1, C1, kKing, 0, Move::kCastlingFlag));
-      //  } else {
-      //    moveList.push(Move(E8, C8, kKing, 0, Move::kCastlingFlag));
-      //  }
-      //}
-
-
       constexpr Square kingSourceSquare = (our == kWhite ? E1 : E8);
       constexpr Square kingSideMiddleSquare = (our == kWhite ? F1 : F8);
       constexpr Square kingSideDestinationSquare = (our == kWhite ? G1 : G8);
