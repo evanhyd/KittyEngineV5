@@ -22,13 +22,6 @@ BoardState BoardState::fromFEN(const std::string& fen) {
     } // else Ignore rank separator.
   }
 
-  // Update occupancy.
-  for (Piece piece : {kPawn, kKnight, kBishop, kRook, kQueen, kKing}) {
-    boardState.occupancy_[kWhite] |= boardState.bitboards_[kWhite][piece];
-    boardState.occupancy_[kBlack] |= boardState.bitboards_[kBlack][piece];
-  }
-  boardState.bothOccupancy_ = boardState.occupancy_[kWhite] | boardState.occupancy_[kBlack];
-
   // Parse team.
   std::string team; ss >> team;
   if (team == "w") {
@@ -90,10 +83,5 @@ std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
                 squareToString(boardState.enpassant_),
                 boardState.halfmove_,
                 boardState.fullmove_);
-  return out;
-}
-
-std::ostream& operator<<(std::ostream& out, const Board& board) {
-  out << board.currentState_ << '\n';
   return out;
 }

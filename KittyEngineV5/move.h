@@ -13,9 +13,6 @@
 //     0000 0000 0000 0000 1111 0000 0000 0000    moved piece
 //     0000 0000 0000 1111 0000 0000 0000 0000    promoted piece
 //     0000 0000 0001 0000 0000 0000 0000 0000    capture flag
-//     0000 0000 0010 0000 0000 0000 0000 0000    enpassant flag
-//     0000 0000 0100 0000 0000 0000 0000 0000    double push flag
-//     0000 0000 1000 0000 0000 0000 0000 0000    castling flag
 // 
 /////////////////////////////////////////////////////////
 class Move {
@@ -23,13 +20,14 @@ class Move {
 
 public:
   static constexpr uint32_t kCaptureFlag = 0x100000ull;
-  static constexpr uint32_t kEnpassantFlag = 0x200000ull;
-  static constexpr uint32_t kDoublePushFlag = 0x400000ull;
-  static constexpr uint32_t kCastlingFlag = 0x800000ull;
 
   Move() = default;
 
-  explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece = 0, uint32_t flag = 0)
+  explicit constexpr Move(Square source, Square destination, Piece movedPiece)
+    : move_(static_cast<uint32_t>(source) | static_cast<uint32_t>(destination) << 6 | static_cast<uint32_t>(movedPiece) << 12) {
+  }
+
+  explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece, uint32_t flag)
     : move_(static_cast<uint32_t>(source) | static_cast<uint32_t>(destination) << 6 | static_cast<uint32_t>(movedPiece) << 12 | static_cast<uint32_t>(promotedPiece) << 16 | flag) {
   }
 
@@ -39,17 +37,13 @@ public:
   constexpr Piece getMovedPiece() const { return move_ >> 12 & 0b1111; }
   constexpr Piece getPromotedPiece() const { return move_ >> 16 & 0b1111; }
   constexpr bool isCaptured() const { return move_ & kCaptureFlag; }
-  constexpr bool isEnpassant() const { return move_ & kEnpassantFlag; }
-  constexpr bool isDoublePush() const { return move_ & kDoublePushFlag; }
-  constexpr bool isCastling() const { return move_ & kCastlingFlag; }
 
   std::string toString() const {
     Piece promotedPiece = getPromotedPiece();
-    return std::format("{}{}{} {}",
+    return std::format("{}{}{}",
                        squareToString(getSourceSquare()),
                        squareToString(getDestinationSquare()),
-                       (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, promotedPiece)),
-                       (isEnpassant() == 0 ? " " : "ENP"));
+                       (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, promotedPiece)));
   }
 };
 static_assert(std::is_trivial_v<Move>, "Move is not POD type, may affect performance");

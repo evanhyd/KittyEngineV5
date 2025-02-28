@@ -1,4 +1,3 @@
-#include "bitboard.h"
 #include "board.h"
 #include "perft_driver.h"
 #include <iostream>
@@ -16,28 +15,26 @@ void perft() {
 
   cout << "start perft\n";
 
-  PerftDriver board{ kInitialPositionFEN };
+  PerftDriver driver{};
   for (int i = 1; i <= 7; ++i) {
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
+    driver.perft<verbose>(BoardState::fromFEN(kInitialPositionFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kInitialPositionFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kInitialPositionFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kInitialPositionFEN), i);
   }
 
-  board.setFEN(kRookEndGameFEN);
   for (int i = 1; i <= 7; ++i) {
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
+    driver.perft<verbose>(BoardState::fromFEN(kRookEndGameFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kRookEndGameFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kRookEndGameFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kRookEndGameFEN), i);
   }
 
-  board.setFEN(kKiwipeteFEN);
   for (int i = 1; i <= 6; ++i) {
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
-    board.perft<verbose>(i);
+    driver.perft<verbose>(BoardState::fromFEN(kKiwipeteFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kKiwipeteFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kKiwipeteFEN), i);
+    driver.perft<verbose>(BoardState::fromFEN(kKiwipeteFEN), i);
   }
 }
 
