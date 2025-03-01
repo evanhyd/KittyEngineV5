@@ -28,14 +28,14 @@ class BoardState {
   // Return a bitboard containing squares attacked by their pieces.
   template <Color our>
   constexpr Bitboard getAttacked(Bitboard bothOccupancy) const {
+    constexpr Color their = getOtherColor(our);
+
     // If king blocks the attack ray, then it may incorrectly move backward illegally.
     // Consider the move: r...K... -> r....K..
     const Bitboard occupancy = bothOccupancy & ~bitboards_[our][kKing];
 
     // Calculate the attack masks.
-    constexpr Color their = getOtherColor(our);
     Bitboard attacked = getPawnAttack<their>();
-
     {
       attacked |= kAttackTable<kKing>[peekPiece(bitboards_[their][kKing])];
     }
@@ -56,9 +56,8 @@ class BoardState {
 
   // Return a bitboard containing their pieces that are giving checks.
   template <Color our>
-  constexpr Bitboard getCheckers(Bitboard bothOccupancy) const {
+  constexpr Bitboard getCheckers(Square kingSq, Bitboard bothOccupancy) const {
     constexpr Color their = getOtherColor(our);
-    const Square kingSq = peekPiece(bitboards_[our][kKing]);
 
     // Ignore enemy king because king can't check king.
     return (kAttackTable<kPawn>[our][kingSq] & bitboards_[their][kPawn]) |
@@ -69,9 +68,8 @@ class BoardState {
 
   // Return a bitboard containing our pieces that are pinned.
   template <Color our>
-  constexpr Bitboard getPinned(const std::array<Bitboard, kColorSize>& occupancy) const {
+  constexpr Bitboard getPinned(Square kingSq , const std::array<Bitboard, kColorSize>& occupancy) const {
     constexpr Color their = getOtherColor(our);
-    const Square kingSq = peekPiece(bitboards_[our][kKing]);
 
     // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
     Bitboard pinned{};
@@ -88,10 +86,9 @@ class BoardState {
   }
 
   template <Color our, Piece piece>
-  constexpr void getLegalPieceMove(MoveList& moveList, Bitboard blockOrCaptureMask, Bitboard pinned, 
-                                   const std::array<Bitboard, kColorSize>& occupancy, Bitboard bothOccupancy) const {
+  constexpr void getLegalPieceMove(MoveList& moveList, Square kingSq, const std::array<Bitboard, kColorSize>& occupancy, Bitboard bothOccupancy,
+                                   Bitboard blockOrCaptureMask, Bitboard pinned) const {
     constexpr Color their = getOtherColor(our);
-    const Square kingSq = peekPiece(bitboards_[our][kKing]);
 
     Bitboard sbb = bitboards_[our][piece];
     if constexpr (piece == kKnight) {
@@ -104,7 +101,7 @@ class BoardState {
       // Don't attack our pieces, and must block or capture checker if there's any.
       Bitboard dbb = ~occupancy[our] & blockOrCaptureMask;
 
-      // Restirct the piece movement in the pinned direction.
+      // Restrict the piece movement in the pinned direction.
       if constexpr (piece == kBishop || piece == kRook || piece == kQueen) {
         if (isSquareSet(pinned, srce)) {
           dbb &= kLineOfSightMasks[kingSq][srce];
@@ -134,27 +131,27 @@ public:
   template <Color our>
   constexpr void getLegalMove(MoveList& moveList) const {
     constexpr Color their = getOtherColor(our);
+    const Square kingSq = peekPiece(bitboards_[our][kKing]);
     const std::array<Bitboard, kColorSize> occupancy = {
       bitboards_[kWhite][kPawn] | bitboards_[kWhite][kKnight] | bitboards_[kWhite][kBishop] | bitboards_[kWhite][kRook] | bitboards_[kWhite][kQueen] | bitboards_[kWhite][kKing],
       bitboards_[kBlack][kPawn] | bitboards_[kBlack][kKnight] | bitboards_[kBlack][kBishop] | bitboards_[kBlack][kRook] | bitboards_[kBlack][kQueen] | bitboards_[kBlack][kKing],
     };
     const Bitboard bothOccupancy = occupancy[kWhite] | occupancy[kBlack];
-    const Square kingSq = peekPiece(bitboards_[our][kKing]);
 
     // Our piece must block the check or capture the checker.
     // Add the attack ray as the constraints.
     Bitboard blockOrCaptureMask = ~Bitboard{};
-    for (Bitboard checkers = getCheckers<our>(bothOccupancy); checkers; checkers = popPiece(checkers)) {
+    for (Bitboard checkers = getCheckers<our>(kingSq, bothOccupancy); checkers; checkers = popPiece(checkers)) {
       Square checkerSq = peekPiece(checkers);
       blockOrCaptureMask &= setSquare(kSquareBetweenMasks[kingSq][checkerSq], checkerSq);
     }
 
     // Knight, Bishop, Rook, Queen Moves
-    const Bitboard pinned = getPinned<our>(occupancy);
-    getLegalPieceMove<our, kKnight>(moveList, blockOrCaptureMask, pinned, occupancy, bothOccupancy);
-    getLegalPieceMove<our, kBishop>(moveList, blockOrCaptureMask, pinned, occupancy, bothOccupancy);
-    getLegalPieceMove<our, kRook>(moveList, blockOrCaptureMask, pinned, occupancy, bothOccupancy);
-    getLegalPieceMove<our, kQueen>(moveList, blockOrCaptureMask, pinned, occupancy, bothOccupancy);
+    const Bitboard pinned = getPinned<our>(kingSq, occupancy);
+    getLegalPieceMove<our, kKnight>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kBishop>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kRook>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kQueen>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
     
     // Pawn Moves
     {

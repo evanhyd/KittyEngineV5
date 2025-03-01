@@ -39,11 +39,11 @@ public:
   constexpr bool isCaptured() const { return move_ & kCaptureFlag; }
 
   std::string toString() const {
-    Piece promotedPiece = getPromotedPiece();
-    return std::format("{}{}{}",
-                       squareToString(getSourceSquare()),
-                       squareToString(getDestinationSquare()),
-                       (promotedPiece == 0 ? ' ' : pieceToAscii(kBlack, promotedPiece)));
+    std::string str = std::format("{}{}", squareToString(getSourceSquare()), squareToString(getDestinationSquare()));
+    if (Piece promotedPiece = getPromotedPiece(); promotedPiece) {
+      str += pieceToAscii(kBlack, promotedPiece);
+    }
+    return str;
   }
 };
 static_assert(std::is_trivial_v<Move>, "Move is not POD type, may affect performance");
