@@ -86,9 +86,10 @@ class BoardState {
   }
 
   template <Color our, Piece piece>
-  constexpr void getLegalPieceMove(MoveList& moveList, Square kingSq, const std::array<Bitboard, kColorSize>& occupancy, Bitboard bothOccupancy,
+  constexpr void getLegalPieceMove(MoveList& moveList, Square kingSq, std::array<Bitboard, kColorSize> occupancy,
                                    Bitboard blockOrCaptureMask, Bitboard pinned) const {
     constexpr Color their = getOtherColor(our);
+    const Bitboard bothOccupancy = occupancy[kWhite] | occupancy[kBlack];
 
     Bitboard sbb = bitboards_[our][piece];
     if constexpr (piece == kKnight) {
@@ -141,21 +142,25 @@ public:
     // Our piece must block the check or capture the checker.
     // Add the attack ray as the constraints.
     Bitboard blockOrCaptureMask = ~Bitboard{};
-    for (Bitboard checkers = getCheckers<our>(kingSq, bothOccupancy); checkers; checkers = popPiece(checkers)) {
+    for (Bitboard checkers = getCheckers<our>(kingSq, bothOccupancy); 
+         checkers;
+         checkers = popPiece(checkers)) {
       Square checkerSq = peekPiece(checkers);
       blockOrCaptureMask &= setSquare(kSquareBetweenMasks[kingSq][checkerSq], checkerSq);
     }
 
     // Knight, Bishop, Rook, Queen Moves
     const Bitboard pinned = getPinned<our>(kingSq, occupancy);
-    getLegalPieceMove<our, kKnight>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
-    getLegalPieceMove<our, kBishop>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
-    getLegalPieceMove<our, kRook>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
-    getLegalPieceMove<our, kQueen>(moveList, kingSq, occupancy, bothOccupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kKnight>(moveList, kingSq, occupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kBishop>(moveList, kingSq, occupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kRook>(moveList, kingSq, occupancy, blockOrCaptureMask, pinned);
+    getLegalPieceMove<our, kQueen>(moveList, kingSq, occupancy, blockOrCaptureMask, pinned);
     
     // Pawn Moves
     {
-      for (Bitboard sbb = bitboards_[our][kPawn]; sbb; sbb = popPiece(sbb)) {
+      for (Bitboard sbb = bitboards_[our][kPawn]; 
+           sbb;
+           sbb = popPiece(sbb)) {
         const Square srce = peekPiece(sbb);
         const Bitboard srceBB = toBitboard(srce);
 
