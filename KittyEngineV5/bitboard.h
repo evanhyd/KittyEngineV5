@@ -93,6 +93,10 @@ template <typename ...Squares>
 [[nodiscard]] inline constexpr Square rankFileToSquare(Square rank, Square file) { return rank * 8 + file; }
 [[nodiscard]] inline constexpr Square squareUp(Square square) { return square - 8; }
 [[nodiscard]] inline constexpr Square squareDown(Square square) { return square + 8; }
+[[nodiscard]] inline constexpr Square squareUpLeft(Square square) { return square - 9; }
+[[nodiscard]] inline constexpr Square squareUpRight(Square square) { return square - 7; }
+[[nodiscard]] inline constexpr Square squareDownLeft(Square square) { return square + 7; }
+[[nodiscard]] inline constexpr Square squareDownRight(Square square) { return square + 9; }
 
 [[nodiscard]] inline consteval Color getOtherColor(Color color) { return (color == kWhite ? kBlack : kWhite); }
 

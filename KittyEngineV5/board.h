@@ -152,25 +152,14 @@ public:
     
     // Pawn Moves
     {
-      for (Bitboard sbb = bitboards_[our][kPawn]; 
-           sbb;
-           sbb = popPiece(sbb)) {
-        const Square srce = peekPiece(sbb);
-        const Bitboard srceBB = toBitboard(srce);
+      // Left Attack
+      for (Bitboard dbb = (our == kWhite ? shiftUpLeft(bitboards_[our][kPawn]) : shiftDownLeft(bitboards_[our][kPawn])) & occupancy[their] & blockOrCaptureMask;
+           dbb;
+           dbb = popPiece(dbb)) {
 
-        // Attack and Push.
-        const Bitboard attackBB = getAttack<kPawn, our>(srce) & occupancy[their];
-        const Bitboard singlePushBB = (our == kWhite ? shiftUp(srceBB) : shiftDown(srceBB)) & ~bothOccupancy;
-        const Bitboard doublePushBB = (our == kWhite ? shiftUp(singlePushBB) & kRank4Mask : shiftDown(singlePushBB) & kRank5Mask) & ~bothOccupancy;
-        Bitboard dbb = (attackBB | singlePushBB | doublePushBB) & blockOrCaptureMask;
-
-        // Apply pins.
-        if (isSquareSet(pinned, srce)) {
-          dbb &= kLineOfSightMasks[kingSq][srce];
-        }
-
-        for (; dbb; dbb = popPiece(dbb)) {
-          Square dest = peekPiece(dbb);
+        const Square dest = peekPiece(dbb);
+        const Square srce = (our == kWhite ? squareDownRight(dest) : squareUpRight(dest));
+        if (!isSquareSet(pinned, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
             moveList.push(Move(srce, dest, kPawn, kKnight));
             moveList.push(Move(srce, dest, kPawn, kBishop));
@@ -179,6 +168,56 @@ public:
           } else {
             moveList.push(Move(srce, dest, kPawn));
           }
+        }
+      }
+
+      // Right Attack
+      for (Bitboard dbb = (our == kWhite ? shiftUpRight(bitboards_[our][kPawn]) : shiftDownRight(bitboards_[our][kPawn])) & occupancy[their] & blockOrCaptureMask;
+           dbb;
+           dbb = popPiece(dbb)) {
+
+        const Square dest = peekPiece(dbb);
+        const Square srce = (our == kWhite ? squareDownLeft(dest) : squareUpLeft(dest));
+        if (!isSquareSet(pinned, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
+          if (getSquareRank(dest) == kPromotionRank[our]) {
+            moveList.push(Move(srce, dest, kPawn, kKnight));
+            moveList.push(Move(srce, dest, kPawn, kBishop));
+            moveList.push(Move(srce, dest, kPawn, kRook));
+            moveList.push(Move(srce, dest, kPawn, kQueen));
+          } else {
+            moveList.push(Move(srce, dest, kPawn));
+          }
+        }
+      }
+
+      // Push Forward
+      const Bitboard singlePushBB = (our == kWhite ? shiftUp(bitboards_[our][kPawn]) : shiftDown(bitboards_[our][kPawn])) & ~bothOccupancy;
+      for (Bitboard dbb = singlePushBB & blockOrCaptureMask;
+           dbb;
+           dbb = popPiece(dbb)) {
+        const Square dest = peekPiece(dbb);
+        const Square srce = (our == kWhite ? squareDown(dest) : squareUp(dest));
+        if (!isSquareSet(pinned, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
+          if (getSquareRank(dest) == kPromotionRank[our]) {
+            moveList.push(Move(srce, dest, kPawn, kKnight));
+            moveList.push(Move(srce, dest, kPawn, kBishop));
+            moveList.push(Move(srce, dest, kPawn, kRook));
+            moveList.push(Move(srce, dest, kPawn, kQueen));
+          } else {
+            moveList.push(Move(srce, dest, kPawn));
+          }
+        }
+      }
+
+      // Push Twice
+      const Bitboard doublePushBB = (our == kWhite ? (shiftUp(singlePushBB) & kRank4Mask) : (shiftDown(singlePushBB) & kRank5Mask)) & ~bothOccupancy;
+      for (Bitboard dbb = doublePushBB & blockOrCaptureMask;
+           dbb;
+           dbb = popPiece(dbb)) {
+        const Square dest = peekPiece(dbb);
+        const Square srce = (our == kWhite ? squareDown(squareDown(dest)) : squareUp(squareUp(dest)));
+        if (!isSquareSet(pinned, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
+            moveList.push(Move(srce, dest, kPawn));
         }
       }
 

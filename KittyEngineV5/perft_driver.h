@@ -73,6 +73,9 @@ private:
     if constexpr (depth <= 1) {
       if constexpr (config.isBulkCount) {
         result.nodes += moveList.size();
+        /*for (Move move : moveList) {
+          std::cout << move.toString() << '\n';
+        }*/
       } else {
         for (Move move : moveList) {
           // May be pick up other details.
