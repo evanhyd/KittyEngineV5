@@ -11,32 +11,33 @@
 //     0000 0000 0000 0000 0000 0000 0011 1111    source square
 //     0000 0000 0000 0000 0000 1111 1100 0000    destination square
 //     0000 0000 0000 0000 1111 0000 0000 0000    moved piece
-//     0000 0000 0000 1111 0000 0000 0000 0000    promoted piece
-//     0000 0000 0001 0000 0000 0000 0000 0000    capture flag
+//     0000 1111 1111 1111 0000 0000 0000 0000    flag
+//     1111 0000 0000 0000 0000 0000 0000 0000    promoted piece
 // 
 /////////////////////////////////////////////////////////
 class Move {
   uint32_t move_;
 
 public:
-  static constexpr uint32_t kCaptureFlag = 0x100000ull;
-
   Move() = default;
 
+  explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece)
+    : move_(static_cast<uint32_t>(source) |
+            static_cast<uint32_t>(destination) << 6 |
+            static_cast<uint32_t>(movedPiece) << 12 |
+            static_cast<uint32_t>(promotedPiece) << 28) {
+  }
+
   explicit constexpr Move(Square source, Square destination, Piece movedPiece)
-    : move_(static_cast<uint32_t>(source) | static_cast<uint32_t>(destination) << 6 | static_cast<uint32_t>(movedPiece) << 12) {
+    : move_(static_cast<uint32_t>(source) |
+            static_cast<uint32_t>(destination) << 6 |
+            static_cast<uint32_t>(movedPiece) << 12) {
   }
 
-  explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece, uint32_t flag)
-    : move_(static_cast<uint32_t>(source) | static_cast<uint32_t>(destination) << 6 | static_cast<uint32_t>(movedPiece) << 12 | static_cast<uint32_t>(promotedPiece) << 16 | flag) {
-  }
-
-  bool operator<(const Move& move) const { return move_ < move.move_; }
   constexpr Square getSourceSquare() const { return move_ & 0b111111; }
   constexpr Square getDestinationSquare() const { return move_ >> 6 & 0b111111; }
   constexpr Piece getMovedPiece() const { return move_ >> 12 & 0b1111; }
-  constexpr Piece getPromotedPiece() const { return move_ >> 16 & 0b1111; }
-  constexpr bool isCaptured() const { return move_ & kCaptureFlag; }
+  constexpr Piece getPromotedPiece() const { return move_ >> 28 & 0b1111; }
 
   std::string toString() const {
     std::string str = std::format("{}{}", squareToString(getSourceSquare()), squareToString(getDestinationSquare()));

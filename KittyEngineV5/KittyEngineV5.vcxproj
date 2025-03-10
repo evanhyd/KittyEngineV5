@@ -163,7 +163,6 @@
     <ClCompile Include="move.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="attack.h" />
     <ClInclude Include="bitboard.h" />
     <ClInclude Include="board.h" />
     <ClInclude Include="perft_driver.h" />
