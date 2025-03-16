@@ -19,13 +19,21 @@ class Move {
   uint32_t move_;
 
 public:
+  static constexpr uint32_t kEnpassantFlag = 1 << 16;
+  static constexpr uint32_t kDoublePushFlag = 1 << 17;
+  static constexpr uint32_t kKingSideCastleFlag = 1 << 18;
+  static constexpr uint32_t kQueenSideCastleFlag = 1 << 19;
+
   Move() = default;
 
+  explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece, uint32_t flags)
+    : Move(source, destination, movedPiece, promotedPiece) {
+    move_ |= flags;
+  }
+
   explicit constexpr Move(Square source, Square destination, Piece movedPiece, Piece promotedPiece)
-    : move_(static_cast<uint32_t>(source) |
-            static_cast<uint32_t>(destination) << 6 |
-            static_cast<uint32_t>(movedPiece) << 12 |
-            static_cast<uint32_t>(promotedPiece) << 28) {
+    : Move(source, destination, movedPiece) {
+    move_ |= static_cast<uint32_t>(promotedPiece) << 28;
   }
 
   explicit constexpr Move(Square source, Square destination, Piece movedPiece)
@@ -38,6 +46,10 @@ public:
   constexpr Square getDestinationSquare() const { return move_ >> 6 & 0b111111; }
   constexpr Piece getMovedPiece() const { return move_ >> 12 & 0b1111; }
   constexpr Piece getPromotedPiece() const { return move_ >> 28 & 0b1111; }
+  constexpr bool isEnpassant() const { return move_ & kEnpassantFlag; }
+  constexpr bool isDoublePush() const { return move_ & kDoublePushFlag; }
+  constexpr bool isKingSideCastle() const { return move_ & kKingSideCastleFlag; }
+  constexpr bool isQueenSideCastle() const { return move_ & kQueenSideCastleFlag; }
 
   std::string toString() const {
     std::string str = std::format("{}{}", squareToString(getSourceSquare()), squareToString(getDestinationSquare()));
