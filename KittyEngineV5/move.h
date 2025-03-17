@@ -60,27 +60,3 @@ public:
   }
 };
 static_assert(std::is_trivial_v<Move>, "Move is not POD type, may affect performance");
-
-class MoveList {
-  std::array<Move, 256> moves_;
-  size_t size_;
-
-public:
-  void push(Move move) {
-    moves_[size_] = move;
-    ++size_;
-  }
-
-  constexpr Move operator[](size_t i) const { return moves_[i]; }
-  constexpr size_t size() const { return size_; }
-  constexpr auto begin() const { return moves_.begin(); }
-  constexpr auto end() const { return moves_.begin() + size_; }
-
-  inline friend std::ostream& operator<<(std::ostream& out, const MoveList& moveList) {
-    out << std::format("Total Moves: {}\n", moveList.size());
-    for (Move move : moveList) {
-      out << std::format("{}\n", move.toString());
-    }
-    return out;
-  }
-};
