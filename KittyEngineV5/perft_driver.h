@@ -22,20 +22,21 @@ namespace perft {
     inline Result result{};
   }
 
-  template <Color our, size_t depth>
+  template <size_t depth>
   class PerftDriver {
   public:
-    static constexpr void acceptMove(BoardState state, Move move) {
+    template <MoveType moveType>
+    static constexpr void acceptMove(BoardState state, Move<moveType> move) {
       if constexpr (depth <= 1) {
         ++internal::result.nodes;
       } else {
+        constexpr Color our = moveType.color;
         constexpr Color their = getOtherColor(our);
-        const Square srce = move.getSourceSquare();
-        const Square dest = move.getDestinationSquare();
-        const Piece movedPiece = move.getMovedPiece();
+        const Square srce = move.srce;
+        const Square dest = move.dest;
 
         // Move the square.
-        state.bitboards_[our][movedPiece] = moveSquare(state.bitboards_[our][movedPiece], srce, dest);
+        state.bitboards_[our][moveType.movedPiece] = moveSquare(state.bitboards_[our][moveType.movedPiece], srce, dest);
         state.bitboards_[their][kPawn] = unsetSquare(state.bitboards_[their][kPawn], dest);
         state.bitboards_[their][kKnight] = unsetSquare(state.bitboards_[their][kKnight], dest);
         state.bitboards_[their][kBishop] = unsetSquare(state.bitboards_[their][kBishop], dest);
@@ -59,34 +60,34 @@ namespace perft {
           ++state.fullmove_;
         }
 
-        if (movedPiece == kPawn) {
+        if constexpr (moveType.movedPiece == kPawn) {
           state.halfmove_ = 0;
 
-          if (move.isEnpassant()) {
+          if constexpr (moveType.isEnpassant) {
             if constexpr (their == kWhite) {
               state.bitboards_[their][kPawn] = unsetSquare(state.bitboards_[their][kPawn], squareUp(enpassantSq));
             } else {
               state.bitboards_[their][kPawn] = unsetSquare(state.bitboards_[their][kPawn], squareDown(enpassantSq));
             }
-          } else if (move.isDoublePush()) {
+          } else if constexpr (moveType.isDoublePush) {
             if constexpr (our == kWhite) {
               state.enpassant_ = squareUp(srce);
             } else {
               state.enpassant_ = squareDown(srce);
             }
-          } else if (Piece promotedPiece = move.getPromotedPiece(); promotedPiece) {
+          } else if constexpr (moveType.promotionPiece) {
             state.bitboards_[our][kPawn] = unsetSquare(state.bitboards_[our][kPawn], dest);
-            state.bitboards_[our][promotedPiece] = setSquare(state.bitboards_[our][promotedPiece], dest);
+            state.bitboards_[our][moveType.promotionPiece] = setSquare(state.bitboards_[our][moveType.promotionPiece], dest);
           }
 
-        } else if (movedPiece == kKing) {
-          if (move.isKingSideCastle()) {
+        } else if constexpr (moveType.movedPiece == kKing) {
+          if constexpr (moveType.isKingSideCastle) {
             if constexpr (our == kWhite) {
               state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], H1, F1);
             } else {
               state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], H8, F8);
             }
-          } else if (move.isQueenSideCastle()) {
+          } else if constexpr (moveType.isQueenSideCastle) {
             if constexpr (our == kWhite) {
               state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], A1, D1);
             } else {
@@ -96,7 +97,7 @@ namespace perft {
         }
 
         state.color_ = getOtherColor(our);
-        state.enumerateMoves<their, PerftDriver<their, depth - 1>>();
+        state.enumerateMoves<their, PerftDriver<depth-1>>();
       }
     }
 
@@ -111,21 +112,21 @@ namespace perft {
 
     auto start = high_resolution_clock::now();
     switch (depth) {
-    case 1: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 1>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 1>>(); break;
-    case 2: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 2>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 2>>(); break;
-    case 3: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 3>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 3>>(); break;
-    case 4: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 4>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 4>>(); break;
-    case 5: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 5>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 5>>(); break;
-    case 6: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 6>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 6>>(); break;
-    case 7: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 7>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 7>>(); break;
-    case 8: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 8>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 8>>(); break;
-    case 9: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 9>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 9>>(); break;
-    case 10: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 10>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 10>>(); break;
-    case 11: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 11>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 11>>(); break;
-    case 12: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 12>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 12>>(); break;
-    case 13: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 13>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 13>>(); break;
-    case 14: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 14>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 14>>(); break;
-    case 15: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<kWhite, 15>>() : state.enumerateMoves<kBlack, PerftDriver<kBlack, 15>>(); break;
+    case 1: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<1>>() : state.enumerateMoves<kBlack, PerftDriver<1>>(); break;
+    case 2: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<2>>() : state.enumerateMoves<kBlack, PerftDriver<2>>(); break;
+    case 3: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<3>>() : state.enumerateMoves<kBlack, PerftDriver<3>>(); break;
+    case 4: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<4>>() : state.enumerateMoves<kBlack, PerftDriver<4>>(); break;
+    case 5: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<5>>() : state.enumerateMoves<kBlack, PerftDriver<5>>(); break;
+    case 6: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<6>>() : state.enumerateMoves<kBlack, PerftDriver<6>>(); break;
+    case 7: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<7>>() : state.enumerateMoves<kBlack, PerftDriver<7>>(); break;
+    case 8: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<8>>() : state.enumerateMoves<kBlack, PerftDriver<8>>(); break;
+    case 9: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<9>>() : state.enumerateMoves<kBlack, PerftDriver<9>>(); break;
+    case 10: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<10>>() : state.enumerateMoves<kBlack, PerftDriver<10>>(); break;
+    case 11: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<11>>() : state.enumerateMoves<kBlack, PerftDriver<11>>(); break;
+    case 12: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<12>>() : state.enumerateMoves<kBlack, PerftDriver<12>>(); break;
+    case 13: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<13>>() : state.enumerateMoves<kBlack, PerftDriver<13>>(); break;
+    case 14: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<14>>() : state.enumerateMoves<kBlack, PerftDriver<14>>(); break;
+    case 15: state.getColor() == kWhite ? state.enumerateMoves<kWhite, PerftDriver<15>>() : state.enumerateMoves<kBlack, PerftDriver<15>>(); break;
     default: break;
     }
     auto end = high_resolution_clock::now();

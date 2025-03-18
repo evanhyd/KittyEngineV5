@@ -110,27 +110,27 @@ public:
     constexpr Color their = getOtherColor(our);
 
     // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
-    Bitboard pinned{};
+    Bitboard pinnedMask{};
     Bitboard sliders = (getAttack<kBishop>(kingSq, occupancy[their]) & (bitboards_[their][kBishop] | bitboards_[their][kQueen])) |
                        (getAttack<kRook>(kingSq, occupancy[their]) & (bitboards_[their][kRook] | bitboards_[their][kQueen]));
     for (; sliders; sliders = popPiece(sliders)) {
       Square sliderSquare = peekPiece(sliders);
       Bitboard blockers = kSquareBetweenMasks[kingSq][sliderSquare] & occupancy[our];
       if (popPiece(blockers) == 0) {
-        pinned |= blockers; // Does NOT handle enpassant edge case.
+        pinnedMask |= blockers; // Does NOT handle enpassant edge case.
       }
     }
-    return pinned;
+    return pinnedMask;
   }
 
   template <Color our, Piece piece, typename Receiver>
   constexpr void getPieceMove(const Square kingSq, const std::array<Bitboard, kColorSize> occupancy,
-                                   const Bitboard checkedMask, const Bitboard pinned) const {
+                                   const Bitboard checkedMask, const Bitboard pinnedMask) const {
     const Bitboard bothOccupancy = occupancy[kWhite] | occupancy[kBlack];
 
     Bitboard sbb = bitboards_[our][piece];
     if constexpr (piece == kKnight) {
-      sbb &= ~pinned; // Pinned knight can never move.
+      sbb &= ~pinnedMask; // Pinned knight can never move.
     }
 
     for (; sbb; sbb = popPiece(sbb)) {
@@ -141,7 +141,7 @@ public:
 
       // Restrict the piece movement in the pinned direction.
       if constexpr (piece == kBishop || piece == kRook || piece == kQueen) {
-        if (isSquareSet(pinned, srce)) {
+        if (isSquareSet(pinnedMask, srce)) {
           dbb &= kLineOfSightMasks[kingSq][srce];
         }
       }
@@ -155,7 +155,7 @@ public:
 
       for (; dbb; dbb = popPiece(dbb)) {
         Square dest = peekPiece(dbb);
-        Receiver::acceptMove(*this, Move(srce, dest, piece));
+        Receiver::acceptMove(*this, Move<MoveType{our, piece, 0, false, false, false, false}> (srce, dest));
       }
     }
   }
@@ -194,12 +194,12 @@ public:
         const Square srce = (our == kWhite ? squareDownRight(dest) : squareUpRight(dest));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kKnight));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kBishop));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kRook));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kQueen));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kKnight, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kBishop, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kRook, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kQueen, false, false, false, false}>(srce, dest));
           } else {
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, false, false, false}>(srce, dest));
           }
         }
       }
@@ -213,12 +213,12 @@ public:
         const Square srce = (our == kWhite ? squareDownLeft(dest) : squareUpLeft(dest));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kKnight));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kBishop));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kRook));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kQueen));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kKnight, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kBishop, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kRook, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kQueen, false, false, false, false}>(srce, dest));
           } else {
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, false, false, false}>(srce, dest));
           }
         }
       }
@@ -232,12 +232,12 @@ public:
         const Square srce = (our == kWhite ? squareDown(dest) : squareUp(dest));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kKnight));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kBishop));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kRook));
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn, kQueen));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kKnight, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kBishop, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kRook, false, false, false, false}>(srce, dest));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kQueen, false, false, false, false}>(srce, dest));
           } else {
-            Receiver::acceptMove(*this, Move(srce, dest, kPawn));
+            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, false, false, false}>(srce, dest));
           }
         }
       }
@@ -250,7 +250,7 @@ public:
         const Square dest = peekPiece(dbb);
         const Square srce = (our == kWhite ? squareDown(squareDown(dest)) : squareUp(squareUp(dest)));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
-          Receiver::acceptMove(*this, Move(srce, dest, kPawn, 0, Move::kDoublePushFlag));
+          Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, true, false, false}>(srce, dest));
         }
       }
 
@@ -268,7 +268,7 @@ public:
             Bitboard discoverAttack = getAttack<kBishop>(kingSq, pseudoOccupancy) & (bitboards_[their][kBishop] | bitboards_[their][kQueen]) |
               getAttack<kRook>(kingSq, pseudoOccupancy) & (bitboards_[their][kRook] | bitboards_[their][kQueen]);
             if (!discoverAttack) {
-              Receiver::acceptMove(*this, Move(srce, enpassant_, kPawn, 0, Move::kEnpassantFlag));
+              Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, true, false, false, false}>(srce, enpassant_));
             }
           }
         }
@@ -283,7 +283,7 @@ public:
           bb;
           bb = popPiece(bb)) {
       Square dest = peekPiece(bb);
-      Receiver::acceptMove(*this, Move(kingSq, dest, kKing));
+      Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, false, false}>(kingSq, dest));
     }
 
     // King Castling
@@ -291,9 +291,9 @@ public:
         (bothOccupancy & kKingCastleOccupancy[our]) == 0 &&                                // Check castle blocker
         (attackedMask & kKingCastleSafety[our]) == 0) {                                        // Check castle attacked squares
       if constexpr (our == kWhite) {
-        Receiver::acceptMove(*this, Move(E1, G1, kKing, 0, Move::kKingSideCastleFlag));
+        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, true, false}>(E1, G1));
       } else {
-        Receiver::acceptMove(*this, Move(E8, G8, kKing, 0, Move::kKingSideCastleFlag));
+        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, true, false}>(E8, G8));
       }
     }
 
@@ -302,9 +302,9 @@ public:
         (bothOccupancy & kQueenCastleOccupancy[our]) == 0 &&                                // Check castle blocker
         (attackedMask & kQueenCastleSafety[our]) == 0) {                                        // Check castle attacked squares
       if constexpr (our == kWhite) {
-        Receiver::acceptMove(*this, Move(E1, C1, kKing, 0, Move::kQueenSideCastleFlag));
+        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, false, true}>(E1, C1));
       } else {
-        Receiver::acceptMove(*this, Move(E8, C8, kKing, 0, Move::kQueenSideCastleFlag));
+        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, false, true}>(E8, C8));
       }
     }
   }
