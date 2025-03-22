@@ -1,4 +1,3 @@
-#include "../KittyEngineV5/board.cpp"
 #include "../KittyEngineV5/perft_driver.h"
 #include <array>
 #include <gtest/gtest.h>
@@ -18,7 +17,7 @@ TEST(TestPerft, TestInitialFEN) {
   BoardState state = BoardState::fromFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft< perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft< perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
     /*EXPECT_EQ(result.captures, results[depth].captures);
     EXPECT_EQ(result.enpassants, results[depth].enpassants);
@@ -39,7 +38,7 @@ TEST(TestPerft, TestKiwipeteFEN) {
   BoardState state = BoardState::fromFEN("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
     /*EXPECT_EQ(result.captures, results[depth].captures);
     EXPECT_EQ(result.enpassants, results[depth].enpassants);
@@ -62,7 +61,7 @@ TEST(TestPerft, TestRookEndGameFEN) {
   BoardState state = BoardState::fromFEN("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - ");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
     /*EXPECT_EQ(result.captures, results[depth].captures);
     EXPECT_EQ(result.enpassants, results[depth].enpassants);
@@ -84,7 +83,7 @@ TEST(TestPerft, TestMirrorViewFEN) {
   BoardState state = BoardState::fromFEN("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
     /*EXPECT_EQ(result.captures, results[depth].captures);
     EXPECT_EQ(result.enpassants, results[depth].enpassants);
@@ -106,7 +105,7 @@ TEST(TestPerft, TestTalkChessBugFEN) {
   BoardState state = BoardState::fromFEN("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{true, true, false }, true>(state, depth); // Turn off verbose.
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth); // Turn off verbose.
     EXPECT_EQ(result.nodes, results[depth].nodes);
   }
 }
@@ -124,7 +123,7 @@ TEST(TestPerft, TestStevenAltFEN) {
   BoardState state = BoardState::fromFEN("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
   }
 }
@@ -143,7 +142,7 @@ TEST(TestPerft, TestHorizontalEnpassantPin) {
   BoardState state = BoardState::fromFEN("7k/3p1p2/8/r1P1K1Pr/8/8/8/8 b - - 0 1");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
   }
 }
@@ -162,7 +161,7 @@ TEST(TestPerft, TestDiagonalEnpassantPin) {
   BoardState state = BoardState::fromFEN("7k/4p2q/2q5/3P1P2/4K3/8/8/8 b - - 0 1");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{ false }, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
   }
 }
@@ -181,7 +180,7 @@ TEST(TestPerft, TestHorizontalCanNotEnpassant) {
   BoardState state = BoardState::fromFEN("7k/r2pK3/8/2P5/8/8/8/8 b - - 0 1");
 
   for (uint32_t depth = 1; depth < results.size(); ++depth) {
-    perft::Result result = perft::runPerft<perft::Config{ true, true, false }, true>(state, depth);
+    perft::Result result = perft::runPerft<perft::Config{false}, true>(state, depth);
     EXPECT_EQ(result.nodes, results[depth].nodes);
   }
 }

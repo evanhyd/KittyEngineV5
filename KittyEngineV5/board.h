@@ -1,45 +1,64 @@
 #pragma once
 #include "move.h"
 #include <array>
+#include <sstream>
 
 ///////////////////////////////////////////////////////
 //                 CHESS BOARD STATUS
 ///////////////////////////////////////////////////////
-//struct BoardStatus {
-//  Color color;
-//  bool canEnpassant;
-//  std::array<bool, kColorSize> kingCastle;
-//  std::array<bool, kColorSize> queenCastle;
-//
-//  constexpr BoardStatus enpassantMove() const {
-//    BoardStatus status{};
-//    status.color = !color;
-//    status.canEnpassant = true;
-//    status.kingCastle = kingCastle;
-//    status.queenCastle = queenCastle;
-//    return status;
-//  }
-//
-//  constexpr BoardStatus kingCastleMove() const {
-//    BoardStatus status{};
-//    status.color = !color;
-//    status.canEnpassant = false;
-//    status.kingCastle[color] = false;
-//    status.kingCastle[!color] = kingCastle[!color];
-//    status.queenCastle = queenCastle;
-//    return status;
-//  }
-//
-//  constexpr BoardStatus queenCastleMove() const {
-//    BoardStatus status{};
-//    status.color = !color;
-//    status.canEnpassant = false;
-//    status.kingCastle = kingCastle;
-//    status.queenCastle[color] = false;
-//    status.queenCastle[!color] = queenCastle[!color];
-//    return status;
-//  }
-//};
+struct BoardStatus {
+  Color color;
+  bool canEnpassant;
+  std::array<bool, kColorSize> kingCastle;
+  std::array<bool, kColorSize> queenCastle;
+
+  constexpr BoardStatus normalMove() const {
+    BoardStatus status{};
+    status.color = getOtherColor(color);
+    status.canEnpassant = false;
+    status.kingCastle = kingCastle;
+    status.queenCastle = queenCastle;
+    return status;
+  }
+
+  constexpr BoardStatus normalKingMove() const {
+    BoardStatus status{};
+    status.color = getOtherColor(color);
+    status.canEnpassant = false;
+    status.kingCastle = { false, false };
+    status.queenCastle = { false, false };
+    return status;
+  }
+
+  constexpr BoardStatus doublePushMove() const {
+    BoardStatus status{};
+    status.color = getOtherColor(color);
+    status.canEnpassant = true;
+    status.kingCastle = kingCastle;
+    status.queenCastle = queenCastle;
+    return status;
+  }
+
+  constexpr BoardStatus kingCastleMove() const {
+    BoardStatus status{};
+    status.color = getOtherColor(color);
+    status.canEnpassant = false;
+    status.kingCastle[color] = false;
+    status.kingCastle[getOtherColor(color)] = kingCastle[getOtherColor(color)];
+    status.queenCastle = queenCastle;
+    return status;
+  }
+
+  constexpr BoardStatus queenCastleMove() const {
+    BoardStatus status{};
+    status.color = getOtherColor(color);
+    status.canEnpassant = false;
+    status.kingCastle = kingCastle;
+    status.queenCastle[color] = false;
+    status.queenCastle[getOtherColor(color)] = queenCastle[getOtherColor(color)];
+    return status;
+  }
+};
 
 
 ///////////////////////////////////////////////////////
@@ -49,14 +68,15 @@ class BoardState {
 public:
   std::array<std::array<Bitboard, kPieceSize>, kColorSize> bitboards_;
   Bitboard castlePermission_;
+  Color color_;
   Square enpassant_;
   uint32_t halfmove_;
   uint32_t fullmove_;
-  Color color_;
 
   // Return a bitboard containing squares attacked by their pieces.
-  template <Color our>
+  template <BoardStatus boardStatus>
   constexpr Bitboard getAttackedMask(Bitboard bothOccupancy) const {
+    constexpr Color our = boardStatus.color;
     constexpr Color their = getOtherColor(our);
 
     // If king blocks the attack ray, then it may incorrectly move backward illegally.
@@ -87,8 +107,9 @@ public:
 
   // Return a bitboard containing the intersection of all attacks.
   // Must block the attack or capture the attackers.
-  template <Color our>
+  template <BoardStatus boardStatus>
   constexpr Bitboard getCheckedMask(Square kingSq, Bitboard bothOccupancy) const {
+    constexpr Color our = boardStatus.color;
     constexpr Color their = getOtherColor(our);
 
     Bitboard checkedMask = ~Bitboard{};
@@ -105,8 +126,9 @@ public:
   }
 
   // Return a bitboard containing our pieces that are pinned.
-  template <Color our>
+  template <BoardStatus boardStatus>
   constexpr Bitboard getPinnedMask(Square kingSq , const std::array<Bitboard, kColorSize> occupancy) const {
+    constexpr Color our = boardStatus.color;
     constexpr Color their = getOtherColor(our);
 
     // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
@@ -123,9 +145,10 @@ public:
     return pinnedMask;
   }
 
-  template <Color our, Piece piece, typename Receiver>
+  template <BoardStatus boardStatus, Piece piece, typename Receiver>
   constexpr void getPieceMove(const Square kingSq, const std::array<Bitboard, kColorSize> occupancy,
                                    const Bitboard checkedMask, const Bitboard pinnedMask) const {
+    constexpr Color our = boardStatus.color;
     const Bitboard bothOccupancy = occupancy[kWhite] | occupancy[kBlack];
 
     Bitboard sbb = bitboards_[our][piece];
@@ -155,18 +178,15 @@ public:
 
       for (; dbb; dbb = popPiece(dbb)) {
         Square dest = peekPiece(dbb);
-        Receiver::acceptMove(*this, Move<MoveType{our, piece, 0, false, false, false, false}> (srce, dest));
+        Receiver::template acceptMove<boardStatus, MoveType{piece, 0, false, false, false, false}>(*this, Move(srce, dest));
       }
     }
   }
 
 public:
-  constexpr Color getColor() const {
-    return color_;
-  }
-
-  template <Color our, typename Receiver>
+  template <BoardStatus boardStatus, typename Receiver>
   constexpr void enumerateMoves() const {
+    constexpr Color our = boardStatus.color;
     constexpr Color their = getOtherColor(our);
     const Square kingSq = peekPiece(bitboards_[our][kKing]);
     const std::array<Bitboard, kColorSize> occupancy = {
@@ -174,14 +194,14 @@ public:
       bitboards_[kBlack][kPawn] | bitboards_[kBlack][kKnight] | bitboards_[kBlack][kBishop] | bitboards_[kBlack][kRook] | bitboards_[kBlack][kQueen] | bitboards_[kBlack][kKing],
     };
     const Bitboard bothOccupancy = occupancy[kWhite] | occupancy[kBlack];
-    const Bitboard checkedMask = getCheckedMask<our>(kingSq, bothOccupancy);
-    const Bitboard pinnedMask = getPinnedMask<our>(kingSq, occupancy);
+    const Bitboard checkedMask = getCheckedMask<boardStatus>(kingSq, bothOccupancy);
+    const Bitboard pinnedMask = getPinnedMask<boardStatus>(kingSq, occupancy);
 
     // Knight, Bishop, Rook, Queen Moves
-    getPieceMove<our, kKnight, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
-    getPieceMove<our, kBishop, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
-    getPieceMove<our, kRook, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
-    getPieceMove<our, kQueen, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
+    getPieceMove<boardStatus, kKnight, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
+    getPieceMove<boardStatus, kBishop, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
+    getPieceMove<boardStatus, kRook, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
+    getPieceMove<boardStatus, kQueen, Receiver>(kingSq, occupancy, checkedMask, pinnedMask);
     
     // Pawn Moves
     {
@@ -194,12 +214,12 @@ public:
         const Square srce = (our == kWhite ? squareDownRight(dest) : squareUpRight(dest));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kKnight, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kBishop, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kRook, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kQueen, false, false, false, false}>(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kKnight, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kBishop, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kRook, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kQueen, false, false, false, false}>(*this, Move(srce, dest));
           } else {
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, false, false, false}>(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, 0, false, false, false, false}>(*this, Move(srce, dest));
           }
         }
       }
@@ -213,12 +233,12 @@ public:
         const Square srce = (our == kWhite ? squareDownLeft(dest) : squareUpLeft(dest));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kKnight, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kBishop, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kRook, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kQueen, false, false, false, false}>(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kKnight, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kBishop, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kRook, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kQueen, false, false, false, false}>(*this, Move(srce, dest));
           } else {
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, false, false, false}>(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, 0, false, false, false, false}>(*this, Move(srce, dest));
           }
         }
       }
@@ -232,12 +252,12 @@ public:
         const Square srce = (our == kWhite ? squareDown(dest) : squareUp(dest));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
           if (getSquareRank(dest) == kPromotionRank[our]) {
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kKnight, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kBishop, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kRook, false, false, false, false}>(srce, dest));
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, kQueen, false, false, false, false}>(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kKnight, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kBishop, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kRook, false, false, false, false}>(*this, Move(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, kQueen, false, false, false, false}>(*this, Move(srce, dest));
           } else {
-            Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, false, false, false}>(srce, dest));
+            Receiver::template acceptMove<boardStatus, MoveType{kPawn, 0, false, false, false, false}>(*this, Move(srce, dest));
           }
         }
       }
@@ -250,12 +270,12 @@ public:
         const Square dest = peekPiece(dbb);
         const Square srce = (our == kWhite ? squareDown(squareDown(dest)) : squareUp(squareUp(dest)));
         if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
-          Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, false, true, false, false}>(srce, dest));
+          Receiver::template acceptMove<boardStatus, MoveType{kPawn, 0, false, true, false, false}>(*this, Move(srce, dest));
         }
       }
 
       // Enpassant
-      if (enpassant_ != NO_SQUARE) {
+      if constexpr (boardStatus.canEnpassant) {
 
         // Enpassant does 2 things at once. Eliminate the double-pushed pawn checker, and block the enpassant square.
         Square capturedSq = (their == kWhite ? squareUp(enpassant_) : squareDown(enpassant_));
@@ -268,7 +288,7 @@ public:
             Bitboard discoverAttack = getAttack<kBishop>(kingSq, pseudoOccupancy) & (bitboards_[their][kBishop] | bitboards_[their][kQueen]) |
               getAttack<kRook>(kingSq, pseudoOccupancy) & (bitboards_[their][kRook] | bitboards_[their][kQueen]);
             if (!discoverAttack) {
-              Receiver::acceptMove(*this, Move<MoveType{our, kPawn, 0, true, false, false, false}>(srce, enpassant_));
+              Receiver::template acceptMove<boardStatus, MoveType{kPawn, 0, true, false, false, false}>(*this, Move(srce, enpassant_));
             }
           }
         }
@@ -276,40 +296,126 @@ public:
     }
 
     // King Moves
-    const Bitboard attackedMask = getAttackedMask<our>(bothOccupancy);
+    const Bitboard attackedMask = getAttackedMask<boardStatus>(bothOccupancy);
 
     // King Walk
     for (Bitboard bb = getAttack<kKing>(kingSq) & ~occupancy[our] & ~attackedMask;
           bb;
           bb = popPiece(bb)) {
       Square dest = peekPiece(bb);
-      Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, false, false}>(kingSq, dest));
+      Receiver::template acceptMove<boardStatus, MoveType{kKing, 0, false, false, false, false}>(*this, Move(kingSq, dest));
     }
 
     // King Castling
-    if ((castlePermission_ & kKingCastlePermission[our]) == kKingCastlePermission[our] &&  // Check castle permission
-        (bothOccupancy & kKingCastleOccupancy[our]) == 0 &&                                // Check castle blocker
-        (attackedMask & kKingCastleSafety[our]) == 0) {                                        // Check castle attacked squares
-      if constexpr (our == kWhite) {
-        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, true, false}>(E1, G1));
-      } else {
-        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, true, false}>(E8, G8));
+    if constexpr (boardStatus.kingCastle[our]) {
+      if ((castlePermission_ & kKingCastlePermission[our]) == kKingCastlePermission[our] &&  // Check castle permission
+          (bothOccupancy & kKingCastleOccupancy[our]) == 0 &&                                // Check castle blocker
+          (attackedMask & kKingCastleSafety[our]) == 0) {                                        // Check castle attacked squares
+        if constexpr (our == kWhite) {
+          Receiver::template acceptMove<boardStatus, MoveType{kKing, 0, false, false, true, false}> (*this, Move(E1, G1));
+        } else {
+          Receiver::template acceptMove<boardStatus, MoveType{kKing, 0, false, false, true, false}> (*this, Move(E8, G8));
+        }
       }
     }
 
     // Queen Castling
-    if ((castlePermission_ & kQueenCastlePermission[our]) == kQueenCastlePermission[our] && // Check castle permission
-        (bothOccupancy & kQueenCastleOccupancy[our]) == 0 &&                                // Check castle blocker
-        (attackedMask & kQueenCastleSafety[our]) == 0) {                                        // Check castle attacked squares
-      if constexpr (our == kWhite) {
-        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, false, true}>(E1, C1));
-      } else {
-        Receiver::acceptMove(*this, Move<MoveType{our, kKing, 0, false, false, false, true}>(E8, C8));
+    if constexpr (boardStatus.queenCastle[our]) {
+      if ((castlePermission_ & kQueenCastlePermission[our]) == kQueenCastlePermission[our] && // Check castle permission
+          (bothOccupancy & kQueenCastleOccupancy[our]) == 0 &&                                // Check castle blocker
+          (attackedMask & kQueenCastleSafety[our]) == 0) {                                        // Check castle attacked squares
+        if constexpr (our == kWhite) {
+          Receiver::template acceptMove<boardStatus, MoveType{kKing, 0, false, false, false, true}> (*this, Move(E1, C1));
+        } else {
+          Receiver::template acceptMove<boardStatus, MoveType{kKing, 0, false, false, false, true}> (*this, Move(E8, C8));
+        }
       }
     }
   }
 
-  static BoardState fromFEN(const std::string& fen);
-  friend std::ostream& operator<<(std::ostream& out, const BoardState& boardState);
+  static BoardState fromFEN(const std::string& fen) {
+    BoardState boardState{};
+    std::istringstream ss(fen);
+
+    // Parse positions.
+    std::string position; ss >> position;
+    auto letter = position.begin();
+    for (Square i = 0; i < kSquareSize; ++letter) {
+      if (isdigit(*letter)) {
+        // Skip empty square.
+        i += *letter - '0';
+      } else if (isalpha(*letter)) {
+        // Must be piece
+        auto [team, piece] = asciiToPiece(*letter);
+        boardState.bitboards_[team][piece] = setSquare(boardState.bitboards_[team][piece], i);
+        ++i;
+      } // else Ignore rank separator.
+    }
+
+    // Parse team.
+    std::string team; ss >> team;
+    if (team == "w") {
+      boardState.color_ = kWhite;
+    } else {
+      boardState.color_ = kBlack;
+    }
+
+    // Parse castle permisison.
+    std::string castlePermission; ss >> castlePermission;
+    if (castlePermission.find("K") != std::string::npos) {
+      boardState.castlePermission_ |= kKingCastlePermission[kWhite];
+    }
+    if (castlePermission.find("Q") != std::string::npos) {
+      boardState.castlePermission_ |= kQueenCastlePermission[kWhite];
+    }
+    if (castlePermission.find("k") != std::string::npos) {
+      boardState.castlePermission_ |= kKingCastlePermission[kBlack];
+    }
+    if (castlePermission.find("q") != std::string::npos) {
+      boardState.castlePermission_ |= kQueenCastlePermission[kBlack];
+    }
+
+    // Parse enpassant square.
+    std::string enpassantSquare; ss >> enpassantSquare;
+    boardState.enpassant_ = (enpassantSquare == "-" ? NO_SQUARE : stringToSquare(enpassantSquare));
+
+    // Parse half move and full move.
+    if (ss >> boardState.halfmove_) {
+      ss >> boardState.fullmove_;
+    }
+    return boardState;
+  }
+
+  friend inline std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
+    using std::format;
+
+    const auto findPieceAscii = [&](Square square) {
+      for (Color team : { kWhite, kBlack }) {
+        for (Piece piece : {kPawn, kKnight, kBishop, kRook, kQueen, kKing}) {
+          if (isSquareSet(boardState.bitboards_[team][piece], square)) {
+            return pieceToAsciiVisualOnly(team, piece);
+          }
+        }
+      }
+      return '.';
+    };
+
+    for (Square i = 0; i < kSideSize; ++i) {
+      out << format("{}|", kSideSize - i);
+      for (Square j = 0; j < kSideSize; ++j) {
+        out << format(" {}", findPieceAscii(rankFileToSquare(i, j)));
+      }
+      out << '\n';
+    }
+
+    out << format("   a b c d e f g h\nTeam: {}\nCastle: {}\nEnpassant: {}\nhalfmove: {}\nfullmove: {}",
+                  colorToString(boardState.color_),
+                  castleToString(boardState.castlePermission_),
+                  squareToString(boardState.enpassant_),
+                  boardState.halfmove_,
+                  boardState.fullmove_);
+    return out;
+  }
 };
+
 static_assert(std::is_trivial_v<BoardState>, "BoardState is not POD type, may affect performance");

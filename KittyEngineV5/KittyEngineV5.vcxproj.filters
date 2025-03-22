@@ -10,9 +10,6 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="board.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="move.h">
       <Filter>Source Files</Filter>
     </ClCompile>

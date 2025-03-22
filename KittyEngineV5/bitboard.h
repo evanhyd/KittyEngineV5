@@ -98,7 +98,7 @@ template <typename ...Squares>
 [[nodiscard]] inline constexpr Square squareDownLeft(Square square) { return square + 7; }
 [[nodiscard]] inline constexpr Square squareDownRight(Square square) { return square + 9; }
 
-[[nodiscard]] inline consteval Color getOtherColor(Color color) { return (color == kWhite ? kBlack : kWhite); }
+[[nodiscard]] inline constexpr Color getOtherColor(Color color) { return (color == kWhite ? kBlack : kWhite); }
 
 
 ///////////////////////////////////////////////////////
