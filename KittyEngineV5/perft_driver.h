@@ -45,7 +45,9 @@ namespace perft {
 
         // Reset enpassant square
         const Square enpassantSq = state.enpassant_;
-        state.enpassant_ = NO_SQUARE;
+        if constexpr (!moveType.isDoublePush && !moveType.isEnpassant) {
+          state.enpassant_ = NO_SQUARE;
+        }
 
         // Update castle occupancy.
         state.castlePermission_ = unsetSquare(unsetSquare(state.castlePermission_, srce), dest);
