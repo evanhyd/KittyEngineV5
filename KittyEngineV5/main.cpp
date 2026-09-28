@@ -16,18 +16,15 @@ void runPerft() {
   cout << "Initial Position\n";
   for (int i = 1; i <= 7; ++i) {
     perft::runPerft<config>(initialPositionState, i);
-    perft::runPerft<config>(initialPositionState, i);
   }
 
   cout << "Kiwipete\n";
   for (int i = 1; i <= 6; ++i) {
     perft::runPerft<config>(kiwipeteState, i);
-    perft::runPerft<config>(kiwipeteState, i);
   }
 
   cout << "Rook Endgame\n";
   for (int i = 1; i <= 7; ++i) {
-    perft::runPerft<config>(rookEndGameState, i);
     perft::runPerft<config>(rookEndGameState, i);
   }
 }

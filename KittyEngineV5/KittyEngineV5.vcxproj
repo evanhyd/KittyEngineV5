@@ -158,14 +158,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="board.cpp" />
+    <ClCompile Include="boardstate.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="move.h" />
+    <ClCompile Include="UserInterface.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitboard.h" />
-    <ClInclude Include="board.h" />
+    <ClInclude Include="boardstate.h" />
+    <ClInclude Include="evaluation.h" />
     <ClInclude Include="perft_driver.h" />
+    <ClInclude Include="search.h" />
+    <ClInclude Include="UserInterface.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
