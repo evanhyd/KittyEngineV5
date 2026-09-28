@@ -165,6 +165,73 @@ public:
     return color_;
   }
 
+  template <MoveType moveType>
+  constexpr BoardState makeMove(Move<moveType> move) const {
+    constexpr Color our = moveType.color;
+    constexpr Color their = getOtherColor(our);
+    const Square srce = move.srce;
+    const Square dest = move.dest;
+    BoardState state = *this;
+    const Bitboard target = toBitboard(dest);
+    const bool isCapture = target & (bitboards_[their][kPawn] | bitboards_[their][kKnight] |
+                                     bitboards_[their][kBishop] | bitboards_[their][kRook] |
+                                     bitboards_[their][kQueen]);
+
+    state.bitboards_[our][moveType.movedPiece] = moveSquare(state.bitboards_[our][moveType.movedPiece], srce, dest);
+    state.bitboards_[their][kPawn] = unsetSquare(state.bitboards_[their][kPawn], dest);
+    state.bitboards_[their][kKnight] = unsetSquare(state.bitboards_[their][kKnight], dest);
+    state.bitboards_[their][kBishop] = unsetSquare(state.bitboards_[their][kBishop], dest);
+    state.bitboards_[their][kRook] = unsetSquare(state.bitboards_[their][kRook], dest);
+    state.bitboards_[their][kQueen] = unsetSquare(state.bitboards_[their][kQueen], dest);
+
+    const Square enpassantSq = state.enpassant_;
+    if constexpr (!moveType.isDoublePush) {
+      state.enpassant_ = NO_SQUARE;
+    }
+
+    state.castlePermission_ = unsetSquare(unsetSquare(state.castlePermission_, srce), dest);
+    state.halfmove_ = (moveType.movedPiece == kPawn || isCapture) ? 0 : halfmove_ + 1;
+    if constexpr (our == kBlack) {
+      ++state.fullmove_;
+    }
+
+    if constexpr (moveType.movedPiece == kPawn) {
+      if constexpr (moveType.isEnpassant) {
+        if constexpr (their == kWhite) {
+          state.bitboards_[their][kPawn] = unsetSquare(state.bitboards_[their][kPawn], squareUp(enpassantSq));
+        } else {
+          state.bitboards_[their][kPawn] = unsetSquare(state.bitboards_[their][kPawn], squareDown(enpassantSq));
+        }
+      } else if constexpr (moveType.isDoublePush) {
+        if constexpr (our == kWhite) {
+          state.enpassant_ = squareUp(srce);
+        } else {
+          state.enpassant_ = squareDown(srce);
+        }
+      } else if constexpr (moveType.promotionPiece) {
+        state.bitboards_[our][kPawn] = unsetSquare(state.bitboards_[our][kPawn], dest);
+        state.bitboards_[our][moveType.promotionPiece] = setSquare(state.bitboards_[our][moveType.promotionPiece], dest);
+      }
+    } else if constexpr (moveType.movedPiece == kKing) {
+      if constexpr (moveType.isKingSideCastle) {
+        if constexpr (our == kWhite) {
+          state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], H1, F1);
+        } else {
+          state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], H8, F8);
+        }
+      } else if constexpr (moveType.isQueenSideCastle) {
+        if constexpr (our == kWhite) {
+          state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], A1, D1);
+        } else {
+          state.bitboards_[our][kRook] = moveSquare(state.bitboards_[our][kRook], A8, D8);
+        }
+      }
+    }
+
+    state.color_ = their;
+    return state;
+  }
+
   template <Color our, typename Receiver>
   constexpr void enumerateMoves() const {
     constexpr Color their = getOtherColor(our);
