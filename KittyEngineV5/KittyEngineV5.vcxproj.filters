@@ -19,6 +19,9 @@
     <ClCompile Include="user_interface.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="notation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitboard.h">
@@ -40,6 +43,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="move.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="notation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

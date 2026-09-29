@@ -68,33 +68,85 @@ namespace bb {
   // Funny optimization: https://godbolt.org/z/GnbKzd33s //
   /////////////////////////////////////////////////////////
   template <typename ...Squares>
-  [[nodiscard]] inline constexpr Bitboard toBitboard(Squares... squares) { return ((1ull << squares) | ...); }
-  [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, Square square) { return bitboard >> square & 1; }
-  [[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, Square square) { return bitboard | 1ull << square; }
-  [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, Square square) { return bitboard & ~(1ull << square); }
-  [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, Square from, Square to) { return bitboard & ~(1ull << from) | (1ull << to); }
-  [[nodiscard]] inline constexpr Bitboard shiftUp(Bitboard bitboard) { return bitboard >> 8; }
-  [[nodiscard]] inline constexpr Bitboard shiftDown(Bitboard bitboard) { return bitboard << 8; }
-  [[nodiscard]] inline constexpr Bitboard shiftLeft(Bitboard bitboard) { return (bitboard >> 1) & ~kFileHMask; }
-  [[nodiscard]] inline constexpr Bitboard shiftRight(Bitboard bitboard) { return (bitboard << 1) & ~kFileAMask; }
-  [[nodiscard]] inline constexpr Bitboard shiftUpLeft(Bitboard bitboard) { return (bitboard >> 9) & ~kFileHMask; }
-  [[nodiscard]] inline constexpr Bitboard shiftUpRight(Bitboard bitboard) { return (bitboard >> 7) & ~kFileAMask; }
-  [[nodiscard]] inline constexpr Bitboard shiftDownLeft(Bitboard bitboard) { return (bitboard << 7) & ~kFileHMask; }
-  [[nodiscard]] inline constexpr Bitboard shiftDownRight(Bitboard bitboard) { return (bitboard << 9) & ~kFileAMask; }
+  [[nodiscard]] inline constexpr Bitboard toBitboard(Squares... squares) {
+    return ((1ull << squares) | ...);
+  }
+  [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, Square square) {
+    return bitboard >> square & 1;
+  }
+  [[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, Square square) {
+    return bitboard | 1ull << square;
+  }
+  [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, Square square) {
+    return bitboard & ~(1ull << square);
+  }
+  [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, Square from, Square to) {
+    return bitboard & ~(1ull << from) | (1ull << to);
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftUp(Bitboard bitboard) {
+    return bitboard >> 8;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftDown(Bitboard bitboard) {
+    return bitboard << 8;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftLeft(Bitboard bitboard) {
+    return (bitboard >> 1) & ~kFileHMask;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftRight(Bitboard bitboard) {
+    return (bitboard << 1) & ~kFileAMask;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftUpLeft(Bitboard bitboard) {
+    return (bitboard >> 9) & ~kFileHMask;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftUpRight(Bitboard bitboard) {
+    return (bitboard >> 7) & ~kFileAMask;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftDownLeft(Bitboard bitboard) {
+    return (bitboard << 7) & ~kFileHMask;
+  }
+  [[nodiscard]] inline constexpr Bitboard shiftDownRight(Bitboard bitboard) {
+    return (bitboard << 9) & ~kFileAMask;
+  }
 
-  [[nodiscard]] inline constexpr uint32_t countPiece(Bitboard bitboard) { return static_cast<uint32_t>(std::popcount(bitboard)); }
-  [[nodiscard]] inline constexpr Square peekPiece(Bitboard bitboard) { return static_cast<Square>(std::countr_zero(bitboard)); }
-  [[nodiscard]] inline constexpr Bitboard popPiece(Bitboard bitboard) { return bitboard & (bitboard - 1); }
-  [[nodiscard]] inline constexpr Square getSquareRank(Square square) { return square / 8; }
-  [[nodiscard]] inline constexpr Square getSquareFile(Square square) { return square % 8; }
-  [[nodiscard]] inline constexpr Square rankFileToSquare(Square rank, Square file) { return rank * 8 + file; }
-  [[nodiscard]] inline constexpr Square squareUp(Square square) { return square - 8; }
-  [[nodiscard]] inline constexpr Square squareDown(Square square) { return square + 8; }
-  [[nodiscard]] inline constexpr Square squareUpLeft(Square square) { return square - 9; }
-  [[nodiscard]] inline constexpr Square squareUpRight(Square square) { return square - 7; }
-  [[nodiscard]] inline constexpr Square squareDownLeft(Square square) { return square + 7; }
-  [[nodiscard]] inline constexpr Square squareDownRight(Square square) { return square + 9; }
-  [[nodiscard]] inline constexpr Color getOtherColor(Color color) { return (color == kWhite ? kBlack : kWhite); }
+  [[nodiscard]] inline constexpr uint32_t countPiece(Bitboard bitboard) {
+    return static_cast<uint32_t>(std::popcount(bitboard));
+  }
+  [[nodiscard]] inline constexpr Square peekPiece(Bitboard bitboard) {
+    return static_cast<Square>(std::countr_zero(bitboard));
+  }
+  [[nodiscard]] inline constexpr Bitboard popPiece(Bitboard bitboard) {
+    return bitboard & (bitboard - 1);
+  }
+  [[nodiscard]] inline constexpr Square getSquareRank(Square square) {
+    return square / 8;
+  }
+  [[nodiscard]] inline constexpr Square getSquareFile(Square square) {
+    return square % 8;
+  }
+  [[nodiscard]] inline constexpr Square rankFileToSquare(Square rank, Square file) {
+    return rank * 8 + file;
+  }
+  [[nodiscard]] inline constexpr Square squareUp(Square square) {
+    return square - 8;
+  }
+  [[nodiscard]] inline constexpr Square squareDown(Square square) {
+    return square + 8;
+  }
+  [[nodiscard]] inline constexpr Square squareUpLeft(Square square) {
+    return square - 9;
+  }
+  [[nodiscard]] inline constexpr Square squareUpRight(Square square) {
+    return square - 7;
+  }
+  [[nodiscard]] inline constexpr Square squareDownLeft(Square square) {
+    return square + 7;
+  }
+  [[nodiscard]] inline constexpr Square squareDownRight(Square square) {
+    return square + 9;
+  }
+  [[nodiscard]] inline constexpr Color getOtherColor(Color color) {
+    return (color == kWhite ? kBlack : kWhite);
+  }
 
 
   /////////////////////

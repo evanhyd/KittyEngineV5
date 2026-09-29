@@ -4,8 +4,19 @@
 #include <iostream>
 
 namespace perft {
-  struct Config { bool isParallel; bool isBulkCount; bool isDetailed; };
-  struct Result { uint64_t nodes; uint64_t captures; uint64_t enpassants; uint64_t castles; uint64_t promotions; };
+  struct Config {
+    bool isParallel;
+    bool isBulkCount;
+    bool isDetailed;
+  };
+
+  struct Result {
+    uint64_t nodes;
+    uint64_t captures;
+    uint64_t enpassants;
+    uint64_t castles;
+    uint64_t promotions;
+  };
 
   template <Config config, bb::Color ally>
   inline void countChildren(bb::BoardState& state, uint32_t depth, Result& result) {
@@ -24,7 +35,7 @@ namespace perft {
       return;
     }
     for (const bb::Move& move : moves) {
-      const bb::BoardState::Undo undo = state.makeMove<ally>(move);
+      const bb::MoveUndo undo = state.makeMove<ally>(move);
       countChildren<config, bb::getOtherColor(ally)>(state, depth - 1, result);
       state.unmakeMove<ally>(move, undo);
     }
@@ -34,10 +45,16 @@ namespace perft {
   inline Result countPerft(const bb::BoardState& position, bb::Color sideToMove, uint32_t depth) {
     static_assert(!(config.isBulkCount && config.isDetailed), "bulk counting is incompatible with detailed perft");
     Result result{};
-    if (depth == 0) { result.nodes = 1; return result; }
+    if (depth == 0) {
+      result.nodes = 1;
+      return result;
+    }
     bb::BoardState state = position;
-    if (sideToMove == bb::kWhite) countChildren<config, bb::kWhite>(state, depth, result);
-    else countChildren<config, bb::kBlack>(state, depth, result);
+    if (sideToMove == bb::kWhite) {
+      countChildren<config, bb::kWhite>(state, depth, result);
+    } else {
+      countChildren<config, bb::kBlack>(state, depth, result);
+    }
     return result;
   }
 

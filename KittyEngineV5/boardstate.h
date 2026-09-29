@@ -2,9 +2,10 @@
 #include "bitboard.h"
 #include "move.h"
 #include <array>
-#include <iosfwd>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace bb {
   // BOARD STATE NODE TYPE //
@@ -18,17 +19,8 @@ namespace bb {
     std::array<std::array<Bitboard, kPieceSize>, kColorSize> bitboards_;
     Bitboard castlePermission_;
     Square enpassant_;
-    uint32_t halfmove_;
-    uint32_t fullmove_;
-
-    struct Undo {
-      Bitboard castlePermission;
-      Square enpassant;
-      uint32_t halfmove;
-      uint32_t fullmove;
-      Piece capturedPiece;
-    };
-
+    int32_t halfmove_;
+    int32_t fullmove_;
 
     // Return a bitboard containing squares attacked by enemy pieces.
     template <Color ally>
@@ -301,17 +293,16 @@ namespace bb {
 
     // Save only the irreversible state; piece moves can be reversed from Move.
     template <Color ally>
-    constexpr Undo makeMove(Move move) noexcept {
-      static_assert(ally == kWhite || ally == kBlack);
+    constexpr MoveUndo makeMove(Move move) noexcept {
       constexpr Color enemy = getOtherColor(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
       const Piece movedPiece = move.getMovedPiece();
       const Piece promotion = move.getPromotedPieceType();
-      Undo undo{castlePermission_, enpassant_, halfmove_, fullmove_, kNoPiece};
+      MoveUndo undo{castlePermission_, enpassant_, halfmove_, fullmove_, kNoPiece};
 
       if (move.isEnpassant()) {
-        const Square capturedSq = ally == kWhite ? squareDown(dest) : squareUp(dest);
+        const Square capturedSq = (ally == kWhite ? squareDown(dest) : squareUp(dest));
         bitboards_[enemy][kPawn] = unsetSquare(bitboards_[enemy][kPawn], capturedSq);
         undo.capturedPiece = kPawn;
       } else if (move.isCapture()) {
@@ -338,13 +329,14 @@ namespace bb {
       castlePermission_ = unsetSquare(unsetSquare(castlePermission_, srce), dest);
       enpassant_ = move.isDoublePush() ? (ally == kWhite ? squareUp(srce) : squareDown(srce)) : NO_SQUARE;
       halfmove_ = (movedPiece == kPawn || undo.capturedPiece != kNoPiece) ? 0 : halfmove_ + 1;
-      if constexpr (ally == kBlack) ++fullmove_;
+      if constexpr (ally == kBlack) {
+        ++fullmove_;
+      }
       return undo;
     }
 
     template <Color ally>
-    constexpr void unmakeMove(Move move, const Undo& undo) noexcept {
-      static_assert(ally == kWhite || ally == kBlack);
+    constexpr void unmakeMove(Move move, const MoveUndo& undo) noexcept {
       constexpr Color enemy = getOtherColor(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
@@ -372,9 +364,7 @@ namespace bb {
       fullmove_ = undo.fullmove;
     }
 
-    static BoardState fromFEN(const std::string& fen, Color& sideToMove);
-    static BoardState fromFEN(const std::string& fen) { Color sideToMove; return fromFEN(fen, sideToMove); }
-    friend std::ostream& operator<<(std::ostream& out, const BoardState& boardState);
+    static std::pair<BoardState, Color> fromFEN(std::string_view fen);
   };
   static_assert(std::is_trivial_v<BoardState>, "Non-trivial BoardState may affect performance");
 }

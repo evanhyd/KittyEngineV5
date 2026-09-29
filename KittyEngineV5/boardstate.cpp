@@ -1,90 +1,69 @@
 #include "boardstate.h"
-#include "user_interface.h"
-#include <format>
-#include <iostream>
+#include "notation.h"
 #include <sstream>
+#include <stdexcept>
 
 namespace bb {
-  using namespace user_interface;
-  BoardState BoardState::fromFEN(const std::string& fen, Color& sideToMove) {
-    BoardState boardState{};
-    std::istringstream ss(fen);
-
-    // Parse positions.
-    std::string position; ss >> position;
-    auto letter = position.begin();
-    for (Square i = 0; i < kSquareSize; ++letter) {
-      if (isdigit(*letter)) {
-        // Skip empty square.
-        i += *letter - '0';
-      } else if (isalpha(*letter)) {
-        // Must be piece
-        auto [team, piece] = asciiToPiece(*letter);
-        boardState.bitboards_[team][piece] = setSquare(boardState.bitboards_[team][piece], i);
-        ++i;
-      } // else Ignore rank separator.
+  std::pair<BoardState, Color> BoardState::fromFEN(std::string_view fen) {
+    std::istringstream input{std::string(fen)};
+    std::string placement;
+    std::string side;
+    std::string castling;
+    std::string enpassant;
+    if (!(input >> placement >> side >> castling >> enpassant)) {
+      throw std::invalid_argument("FEN needs placement, side, castling, and en passant fields");
     }
 
-    // Parse team.
-    std::string team; ss >> team;
-    if (team == "w") {
-      sideToMove = kWhite;
-    } else {
-      sideToMove = kBlack;
-    }
-
-    // Parse castle permisison.
-    std::string castlePermission; ss >> castlePermission;
-    if (castlePermission.find("K") != std::string::npos) {
-      boardState.castlePermission_ |= kKingCastlePermission[kWhite];
-    }
-    if (castlePermission.find("Q") != std::string::npos) {
-      boardState.castlePermission_ |= kQueenCastlePermission[kWhite];
-    }
-    if (castlePermission.find("k") != std::string::npos) {
-      boardState.castlePermission_ |= kKingCastlePermission[kBlack];
-    }
-    if (castlePermission.find("q") != std::string::npos) {
-      boardState.castlePermission_ |= kQueenCastlePermission[kBlack];
-    }
-
-    // Parse enpassant square.
-    std::string enpassantSquare; ss >> enpassantSquare;
-    boardState.enpassant_ = (enpassantSquare == "-" ? NO_SQUARE : stringToSquare(enpassantSquare));
-
-    // Parse half move and full move.
-    if (ss >> boardState.halfmove_) {
-      ss >> boardState.fullmove_;
-    }
-    return boardState;
-  }
-
-  std::ostream& operator<<(std::ostream& out, const BoardState& boardState) {
-    using std::format;
-
-    const auto findPieceAscii = [&](Square square) {
-      for (Color team : { kWhite, kBlack }) {
-        for (Piece piece : {kPawn, kKnight, kBishop, kRook, kQueen, kKing}) {
-          if (isSquareSet(boardState.bitboards_[team][piece], square)) {
-            return pieceToAsciiVisualOnly(team, piece);
-          }
+    BoardState state{};
+    Square square = 0;
+    Square completedRanks = 0;
+    for (const char symbol : placement) {
+      if (symbol == '/') {
+        if (completedRanks == kSideSize - 1 || square != (completedRanks + 1) * kSideSize) {
+          throw std::invalid_argument("Invalid FEN rank");
         }
+        ++completedRanks;
+        continue;
       }
-      return '.';
-    };
-
-    for (Square i = 0; i < kSideSize; ++i) {
-      out << format("{}|", kSideSize - i);
-      for (Square j = 0; j < kSideSize; ++j) {
-        out << format(" {}", findPieceAscii(rankFileToSquare(i, j)));
+      if (symbol >= '1' && symbol <= '8') {
+        square += symbol - '0';
+      } else {
+        if (square >= (completedRanks + 1) * kSideSize) {
+          throw std::invalid_argument("Invalid FEN rank width");
+        }
+        const auto [color, piece] = notation::asciiToPiece(symbol);
+        state.bitboards_[color][piece] = setSquare(state.bitboards_[color][piece], square);
+        ++square;
       }
-      out << '\n';
+      if (square > (completedRanks + 1) * kSideSize) {
+        throw std::invalid_argument("Invalid FEN rank width");
+      }
     }
-    out << format("   a b c d e f g h\nCastle: {}\nEnpassant: {}\nhalfmove: {}\nfullmove: {}",
-                  castleToString(boardState.castlePermission_),
-                  squareToString(boardState.enpassant_),
-                  boardState.halfmove_,
-                  boardState.fullmove_);
-    return out;
+    if (completedRanks != kSideSize - 1 || square != kSquareSize) {
+      throw std::invalid_argument("Invalid FEN placement");
+    }
+
+    const Color sideToMove = notation::parseSideToMove(side);
+    state.castlePermission_ = notation::parseCastlingRights(castling);
+
+    state.enpassant_ = notation::stringToSquare(enpassant);
+    if (state.enpassant_ != NO_SQUARE && enpassant[1] != '3' && enpassant[1] != '6') {
+      throw std::invalid_argument("Invalid FEN en passant square");
+    }
+
+    state.fullmove_ = 1;
+    if (input >> state.halfmove_) {
+      if (!(input >> state.fullmove_) || state.halfmove_ < 0 || state.fullmove_ <= 0) {
+        throw std::invalid_argument("Invalid FEN move counters");
+      }
+    } else if (!input.eof()) {
+      throw std::invalid_argument("Invalid FEN halfmove counter");
+    }
+
+    std::string extraField;
+    if (input >> extraField) {
+      throw std::invalid_argument("Too many FEN fields");
+    }
+    return {state, sideToMove};
   }
 }

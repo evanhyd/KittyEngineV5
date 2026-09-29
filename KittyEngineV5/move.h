@@ -3,7 +3,6 @@
 #include <cstdint>
 
 namespace bb {
-
   // MOVE ENCODING //
   /*
         Binary move bit layout (uint32_t):
@@ -109,5 +108,14 @@ namespace bb {
     void push(const Move& move) noexcept {
       moves_[size_++] = move;
     }
+  };
+
+  // MOVE UNDO //
+  struct MoveUndo {
+    Bitboard castlePermission;
+    Square enpassant;
+    int32_t halfmove;
+    int32_t fullmove;
+    Piece capturedPiece;
   };
 }
