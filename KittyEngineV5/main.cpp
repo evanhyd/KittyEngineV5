@@ -1,8 +1,9 @@
-#include "board.h"
+#include "boardstate.h"
 #include "perft_driver.h"
 #include <iostream>
 
 using namespace std;
+using namespace bb;
 
 void runPerft() {
   constexpr perft::Config config{ false, true, false };
@@ -15,17 +16,17 @@ void runPerft() {
 
   cout << "Initial Position\n";
   for (int i = 1; i <= 7; ++i) {
-    perft::runPerft<config>(initialPositionState, i);
+    perft::runPerft<config>(initialPositionState, kWhite, i);
   }
 
   cout << "Kiwipete\n";
   for (int i = 1; i <= 6; ++i) {
-    perft::runPerft<config>(kiwipeteState, i);
+    perft::runPerft<config>(kiwipeteState, kWhite, i);
   }
 
   cout << "Rook Endgame\n";
   for (int i = 1; i <= 7; ++i) {
-    perft::runPerft<config>(rookEndGameState, i);
+    perft::runPerft<config>(rookEndGameState, kWhite, i);
   }
 }
 

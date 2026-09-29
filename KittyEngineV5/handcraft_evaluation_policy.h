@@ -3,8 +3,8 @@
 #include "boardstate.h"
 #include <cstdint>
 
-namespace eval {
-  namespace internal {
+namespace bb {
+  namespace evaluation::internal {
     inline constexpr int32_t kFutilityMovePriority = 0;
     inline constexpr int32_t kKillerMovePriority = 99;
     inline constexpr int32_t kEnpassantPriority = 105;
@@ -24,9 +24,14 @@ namespace eval {
     };
   }
 
-  class EvaluationEngine {
+  template <typename Board>
+  class HandCraftEvaluationPolicy {
   public:
-    int32_t evaluate(const BoardState& boardState) const noexcept {
+    int32_t evaluate(const bb::BoardState& boardState) const noexcept {
+      Board& board = static_cast<Board&>(*this);
+
+
+
       return 0;
     }
   };

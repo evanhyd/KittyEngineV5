@@ -1,11 +1,10 @@
-#include "UserInterface.h"
+#include "user_interface.h"
 #include "bitboard.h"
 #include <format>
 #include <iostream>
 #include <utility>
 
-namespace ui {
-  using namespace bb;
+namespace bb::user_interface {
   using namespace std;
 
   void printBitboard(Bitboard bitboard) {
@@ -48,7 +47,7 @@ namespace ui {
   }
 
   string colorToString(Color color) {
-    static const array<string, kColorSize> table = {
+    static constexpr array<string, kColorSize> table = {
       "white",
       "black",
     };

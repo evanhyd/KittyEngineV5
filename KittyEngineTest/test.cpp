@@ -1,9 +1,12 @@
-#include "../KittyEngineV5/board.cpp"
+#include "../KittyEngineV5/boardstate.cpp"
+#include "../KittyEngineV5/user_interface.cpp"
 #include "../KittyEngineV5/perft_driver.h"
 #include <algorithm>
 #include <array>
 #include <vector>
 #include <gtest/gtest.h>
+
+using namespace bb;
 
 namespace {
 
@@ -18,22 +21,18 @@ struct LegalMove {
   bool queenSideCastle;
 };
 
-struct CollectMoves {
-  static inline std::vector<LegalMove> moves;
-
-  template <MoveType type>
-  static void acceptMove(const BoardState&, Move<type> move) {
-    moves.push_back({move.srce, move.dest, type.movedPiece, type.promotionPiece,
-                     type.isEnpassant, type.isDoublePush, type.isKingSideCastle,
-                     type.isQueenSideCastle});
-  }
-};
-
 template <Color color>
-const std::vector<LegalMove>& legalMoves(const BoardState& state) {
-  CollectMoves::moves.clear();
-  state.enumerateMoves<color, CollectMoves>();
-  return CollectMoves::moves;
+std::vector<LegalMove> legalMoves(const BoardState& state) {
+  MoveList moves;
+  state.generateMoves<color>(moves);
+  std::vector<LegalMove> result;
+  for (const Move& move : moves) {
+    result.push_back({move.getSource(), move.getDest(), move.getMovedPiece(),
+                      move.getPromotedPieceType(), move.isEnpassant(), move.isDoublePush(),
+                      move.isCastling() && move.getDest() > move.getSource(),
+                      move.isCastling() && move.getDest() < move.getSource()});
+  }
+  return result;
 }
 
 size_t countMoves(const std::vector<LegalMove>& moves, Square srce, Square dest) {
@@ -91,9 +90,9 @@ TEST(AttackTables, CornerLeapersDoNotWrapFiles) {
 }
 
 TEST(BoardState, ParsesFen) {
-  const auto state = BoardState::fromFEN("r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12");
-
-  EXPECT_EQ(state.getColor(), kWhite);
+  Color sideToMove;
+  const auto state = BoardState::fromFEN("r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12", sideToMove);
+  EXPECT_EQ(sideToMove, kWhite);
   EXPECT_TRUE(isSquareSet(state.bitboards_[kWhite][kPawn], E5));
   EXPECT_TRUE(isSquareSet(state.bitboards_[kBlack][kPawn], D5));
   EXPECT_EQ(state.enpassant_, D6);
@@ -143,7 +142,8 @@ TEST(LegalMoves, CastlingMovesRookAndClearsRights) {
 
   EXPECT_EQ(countMoves(moves, E1, G1), 1u);
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
-  const auto afterCastle = state.makeMove<MoveType{kWhite, kKing, 0, false, false, true, false}>({E1, G1});
+  auto afterCastle = state;
+  afterCastle.makeMove<kWhite>(Move(E1, G1, kKing, kNoPiece, Move::kCastlingFlag));
   EXPECT_TRUE(isSquareSet(afterCastle.bitboards_[kWhite][kKing], G1));
   EXPECT_TRUE(isSquareSet(afterCastle.bitboards_[kWhite][kRook], F1));
   EXPECT_FALSE(isSquareSet(afterCastle.bitboards_[kWhite][kRook], H1));
@@ -191,9 +191,10 @@ TEST(LegalMoves, PinnedEnemyKnightStillAttacksCastlingPath) {
 
 TEST(BoardState, MovingRookPermanentlyRemovesItsCastlingRight) {
   const auto state = BoardState::fromFEN("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
-  const auto afterRookMove = state.makeMove<MoveType{kWhite, kRook, 0, false, false, false, false}>({H1, H2});
-  const auto afterBlackMove = afterRookMove.makeMove<MoveType{kBlack, kKing, 0, false, false, false, false}>({E8, E7});
-  const auto afterRookReturns = afterBlackMove.makeMove<MoveType{kWhite, kRook, 0, false, false, false, false}>({H2, H1});
+  auto afterRookReturns = state;
+  afterRookReturns.makeMove<kWhite>(Move(H1, H2, kRook));
+  afterRookReturns.makeMove<kBlack>(Move(E8, E7, kKing));
+  afterRookReturns.makeMove<kWhite>(Move(H2, H1, kRook));
   const auto& moves = legalMoves<kWhite>(afterRookReturns);
 
   EXPECT_EQ(countMoves(moves, E1, G1), 0u);
@@ -202,7 +203,8 @@ TEST(BoardState, MovingRookPermanentlyRemovesItsCastlingRight) {
 
 TEST(BoardState, CapturingCornerRookRemovesCastlingRight) {
   const auto state = BoardState::fromFEN("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
-  const auto afterCapture = state.makeMove<MoveType{kBlack, kRook, 0, false, false, false, false}>({A8, A1});
+  auto afterCapture = state;
+  afterCapture.makeMove<kBlack>(Move(A8, A1, kRook, kNoPiece, Move::kCaptureFlag));
 
   EXPECT_NE(afterCapture.castlePermission_ & kQueenCastlePermission[kWhite], kQueenCastlePermission[kWhite]);
   EXPECT_NE(afterCapture.castlePermission_ & kQueenCastlePermission[kBlack], kQueenCastlePermission[kBlack]);
@@ -214,14 +216,16 @@ TEST(LegalMoves, PawnHasFourPromotionChoices) {
   const auto& moves = legalMoves<kWhite>(state);
 
   EXPECT_EQ(countMoves(moves, A7, A8), 4u);
-  const auto promoted = state.makeMove<MoveType{kWhite, kPawn, kQueen, false, false, false, false}>({A7, A8});
+  auto promoted = state;
+  promoted.makeMove<kWhite>(Move(A7, A8, kPawn, kQueen));
   EXPECT_FALSE(isSquareSet(promoted.bitboards_[kWhite][kPawn], A7));
   EXPECT_TRUE(isSquareSet(promoted.bitboards_[kWhite][kQueen], A8));
 }
 
 TEST(BoardState, CaptureRemovesOpponentPiece) {
   const auto state = BoardState::fromFEN("7k/8/8/8/8/8/4p3/4R2K w - - 17 1");
-  const auto afterCapture = state.makeMove<MoveType{kWhite, kRook, 0, false, false, false, false}>({E1, E2});
+  auto afterCapture = state;
+  afterCapture.makeMove<kWhite>(Move(E1, E2, kRook, kNoPiece, Move::kCaptureFlag));
 
   EXPECT_TRUE(isSquareSet(afterCapture.bitboards_[kWhite][kRook], E2));
   EXPECT_FALSE(isSquareSet(afterCapture.bitboards_[kWhite][kRook], E1));
@@ -231,7 +235,8 @@ TEST(BoardState, CaptureRemovesOpponentPiece) {
 
 TEST(BoardState, EnPassantCaptureExpiresImmediately) {
   const auto state = BoardState::fromFEN("7k/2pp4/8/4P3/8/8/8/7K b - - 0 1");
-  const auto afterPush = state.makeMove<MoveType{kBlack, kPawn, 0, false, true, false, false}>({D7, D5});
+  auto afterPush = state;
+  afterPush.makeMove<kBlack>(Move(D7, D5, kPawn, kNoPiece, Move::kDoublePushFlag));
   EXPECT_EQ(afterPush.enpassant_, D6);
 
   const auto& whiteMoves = legalMoves<kWhite>(afterPush);
@@ -240,7 +245,8 @@ TEST(BoardState, EnPassantCaptureExpiresImmediately) {
   });
   ASSERT_NE(capture, whiteMoves.end());
 
-  const auto afterCapture = afterPush.makeMove<MoveType{kWhite, kPawn, 0, true, false, false, false}>({E5, D6});
+  auto afterCapture = afterPush;
+  afterCapture.makeMove<kWhite>(Move(E5, D6, kPawn, kNoPiece, Move::kEnpassantFlag));
   EXPECT_EQ(afterCapture.enpassant_, NO_SQUARE);
   EXPECT_TRUE(isSquareSet(afterCapture.bitboards_[kWhite][kPawn], D6));
   EXPECT_FALSE(isSquareSet(afterCapture.bitboards_[kBlack][kPawn], D5));
@@ -254,11 +260,11 @@ TEST(BoardState, EnPassantCaptureExpiresImmediately) {
 
 TEST(BoardState, EnPassantExpiresAfterQuietMove) {
   const auto state = BoardState::fromFEN("7k/3p4/8/4P3/8/8/8/7K b - - 0 1");
-  const auto afterPush = state.makeMove<MoveType{kBlack, kPawn, 0, false, true, false, false}>({D7, D5});
-  const auto afterQuietMove = afterPush.makeMove<MoveType{kWhite, kKing, 0, false, false, false, false}>({H1, G1});
+  auto afterQuietMove = state;
+  afterQuietMove.makeMove<kBlack>(Move(D7, D5, kPawn, kNoPiece, Move::kDoublePushFlag));
+  afterQuietMove.makeMove<kWhite>(Move(H1, G1, kKing));
 
   EXPECT_EQ(afterQuietMove.enpassant_, NO_SQUARE);
-  EXPECT_EQ(afterQuietMove.getColor(), kBlack);
   EXPECT_EQ(afterQuietMove.fullmove_, 2u);
 }
 
@@ -423,15 +429,52 @@ TEST(LegalMoves, CheckmateAndStalemateHaveNoMoves) {
   EXPECT_TRUE(legalMoves<kBlack>(stalemate).empty());
 }
 
+TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
+  // source: https://www.chessprogramming.org/Perft_Results
+  const std::array<const char*, 6> positions{{
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+    "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+    "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+    "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
+  }};
+  for (const char* fen : positions) {
+    SCOPED_TRACE(fen);
+    Color sideToMove;
+    BoardState state = BoardState::fromFEN(fen, sideToMove);
+    const BoardState original = state;
+    MoveList moves;
+    if (sideToMove == kWhite) state.generateMoves<kWhite>(moves);
+    else state.generateMoves<kBlack>(moves);
+    for (const Move& move : moves) {
+      SCOPED_TRACE(std::to_string(move.getSource()) + " to " + std::to_string(move.getDest()));
+      if (sideToMove == kWhite) {
+        const auto undo = state.makeMove<kWhite>(move);
+        state.unmakeMove<kWhite>(move, undo);
+      } else {
+        const auto undo = state.makeMove<kBlack>(move);
+        state.unmakeMove<kBlack>(move, undo);
+      }
+      EXPECT_EQ(state.bitboards_, original.bitboards_);
+      EXPECT_EQ(state.castlePermission_, original.castlePermission_);
+      EXPECT_EQ(state.enpassant_, original.enpassant_);
+      EXPECT_EQ(state.halfmove_, original.halfmove_);
+      EXPECT_EQ(state.fullmove_, original.fullmove_);
+    }
+  }
+}
+
 namespace {
 
 template <size_t size>
 void expectDetailedCounts(const char* fen, const std::array<perft::Result, size>& expected) {
   constexpr perft::Config config{false, false, true};
-  const BoardState state = BoardState::fromFEN(fen);
+  Color sideToMove;
+  const BoardState state = BoardState::fromFEN(fen, sideToMove);
   for (uint32_t depth = 1; depth < size; ++depth) {
     SCOPED_TRACE("depth " + std::to_string(depth));
-    const auto actual = perft::countPerft<config>(state, depth);
+    const auto actual = perft::countPerft<config>(state, sideToMove, depth);
     EXPECT_EQ(actual.nodes, expected[depth].nodes);
     EXPECT_EQ(actual.captures, expected[depth].captures);
     EXPECT_EQ(actual.enpassants, expected[depth].enpassants);
@@ -443,10 +486,11 @@ void expectDetailedCounts(const char* fen, const std::array<perft::Result, size>
 template <size_t size>
 void expectNodeCounts(const char* fen, const std::array<uint64_t, size>& expected) {
   constexpr perft::Config config{false, true, false};
-  const BoardState state = BoardState::fromFEN(fen);
+  Color sideToMove;
+  const BoardState state = BoardState::fromFEN(fen, sideToMove);
   for (uint32_t depth = 1; depth < size; ++depth) {
     SCOPED_TRACE("depth " + std::to_string(depth));
-    EXPECT_EQ(perft::countPerft<config>(state, depth).nodes, expected[depth]);
+    EXPECT_EQ(perft::countPerft<config>(state, sideToMove, depth).nodes, expected[depth]);
   }
 }
 

@@ -1,8 +1,9 @@
 #pragma once
 #include "bitboard.h"
+#include <string>
 #include <string_view>
 
-namespace ui {
+namespace bb::user_interface {
   class UserInterface {
 
   };
