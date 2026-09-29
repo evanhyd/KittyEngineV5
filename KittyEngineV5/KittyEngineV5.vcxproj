@@ -54,6 +54,9 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <IntDir>$(ProjectDir)$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="Shared">
@@ -158,14 +161,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="board.cpp" />
+    <ClCompile Include="boardstate.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="move.h" />
+    <ClCompile Include="notation.cpp" />
+    <ClCompile Include="user_interface.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitboard.h" />
-    <ClInclude Include="board.h" />
+    <ClInclude Include="boardstate.h" />
+    <ClInclude Include="handcraft_evaluation_policy.h" />
     <ClInclude Include="perft_driver.h" />
+    <ClInclude Include="alpha_beta_search_policy.h" />
+    <ClInclude Include="move.h" />
+    <ClInclude Include="notation.h" />
+    <ClInclude Include="user_interface.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
