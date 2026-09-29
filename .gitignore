@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 
 DiagnosticsScratch/
+/KittyEngineTest/vcpkg_installed/x64-windows
