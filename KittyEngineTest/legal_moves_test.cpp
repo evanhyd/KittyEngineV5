@@ -215,7 +215,7 @@ TEST(BoardState, CaptureRemovesOpponentPiece) {
   EXPECT_TRUE(isSquareSet(afterCapture.bitboards_[kWhite][kRook], E2));
   EXPECT_FALSE(isSquareSet(afterCapture.bitboards_[kWhite][kRook], E1));
   EXPECT_FALSE(isSquareSet(afterCapture.bitboards_[kBlack][kPawn], E2));
-  EXPECT_EQ(afterCapture.halfmove_, 0u);
+  EXPECT_EQ(afterCapture.halfmove_, 0);
 }
 
 TEST(BoardState, EnPassantCaptureExpiresImmediately) {
@@ -250,7 +250,7 @@ TEST(BoardState, EnPassantExpiresAfterQuietMove) {
   afterQuietMove.makeMove<kWhite>(Move(H1, G1, kKing));
 
   EXPECT_EQ(afterQuietMove.enpassant_, NO_SQUARE);
-  EXPECT_EQ(afterQuietMove.fullmove_, 2u);
+  EXPECT_EQ(afterQuietMove.fullmove_, 2);
 }
 
 TEST(LegalMoves, DoubleCheckAllowsOnlyKingMoves) {

@@ -16,8 +16,8 @@ TEST(BoardState, ParsesFen) {
   EXPECT_EQ(state.castlePermission_,
             kKingCastlePermission[kWhite] | kQueenCastlePermission[kWhite] |
             kKingCastlePermission[kBlack] | kQueenCastlePermission[kBlack]);
-  EXPECT_EQ(state.halfmove_, 4u);
-  EXPECT_EQ(state.fullmove_, 12u);
+  EXPECT_EQ(state.halfmove_, 4);
+  EXPECT_EQ(state.fullmove_, 12);
 }
 
 TEST(Notation, ParsesAndFormatsSharedChessNotation) {
