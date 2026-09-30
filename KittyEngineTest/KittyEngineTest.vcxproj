@@ -128,7 +128,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>gtest.lib;gtest_main.lib;$(EngineObjectDirectory)boardstate.obj;$(EngineObjectDirectory)notation.obj;$(EngineObjectDirectory)user_interface.obj;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gtest.lib;gtest_main.lib;$(EngineObjectDirectory)boardstate.obj;$(EngineObjectDirectory)notation.obj;$(EngineObjectDirectory)terminal_interface_policy.obj;$(EngineObjectDirectory)uci_protocol.obj;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -151,6 +151,7 @@
     <ClCompile Include="notation_test.cpp" />
     <ClCompile Include="legal_moves_test.cpp" />
     <ClCompile Include="perft_test.cpp" />
+    <ClCompile Include="uci_protocol_test.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\KittyEngineV5\KittyEngineV5.vcxproj">

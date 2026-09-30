@@ -4,7 +4,30 @@
 #include <stdexcept>
 
 namespace bb {
-  std::pair<BoardState, Color> BoardState::fromFEN(std::string_view fen) {
+  BoardState::BoardState() noexcept
+    : bitboards_{}, color_{}, castlePermission_{}, enpassant_{}, halfmove_{}, fullmove_{} {}
+
+  BoardState::BoardState(std::string_view fen) : BoardState() {
+    setPosition(fen);
+  }
+
+  std::optional<std::tuple<Color, Piece>> BoardState::getPieceAt(Square square) const {
+    if (square >= kSquareSize) {
+      throw std::out_of_range("Square is outside the board");
+    }
+    for (Color color = kWhite; color < kColorSize; ++color) {
+      for (Piece piece = kPawn; piece < kPieceSize; ++piece) {
+        if (isSquareSet(bitboards_[color][piece], square)) {
+          return std::tuple<Color, Piece>{color, piece};
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  void BoardState::setPosition(std::string_view fen) {
+    BoardState parsed{};
+
     std::istringstream input{std::string(fen)};
     std::string placement;
     std::string side;
@@ -14,7 +37,6 @@ namespace bb {
       throw std::invalid_argument("FEN needs placement, side, castling, and en passant fields");
     }
 
-    BoardState state{};
     Square square = 0;
     Square completedRanks = 0;
     for (const char symbol : placement) {
@@ -32,7 +54,7 @@ namespace bb {
           throw std::invalid_argument("Invalid FEN rank width");
         }
         const auto [color, piece] = notation::asciiToPiece(symbol);
-        state.bitboards_[color][piece] = setSquare(state.bitboards_[color][piece], square);
+        parsed.bitboards_[color][piece] = setSquare(parsed.bitboards_[color][piece], square);
         ++square;
       }
       if (square > (completedRanks + 1) * kSideSize) {
@@ -43,17 +65,17 @@ namespace bb {
       throw std::invalid_argument("Invalid FEN placement");
     }
 
-    const Color sideToMove = notation::parseSideToMove(side);
-    state.castlePermission_ = notation::parseCastlingRights(castling);
+    parsed.color_ = notation::stringToSide(side);
+    parsed.castlePermission_ = notation::stringToCastling(castling);
 
-    state.enpassant_ = notation::stringToSquare(enpassant);
-    if (state.enpassant_ != NO_SQUARE && enpassant[1] != '3' && enpassant[1] != '6') {
+    parsed.enpassant_ = notation::stringToSquare(enpassant);
+    if (parsed.enpassant_ != kNoSquare && enpassant[1] != '3' && enpassant[1] != '6') {
       throw std::invalid_argument("Invalid FEN en passant square");
     }
 
-    state.fullmove_ = 1;
-    if (input >> state.halfmove_) {
-      if (!(input >> state.fullmove_) || state.halfmove_ < 0 || state.fullmove_ <= 0) {
+    parsed.fullmove_ = 1;
+    if (input >> parsed.halfmove_) {
+      if (!(input >> parsed.fullmove_) || parsed.halfmove_ < 0 || parsed.fullmove_ <= 0) {
         throw std::invalid_argument("Invalid FEN move counters");
       }
     } else if (!input.eof()) {
@@ -64,6 +86,6 @@ namespace bb {
     if (input >> extraField) {
       throw std::invalid_argument("Too many FEN fields");
     }
-    return {state, sideToMove};
+    *this = parsed;
   }
 }

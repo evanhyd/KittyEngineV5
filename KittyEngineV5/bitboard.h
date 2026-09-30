@@ -23,7 +23,7 @@ namespace bb {
     A3, B3, C3, D3, E3, F3, G3, H3,
     A2, B2, C2, D2, E2, F2, G2, H2,
     A1, B1, C1, D1, E1, F1, G1, H1,
-    NO_SQUARE,
+    kNoSquare,
   };
 
   enum : Color {
@@ -306,7 +306,7 @@ namespace bb {
     inline std::array<Bitboard, 64 * 4096> rookAttackReachableTable{};
 
     inline const auto sliderAttackTables = []() {
-      constexpr std::array<std::array<Bitboard, kSquareSize>, kColorSize> kMagicNumTable = { {
+      static constexpr std::array<std::array<Bitboard, kSquareSize>, kColorSize> kMagicNumTable = { {
         {
           0x40040844404084ULL, 0x2004208a004208ULL, 0x10190041080202ULL, 0x108060845042010ULL,
           0x581104180800210ULL, 0x2112080446200010ULL, 0x1080820820060210ULL, 0x3c0808410220200ULL,

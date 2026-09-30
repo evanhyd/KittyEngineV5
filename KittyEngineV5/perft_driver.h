@@ -42,7 +42,7 @@ namespace perft {
   }
 
   template <Config config>
-  inline Result countPerft(const bb::BoardState& position, bb::Color sideToMove, uint32_t depth) {
+  inline Result countPerft(const bb::BoardState& position, uint32_t depth) {
     static_assert(!(config.isBulkCount && config.isDetailed), "bulk counting is incompatible with detailed perft");
     Result result{};
     if (depth == 0) {
@@ -50,7 +50,7 @@ namespace perft {
       return result;
     }
     bb::BoardState state = position;
-    if (sideToMove == bb::kWhite) {
+    if (state.getColorToMove() == bb::kWhite) {
       countChildren<config, bb::kWhite>(state, depth, result);
     } else {
       countChildren<config, bb::kBlack>(state, depth, result);
@@ -59,10 +59,10 @@ namespace perft {
   }
 
   template <Config config, bool canPrint = true>
-  inline Result runPerft(const bb::BoardState& state, bb::Color sideToMove, uint32_t depth) {
+  inline Result runPerft(const bb::BoardState& state, uint32_t depth) {
     using namespace std::chrono;
     const auto start = high_resolution_clock::now();
-    const Result result = countPerft<config>(state, sideToMove, depth);
+    const Result result = countPerft<config>(state, depth);
     const auto ms = duration_cast<milliseconds>(high_resolution_clock::now() - start);
     if constexpr (canPrint) {
       const uint64_t knps = ms.count() > 0 ? result.nodes / ms.count() : result.nodes;

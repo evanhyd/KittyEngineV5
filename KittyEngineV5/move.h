@@ -24,7 +24,8 @@ namespace bb {
     static constexpr uint32_t kGetPieceMask = 0x0Fu;
 
   public:
-    constexpr Move() noexcept = default;
+    constexpr Move() noexcept = default; // Intentionally left uninitialized to save performance in MoveList creation in stack.
+
     // Flags.
     static constexpr uint32_t kCaptureFlag = 1u << 20;
     static constexpr uint32_t kEnpassantFlag = 1u << 21;
@@ -85,27 +86,27 @@ namespace bb {
     size_t size_ = 0;
 
   public:
-    size_t size() const noexcept {
+    constexpr size_t size() const noexcept {
       return size_;
     }
 
-    auto begin() noexcept {
+    constexpr auto begin() noexcept {
       return moves_.begin();
     }
 
-    auto end() noexcept {
+    constexpr auto end() noexcept {
       return moves_.begin() + size_;
     }
 
-    Move& operator[](size_t index) noexcept {
+    constexpr Move& operator[](size_t index) noexcept {
       return moves_[index];
     }
 
-    const Move& operator[](size_t index) const noexcept {
+    constexpr const Move& operator[](size_t index) const noexcept {
       return moves_[index];
     }
 
-    void push(const Move& move) noexcept {
+    constexpr void push(const Move& move) noexcept {
       moves_[size_++] = move;
     }
   };
