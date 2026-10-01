@@ -44,14 +44,14 @@ namespace bb::evaluation {
              0,  0,  0,  0,  0,  0,  0,  0
         },
         { // Knight
-            -50,-40,-30,-30,-30,-30,-40,-50,
-            -40,-20,  0,  0,  0,  0,-20,-40,
-            -30,  0, 10, 15, 15, 10,  0,-30,
-            -30,  5, 15, 20, 20, 15,  5,-30,
-            -30,  0, 15, 20, 20, 15,  0,-30,
-            -30,  5, 10, 15, 15, 10,  5,-30,
-            -40,-20,  0,  5,  5,  0,-20,-40,
-            -50,-40,-30,-30,-30,-30,-40,-50
+            -40,-30,-25,-25,-25,-25,-30,-40,
+            -30,-15,  0,  0,  0,  0,-15,-30,
+            -25,  0, 10, 12, 12, 10,  0,-25,
+            -25,  5, 12, 15, 15, 12,  5,-25,
+            -25,  0, 12, 15, 15, 12,  0,-25,
+            -25,  5, 10, 12, 12, 10,  5,-25,
+            -30,-15,  0,  5,  5,  0,-15,-30,
+            -40,-30,-25,-25,-25,-25,-30,-40
         },
         { // Bishop
             -20,-10,-10,-10,-10,-10,-10,-20,
@@ -173,18 +173,17 @@ namespace bb::evaluation {
 
     // Track attacked squares, repeated attacks, and each non-pawn defender's attacks.
     struct AttackInfo {
-      Bitboard once = 0;
-      Bitboard twice = 0;
-      std::array<Bitboard, kSquareSize> defenderAttacks;
-      uint32_t defenderCount = 0;
+      Bitboard atLeastOnce = 0;
+      Bitboard atLeastTwice = 0;
+      SmallVec<Bitboard, kSquareSize> defenderAttacks;
 
       void add(Bitboard mask) noexcept {
-        twice |= once & mask;
-        once |= mask;
+        atLeastTwice |= atLeastOnce & mask;
+        atLeastOnce |= mask;
       }
 
       void addDefender(Bitboard mask) noexcept {
-        defenderAttacks[defenderCount++] = mask;
+        defenderAttacks.push(mask);
         add(mask);
       }
     };
@@ -299,17 +298,19 @@ namespace bb::evaluation {
     static int32_t overloadedDefenderPenalty(const BoardState& state,
                                               const AttackInfo& own,
                                               const AttackInfo& enemy) noexcept {
+
+      // Get all the pieces that are attacked by enemies but only defended by one of our pieces.
       const Bitboard valuable = state.getPieces(color, kKnight) |
         state.getPieces(color, kBishop) | state.getPieces(color, kRook) |
         state.getPieces(color, kQueen);
-      const Bitboard soleDefenderTargets = valuable & enemy.once & ~own.twice;
+      const Bitboard defendedOncePieces = valuable & enemy.atLeastOnce & ~own.atLeastTwice;
       int32_t penalty = 0;
-      for (uint32_t i = 0; i < own.defenderCount; ++i) {
-        const int32_t targets = static_cast<int32_t>(
-          countPiece(own.defenderAttacks[i] & soleDefenderTargets));
+
+      // Go through each of our defenders and see if it is the only one defending any valuable pieces.
+      for (Bitboard attackBB : own.defenderAttacks) {
+        const int32_t targets = static_cast<int32_t>(countPiece(attackBB & defendedOncePieces));
         if (targets > 1) {
-          penalty += std::max(kMinOverloadedDefenderPenalty,
-                              kOverloadedDefenderPenalty * (targets - 1));
+          penalty += std::max(kMinOverloadedDefenderPenalty, kOverloadedDefenderPenalty * (targets - 1));
         }
       }
       return penalty;
@@ -352,8 +353,8 @@ namespace bb::evaluation {
 
       // Attack pressure near the king.
       const Bitboard kingZone = getAttack<kKing>(kingSquare) | toBitboard(kingSquare);
-      penalty += kKingZoneAttackPenalty * static_cast<int32_t>(countPiece(enemyAttacks.once & kingZone));
-      penalty += kKingZoneDoubleAttackPenalty * static_cast<int32_t>(countPiece(enemyAttacks.twice & kingZone));
+      penalty += kKingZoneAttackPenalty * static_cast<int32_t>(countPiece(enemyAttacks.atLeastOnce & kingZone));
+      penalty += kKingZoneDoubleAttackPenalty * static_cast<int32_t>(countPiece(enemyAttacks.atLeastTwice & kingZone));
       return std::max(penalty, kMinKingWeaknessPenalty) * phase / kMaxPhase;
     }
 

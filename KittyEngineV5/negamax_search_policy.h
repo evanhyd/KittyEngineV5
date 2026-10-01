@@ -67,6 +67,11 @@ namespace bb::searching {
   public:
     template <NodeMeta meta, typename EvalPolicy>
     int32_t search(EvalPolicy& evalPolicy, BoardState& state, int depth, const int maxDepth, int32_t alpha, int32_t beta) {
+      // Evaluate at leaf node.
+      if (depth == maxDepth) {
+        return evalPolicy.evaluate(state);
+      }
+
       MoveList moves;
       state.generateMoves<meta.ally>(moves);
 
@@ -77,11 +82,6 @@ namespace bb::searching {
         } else {
           return kStalemateScore;
         }
-      }
-
-      // Evaluate at leaf node.
-      if (depth == maxDepth) {
-        return evalPolicy.evaluate(state);
       }
 
       // Move ordering.
