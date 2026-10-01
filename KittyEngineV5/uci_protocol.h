@@ -9,6 +9,7 @@ namespace bb::uci {
     using SimpleCallback = std::function<void()>;
     using PositionCallback = std::function<void(std::string_view, std::span<const std::string_view>)>;
     using GoCallback = std::function<void(std::span<const std::string_view>)>;
+    using PlayCallback = std::function<void(std::string_view)>;
 
     explicit UciProtocol(
       SimpleCallback onUci, 
@@ -16,7 +17,8 @@ namespace bb::uci {
       SimpleCallback onNewGame, 
       PositionCallback onPosition,
       GoCallback onGo, 
-      SimpleCallback onQuit);
+      SimpleCallback onQuit,
+      PlayCallback onPlay = {});
 
     void send(std::string_view line);
 
@@ -27,5 +29,6 @@ namespace bb::uci {
     PositionCallback onPosition_;
     GoCallback onGo_;
     SimpleCallback onQuit_;
+    PlayCallback onPlay_;
   };
 }

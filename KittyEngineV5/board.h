@@ -1,7 +1,6 @@
 #pragma once
 #include "boardstate.h"
 #include "notation.h"
-#include "user_interface_policy.h"
 #include "position_fens.h"
 #include <stdexcept>
 #include <string>
@@ -21,8 +20,6 @@ namespace bb {
     explicit Board(SearchPolicy searchEngine, EvalPolicy evaluationEngine, UIPolicy userInterface)
       : searchEngine_(std::move(searchEngine)), evalEngine_(std::move(evaluationEngine)),
         ui_(std::move(userInterface)), state_(fen::kStartPosition) {
-      static_assert(user_interface::UserInterfacePolicy<UIPolicy, Board>,
-                    "UIPolicy must provide run(Board&) and render(const Board&)");
     }
 
     void run() {

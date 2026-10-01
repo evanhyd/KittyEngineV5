@@ -1,5 +1,6 @@
 #pragma once
 #include "bitboard.h"
+#include "small_vec.h"
 #include <cstdint>
 
 namespace bb {
@@ -81,35 +82,7 @@ namespace bb {
   };
 
   // MOVE CONTAINER //
-  class MoveList {
-    std::array<Move, 218> moves_; // DO NOT ZERO INITIALIE moves_.
-    size_t size_ = 0;
-
-  public:
-    constexpr size_t size() const noexcept {
-      return size_;
-    }
-
-    constexpr auto begin() noexcept {
-      return moves_.begin();
-    }
-
-    constexpr auto end() noexcept {
-      return moves_.begin() + size_;
-    }
-
-    constexpr Move& operator[](size_t index) noexcept {
-      return moves_[index];
-    }
-
-    constexpr const Move& operator[](size_t index) const noexcept {
-      return moves_[index];
-    }
-
-    constexpr void push(const Move& move) noexcept {
-      moves_[size_++] = move;
-    }
-  };
+  using MoveList = bb::SmallVec<Move>;
 
   // MOVE UNDO //
   struct MoveUndo {

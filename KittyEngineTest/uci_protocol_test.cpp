@@ -134,6 +134,18 @@ TEST(UciIntegration, RollsBackInvalidPositionAndReportsGoTodo) {
   EXPECT_NE(uciOutput.str().find("readyok\n"), std::string::npos);
 }
 
+TEST(UciIntegration, PlayAcceptsLegalMoveAndRejectsIllegalMove) {
+  std::istringstream input{"play e2e4\nplay e2e5\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
+
+  board.run();
+  EXPECT_EQ(notation::boardToFen(board.getState()),
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+  EXPECT_EQ(uciOutput.str(), "info string error: Illegal UCI move: e2e5\n");
+}
+
 TEST(UciIntegration, ReplaysPromotionCastlingAndEnPassant) {
   struct Case {
     const char* command;

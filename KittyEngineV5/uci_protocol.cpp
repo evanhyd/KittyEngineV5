@@ -35,14 +35,16 @@ namespace bb::uci {
     SimpleCallback onNewGame, 
     PositionCallback onPosition,
     GoCallback onGo, 
-    SimpleCallback onQuit)
+    SimpleCallback onQuit,
+    PlayCallback onPlay)
     : 
     onUci_(std::move(onUci)), 
     onIsReady_(std::move(onIsReady)),
     onNewGame_(std::move(onNewGame)), 
     onPosition_(std::move(onPosition)),
     onGo_(std::move(onGo)), 
-    onQuit_(std::move(onQuit)) {}
+    onQuit_(std::move(onQuit)),
+    onPlay_(std::move(onPlay)) {}
 
   void UciProtocol::send(std::string_view line) {
     const std::vector<std::string_view> words = splitTokens(line);
@@ -94,6 +96,13 @@ namespace bb::uci {
       onPosition_(fen, args.subspan(next));
     } else if (command == "go") {
       onGo_(args);
+    } else if (command == "play") {
+      if (args.size() != 1) {
+        throw std::invalid_argument("play requires one move");
+      }
+      if (onPlay_) {
+        onPlay_(args[0]);
+      }
     } else if (command == "quit") {
       onQuit_();
     }

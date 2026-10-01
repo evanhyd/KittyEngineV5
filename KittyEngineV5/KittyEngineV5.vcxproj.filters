@@ -54,7 +54,7 @@
     <ClInclude Include="handcraft_evaluation_policy.h">
       <Filter>Cores\Evaluation Policies</Filter>
     </ClInclude>
-    <ClInclude Include="alpha_beta_search_policy.h">
+    <ClInclude Include="negamax_search_policy.h">
       <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
     <ClInclude Include="board.h">
@@ -63,14 +63,14 @@
     <ClInclude Include="terminal_interface_policy.h">
       <Filter>Cores\User Interface Policies</Filter>
     </ClInclude>
-    <ClInclude Include="user_interface_policy.h">
-      <Filter>Cores\User Interface Policies</Filter>
-    </ClInclude>
     <ClInclude Include="uci_protocol.h">
       <Filter>Cores\User Interface Policies</Filter>
     </ClInclude>
     <ClInclude Include="perft_driver.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="small_vec.h">
+      <Filter>Cores</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

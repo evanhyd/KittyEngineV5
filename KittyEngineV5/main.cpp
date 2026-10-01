@@ -1,7 +1,7 @@
 #include "perft_driver.h"
 #include "position_fens.h"
 #include "board.h"
-#include "alpha_beta_search_policy.h"
+#include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
 #include "terminal_interface_policy.h"
 #include <iostream>
@@ -33,7 +33,7 @@ void runPerft() {
 
 int main() {
   Board board(
-    searching::AlphaBetaSearchingPolicy{},
+    searching::NegamaxSearchPolicy{},
     evaluation::HandCraftEvaluationPolicy{},
     user_interface::TerminalInterfacePolicy{cin, cout, cerr}
   );

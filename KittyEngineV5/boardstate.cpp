@@ -11,20 +11,6 @@ namespace bb {
     setPosition(fen);
   }
 
-  std::optional<std::tuple<Color, Piece>> BoardState::getPieceAt(Square square) const {
-    if (square >= kSquareSize) {
-      throw std::out_of_range("Square is outside the board");
-    }
-    for (Color color = kWhite; color < kColorSize; ++color) {
-      for (Piece piece = kPawn; piece < kPieceSize; ++piece) {
-        if (isSquareSet(bitboards_[color][piece], square)) {
-          return std::tuple<Color, Piece>{color, piece};
-        }
-      }
-    }
-    return std::nullopt;
-  }
-
   void BoardState::setPosition(std::string_view fen) {
     BoardState parsed{};
 

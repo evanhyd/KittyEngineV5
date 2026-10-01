@@ -1,7 +1,6 @@
 #pragma once
 #include "board.h"
 #include "uci_protocol.h"
-#include "user_interface_policy.h"
 #include <iostream>
 #include <string>
 #include <format>
@@ -63,6 +62,10 @@ namespace bb::user_interface {
           },
           [this] {
             running_ = false;
+          },
+          [this, &board](std::string_view move) {
+            board.playMove(move);
+            render(board);
           }
         };
 
