@@ -1,9 +1,12 @@
 #include "board.h"
+#include "handcraft_evaluation_policy.h"
+#include "negamax_search_policy.h"
 #include "notation.h"
 #include "position_fens.h"
-#include "terminal_interface_policy.h"
+#include "terminal_ui.h"
 #include "uci_protocol.h"
 #include <sstream>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <gtest/gtest.h>
@@ -11,7 +14,20 @@
 using namespace bb;
 
 namespace {
-  using UciBoard = Board<int, int, user_interface::TerminalInterfacePolicy>;
+  using UciSearch = searching::NegamaxSearchPolicy<evaluation::HandCraftEvaluationPolicy>;
+  using UciBoard = Board<UciSearch>;
+
+  struct RecordingSearchPolicy {
+    int* requestedDepth;
+
+    template <Color ally>
+    searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
+      *requestedDepth = param.maxDepth;
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+      return {0, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]}};
+    }
+  };
 }
 
 TEST(UciProtocol, DispatchesConstructorCallbacksWithoutBoard) {
@@ -81,22 +97,38 @@ TEST(UciIntegration, KeepsHumanViewOffProtocolOutput) {
   std::istringstream input{"uci\nisready\nquit\nuci\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
-  board.run();
+  terminal.run();
   EXPECT_EQ(uciOutput.str(), "id name KittyEngineV5\nid author UnboxTheCat\nuciok\nreadyok\n");
   EXPECT_NE(humanOutput.str().find("Welcome to KittyEngineV5"), std::string::npos);
   EXPECT_NE(humanOutput.str().find("FEN: " + std::string(fen::kStartPosition)), std::string::npos);
   EXPECT_EQ(humanOutput.str().find("uciok"), std::string::npos);
 }
 
+TEST(UciIntegration, PassesGoDepthToSearch) {
+  std::istringstream input{"go depth 3\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  int requestedDepth = 0;
+  Board board{RecordingSearchPolicy{&requestedDepth}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  EXPECT_EQ(requestedDepth, 3);
+  EXPECT_EQ(uciOutput.str().find("bestmove "), 0u);
+  EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
+}
+
 TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {
   std::istringstream input{"position startpos moves e2e4 e7e5\nucinewgame\nposition startpos moves e2e4 e7e5\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
-  board.run();
+  terminal.run();
   EXPECT_EQ(notation::boardToFen(board.getState()),
             "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2");
   EXPECT_TRUE(uciOutput.str().empty());
@@ -107,14 +139,15 @@ TEST(UciIntegration, NewGameResetsBoardWithoutAnotherPositionCommand) {
   std::istringstream input{"position startpos moves e2e4\nucinewgame\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
-  board.run();
+  terminal.run();
   EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
   EXPECT_TRUE(uciOutput.str().empty());
 }
 
-TEST(UciIntegration, RollsBackInvalidPositionAndReportsGoTodo) {
+TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
   std::istringstream input{
     "position startpos moves e2e4\n"
     "position startpos moves e2e4 e7e5 e4e8\n"
@@ -123,24 +156,59 @@ TEST(UciIntegration, RollsBackInvalidPositionAndReportsGoTodo) {
     "isready\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
-  board.run();
+  terminal.run();
   EXPECT_EQ(notation::boardToFen(board.getState()),
             "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
   EXPECT_NE(uciOutput.str().find("info string error: Illegal UCI move: e4e8\n"), std::string::npos);
   EXPECT_NE(uciOutput.str().find("info string error: Invalid piece letter\n"), std::string::npos);
-  EXPECT_NE(uciOutput.str().find("info string error: go is not implemented\n"), std::string::npos);
+  const std::string output = uciOutput.str();
+  const size_t moveStart = output.find("bestmove ");
+  ASSERT_NE(moveStart, std::string::npos);
+  const size_t moveEnd = output.find('\n', moveStart);
+  ASSERT_NE(moveEnd, std::string::npos);
+  const std::string bestMove = output.substr(moveStart + 9, moveEnd - moveStart - 9);
+  MoveList legalMoves;
+  board.getState().generateMoves<kBlack>(legalMoves);
+  EXPECT_TRUE(std::any_of(legalMoves.begin(), legalMoves.end(), [&](const Move& move) {
+    return notation::moveToString(move) == bestMove;
+  }));
   EXPECT_NE(uciOutput.str().find("readyok\n"), std::string::npos);
+}
+
+TEST(UciIntegration, RejectsInvalidDepthAndReportsNoLegalMove) {
+  std::istringstream input{
+    "go\n"
+    "go depth\n"
+    "go depth 0\n"
+    "go depth nope\n"
+    "position fen 7k/5Q2/6K1/8/8/8/8/8 b - - 0 1\n"
+    "go depth 2\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  EXPECT_EQ(uciOutput.str(),
+            "info string error: go depth is required\n"
+            "info string error: go depth needs a positive integer\n"
+            "info string error: go depth needs a positive integer\n"
+            "info string error: go depth needs a positive integer\n"
+            "bestmove 0000\n");
+  EXPECT_EQ(notation::boardToFen(board.getState()), "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
 }
 
 TEST(UciIntegration, PlayAcceptsLegalMoveAndRejectsIllegalMove) {
   std::istringstream input{"play e2e4\nplay e2e5\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
-  board.run();
+  terminal.run();
   EXPECT_EQ(notation::boardToFen(board.getState()),
             "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
   EXPECT_EQ(uciOutput.str(), "info string error: Illegal UCI move: e2e5\n");
@@ -163,8 +231,9 @@ TEST(UciIntegration, ReplaysPromotionCastlingAndEnPassant) {
     std::istringstream input{example.command};
     std::ostringstream uciOutput;
     std::ostringstream humanOutput;
-    UciBoard board{0, 0, user_interface::TerminalInterfacePolicy{input, uciOutput, humanOutput}};
-    board.run();
+    UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}}};
+    user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+    terminal.run();
     EXPECT_EQ(notation::boardToFen(board.getState()), example.expected);
     EXPECT_TRUE(uciOutput.str().empty());
   }

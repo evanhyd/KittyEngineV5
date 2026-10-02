@@ -3,7 +3,7 @@
 #include "board.h"
 #include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
-#include "terminal_interface_policy.h"
+#include "terminal_ui.h"
 #include <iostream>
 
 using namespace std;
@@ -32,10 +32,8 @@ void runPerft() {
 }
 
 int main() {
-  Board board(
-    searching::NegamaxSearchPolicy{},
-    evaluation::HandCraftEvaluationPolicy{},
-    user_interface::TerminalInterfacePolicy{cin, cout, cerr}
-  );
-  board.run();
+  int aspirationWindow = 50;
+  Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, aspirationWindow}};
+  user_interface::TerminalUI terminal{board, cin, cout, cerr};
+  terminal.run();
 }

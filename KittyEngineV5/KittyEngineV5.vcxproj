@@ -168,13 +168,13 @@
     <ClCompile Include="boardstate.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="notation.cpp" />
-    <ClCompile Include="terminal_interface_policy.cpp" />
     <ClCompile Include="uci_protocol.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitboard.h" />
     <ClInclude Include="board.h" />
     <ClInclude Include="boardstate.h" />
+    <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
     <ClInclude Include="perft_driver.h" />
     <ClInclude Include="negamax_search_policy.h" />
@@ -182,7 +182,8 @@
     <ClInclude Include="notation.h" />
     <ClInclude Include="position_fens.h" />
     <ClInclude Include="small_vec.h" />
-    <ClInclude Include="terminal_interface_policy.h" />
+    <ClInclude Include="searching_policy.h" />
+    <ClInclude Include="terminal_ui.h" />
     <ClInclude Include="uci_protocol.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

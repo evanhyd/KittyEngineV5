@@ -1,17 +1,21 @@
 #pragma once
 #include "boardstate.h"
+#include "evaluation_policy.h"
+#include "searching_policy.h"
 #include <algorithm>
+#include <optional>
 #include <ranges>
+#include <utility>
 
 namespace bb::searching {
-
   struct NodeMeta {
     Color ally;
   };
 
+  template <evaluation::EvaluationPolicy EvalPolicy>
   class NegamaxSearchPolicy {
-    static constexpr int32_t kMateScore = -1'000'000'000;
-    static constexpr int32_t kStalemateScore = 0;
+    EvalPolicy evalPolicy_;
+    int32_t aspirationWindow_ = 50;
 
     //static constexpr int32_t kFutilityMovePriority = 0;
     //static constexpr int32_t kKillerMove = 99;
@@ -64,12 +68,11 @@ namespace bb::searching {
       std::ranges::transform(scoredMoves, moves.begin(), &PriorityMove::move);
     }
 
-  public:
-    template <NodeMeta meta, typename EvalPolicy>
-    int32_t search(EvalPolicy& evalPolicy, BoardState& state, int depth, const int maxDepth, int32_t alpha, int32_t beta) {
+    template <NodeMeta meta>
+    int32_t search(BoardState& state, const int maxDepth, int depth, int32_t alpha, int32_t beta) {
       // Evaluate at leaf node.
       if (depth == maxDepth) {
-        return evalPolicy.evaluate(state);
+        return evalPolicy_.evaluate(state);
       }
 
       MoveList moves;
@@ -78,9 +81,9 @@ namespace bb::searching {
       // Check for checkmate or stalemate.
       if (moves.empty()) {
         if (state.isInCheck<meta.ally>()) {
-          return kMateScore + depth;
+          return evaluation::kCheckmateScore + depth;
         } else {
-          return kStalemateScore;
+          return evaluation::kStalemateScore;
         }
       }
 
@@ -90,7 +93,7 @@ namespace bb::searching {
       // Explore moves.
       for (const Move& move : moves) {
         MoveUndo undo = state.makeMove<meta.ally>(move);
-        int32_t score = -search<NodeMeta{getOtherColor(meta.ally)}, EvalPolicy>(evalPolicy, state, depth + 1, maxDepth, -beta, -alpha);
+        int32_t score = -search < NodeMeta{ getOtherColor(meta.ally) } > (state, maxDepth, depth + 1, -beta, -alpha);
         state.unmakeMove<meta.ally>(move, undo);
 
         if (score > alpha) {
@@ -103,5 +106,73 @@ namespace bb::searching {
 
       return alpha;
     }
+
+  public:
+    explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow)
+      : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow) {
+    }
+
+    template <Color ally>
+    SearchResult search(BoardState& state, const SearchParam& param) {
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+
+      // Draw or checkmate, no moves available.
+      if (moves.empty()) {
+        if (state.isInCheck<ally>()) {
+          return SearchResult{ evaluation::kCheckmateScore, std::nullopt };
+        } else {
+          return SearchResult{ evaluation::kStalemateScore, std::nullopt };
+        }
+      }
+      sortMoves<NodeMeta{ally}>(state, moves);
+
+      // Set up aspiration window.
+      int failLowCount = 0;
+      int failHighCount = 0;
+      int32_t initialAlpha = param.historicalEval - aspirationWindow_;
+      int32_t initialBeta = param.historicalEval + aspirationWindow_;
+
+      static constexpr auto cube = [](int32_t x) { return x * x * x; };
+
+      // Search for the best move.
+      for (;;) {
+        int32_t alpha = initialAlpha;
+        Move bestMove;
+        for (const Move& move : moves) {
+          const MoveUndo undo = state.makeMove<ally>(move);
+          const int32_t score = -search < NodeMeta{ getOtherColor(ally) } > (state, param.maxDepth, 1, -initialBeta, -alpha);
+          state.unmakeMove<ally>(move, undo);
+
+          if (score > alpha) {
+            alpha = score;
+            bestMove = move;
+
+            // Fail-high, increase beta and re-search.
+            if (alpha >= initialBeta) {
+              break;
+            }
+          }
+        }
+
+        if (alpha >= initialBeta) {
+          // Fail-high, the position is better than expected, increase beta and re-search.
+          ++failHighCount;
+          initialBeta = std::min(-evaluation::kCheckmateScore, initialBeta + cube(failHighCount + 1) * aspirationWindow_);
+          continue;
+        } else if (alpha <= initialAlpha) {
+          // Fail-low, the position is worse than expected, decrease alpha and re-search.
+          ++failLowCount;
+          initialAlpha = std::max(evaluation::kCheckmateScore, initialAlpha - cube(failLowCount + 1) * aspirationWindow_);
+          initialBeta = std::min(-evaluation::kCheckmateScore, (initialAlpha + initialBeta) / 2);
+          continue;
+        }
+
+        return SearchResult{ alpha, bestMove };
+      }
+    }
   };
+
+  template <typename EvalPolicy>
+  NegamaxSearchPolicy(EvalPolicy) -> NegamaxSearchPolicy<EvalPolicy>;
 }

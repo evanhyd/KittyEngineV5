@@ -1,12 +1,12 @@
 #pragma once
 #include "bitboard.h"
 #include "boardstate.h"
+#include "evaluation_policy.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
 
 namespace bb::evaluation {
-
   class HandCraftEvaluationPolicy {
     static constexpr int32_t kDoubledPawnPenalty = -15;
     static constexpr int32_t kIsolatedPawnPenalty = -15;
@@ -393,4 +393,6 @@ namespace bb::evaluation {
       return state.getColorToMove() == kWhite ? netScore : -netScore;
     }
   };
+
+  static_assert(EvaluationPolicy<HandCraftEvaluationPolicy>, "Not satisfy EvaluationPolicy concept");
 }

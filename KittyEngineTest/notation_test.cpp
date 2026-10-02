@@ -1,8 +1,10 @@
 #include "boardstate.h"
 #include "board.h"
+#include "handcraft_evaluation_policy.h"
+#include "negamax_search_policy.h"
 #include "notation.h"
 #include "position_fens.h"
-#include "terminal_interface_policy.h"
+#include "terminal_ui.h"
 #include <sstream>
 #include <stdexcept>
 #include <gtest/gtest.h>
@@ -10,18 +12,9 @@
 using namespace bb;
 
 namespace {
-  struct TestInterfacePolicy {
-    template <typename BoardType>
-    void run(BoardType&) {}
-    template <typename BoardType>
-    void render(const BoardType&) {}
-  };
-
-  using TestBoard = Board<int, int, TestInterfacePolicy>;
+  using TestSearch = searching::NegamaxSearchPolicy<evaluation::HandCraftEvaluationPolicy>;
+  using TestBoard = Board<TestSearch>;
 }
-
-static_assert(user_interface::UserInterfacePolicy<
-  user_interface::TerminalInterfacePolicy, TestBoard>);
 
 TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
   const BoardState state;
@@ -83,11 +76,57 @@ TEST(BoardState, GettersTrackMakeAndUnmake) {
 }
 
 TEST(Board, StartsAtInitialPosition) {
-  const TestBoard board{0, 0, {}};
+  const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
   EXPECT_EQ(board.getState().getColorToMove(), kWhite);
   EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Color, Piece>{kWhite, kKing}));
   EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Color, Piece>{kBlack, kKing}));
   EXPECT_EQ(board.getState().getFullmoveNumber(), 1);
+}
+
+TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
+  struct StatefulEvaluator {
+    int* calls;
+    int* copies;
+    const void** firstAddress;
+    bool* stableAddress;
+
+    StatefulEvaluator(int& calls, int& copies, const void*& firstAddress, bool& stableAddress)
+      : calls(&calls), copies(&copies), firstAddress(&firstAddress),
+        stableAddress(&stableAddress) {}
+
+    StatefulEvaluator(const StatefulEvaluator& other)
+      : calls(other.calls), copies(other.copies), firstAddress(other.firstAddress),
+        stableAddress(other.stableAddress) {
+      ++*copies;
+    }
+
+    int32_t evaluate(const BoardState&) {
+      if (*firstAddress == nullptr) {
+        *firstAddress = this;
+      } else if (*firstAddress != this) {
+        *stableAddress = false;
+      }
+      return ++*calls;
+    }
+  };
+
+  int calls = 0;
+  int copies = 0;
+  const void* firstAddress = nullptr;
+  bool stableAddress = true;
+  Board board{searching::NegamaxSearchPolicy{
+    StatefulEvaluator{calls, copies, firstAddress, stableAddress}}};
+  const int copiesBeforeSearch = copies;
+
+  ASSERT_TRUE(board.search(1).bestMove.has_value());
+  const int callsAfterFirstSearch = calls;
+  ASSERT_TRUE(board.search(1).bestMove.has_value());
+
+  EXPECT_GT(callsAfterFirstSearch, 0);
+  EXPECT_GT(calls, callsAfterFirstSearch);
+  EXPECT_NE(firstAddress, nullptr);
+  EXPECT_TRUE(stableAddress);
+  EXPECT_EQ(copies, copiesBeforeSearch);
 }
 
 TEST(BoardState, SetPositionReplacesAllFields) {
@@ -140,38 +179,45 @@ TEST(Notation, FormatsFullFen) {
             "r3k2r/8/8/3pP3/8/8/8/R3K2R b Kq d6 4 12");
 }
 
-TEST(TerminalInterfacePolicy, PrintsWelcomeMessage) {
+TEST(TerminalUI, PrintsWelcomeMessage) {
   std::istringstream in;
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  user_interface::TerminalInterfacePolicy terminal(in, uciOut, humanOut);
-  TestBoard board{0, 0, {}};
-  terminal.run(board);
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
+  terminal.run();
   EXPECT_NE(humanOut.str().find("Welcome to KittyEngineV5"), std::string::npos);
   EXPECT_NE(humanOut.str().find("FEN: " + std::string(fen::kStartPosition)), std::string::npos);
   EXPECT_TRUE(uciOut.str().empty());
 }
 
-TEST(TerminalInterfacePolicy, RunStopsAtQuitOrEndOfInput) {
+TEST(TerminalUI, RunStopsAtQuitOrEndOfInput) {
   std::istringstream in{"quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  user_interface::TerminalInterfacePolicy terminal(in, uciOut, humanOut);
-  TestBoard board{0, 0, {}};
-  terminal.run(board);
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
+  terminal.run();
   EXPECT_EQ(humanOut.str().find("FEN: "), humanOut.str().rfind("FEN: "));
   EXPECT_TRUE(uciOut.str().empty());
 }
 
-TEST(TerminalInterfacePolicy, RendersBoardAndSuppressesUnchangedFrames) {
-  std::istringstream in;
+TEST(TerminalUI, RendersBoardAndSuppressesUnchangedFrames) {
+  std::istringstream in{
+    "position startpos\n"
+    "position fen 7k/8/8/8/8/8/4p3/7K b - - 7 23\n"
+    "quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  user_interface::TerminalInterfacePolicy terminal(in, uciOut, humanOut);
-  TestBoard board{0, 0, {}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
 
-  terminal.render(board);
-  const std::string firstFrame = humanOut.str();
+  terminal.run();
+  const std::string output = humanOut.str();
+  const std::string startFen = "FEN: " + std::string(fen::kStartPosition) + "\n";
+  const size_t firstFrameEnd = output.find(startFen);
+  ASSERT_NE(firstFrameEnd, std::string::npos);
+  const std::string firstFrame = output.substr(0, firstFrameEnd + startFen.size());
   EXPECT_NE(firstFrame.find(" | r | n | b | q | k | b | n | r | 8\n"), std::string::npos);
   EXPECT_NE(firstFrame.find(" | R | N | B | Q | K | B | N | R | 1\n"), std::string::npos);
   EXPECT_NE(firstFrame.find("  -------------------------------\n"), std::string::npos);
@@ -184,12 +230,8 @@ TEST(TerminalInterfacePolicy, RendersBoardAndSuppressesUnchangedFrames) {
   EXPECT_NE(firstFrame.find("FEN: " + std::string(fen::kStartPosition) + "\n"), std::string::npos);
   EXPECT_EQ(firstFrame.find('\x1b'), std::string::npos);
 
-  terminal.render(board);
-  EXPECT_EQ(humanOut.str(), firstFrame);
-
-  board.getState().setPosition("7k/8/8/8/8/8/4p3/7K b - - 7 23");
-  terminal.render(board);
-  const std::string secondFrame = humanOut.str().substr(firstFrame.size());
+  EXPECT_EQ(output.find(startFen), output.rfind(startFen));
+  const std::string secondFrame = output.substr(firstFrame.size());
   EXPECT_NE(secondFrame.find(" |   |   |   |   |   |   |   | k | 8\n"), std::string::npos);
   EXPECT_NE(secondFrame.find(" |   |   |   |   | v |   |   |   | 2\n"), std::string::npos);
   EXPECT_NE(secondFrame.find("Side to move: black\n"), std::string::npos);

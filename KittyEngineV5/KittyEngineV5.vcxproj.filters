@@ -11,7 +11,7 @@
     <Filter Include="Cores\Evaluation Policies">
       <UniqueIdentifier>{2a980245-2a5a-4d12-9d7a-f9852e1c3564}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Cores\User Interface Policies">
+    <Filter Include="Cores\User Interface">
       <UniqueIdentifier>{75df46cc-3214-49be-b83e-3148e1afd82b}</UniqueIdentifier>
     </Filter>
     <Filter Include="Cores\Searching Policies">
@@ -22,11 +22,8 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="terminal_interface_policy.cpp">
-      <Filter>Cores\User Interface Policies</Filter>
-    </ClCompile>
     <ClCompile Include="uci_protocol.cpp">
-      <Filter>Cores\User Interface Policies</Filter>
+      <Filter>Cores\User Interface</Filter>
     </ClCompile>
     <ClCompile Include="boardstate.cpp">
       <Filter>Cores</Filter>
@@ -41,6 +38,9 @@
     </ClInclude>
     <ClInclude Include="boardstate.h">
       <Filter>Cores</Filter>
+    </ClInclude>
+    <ClInclude Include="evaluation_policy.h">
+      <Filter>Cores\Evaluation Policies</Filter>
     </ClInclude>
     <ClInclude Include="move.h">
       <Filter>Cores</Filter>
@@ -60,17 +60,20 @@
     <ClInclude Include="board.h">
       <Filter>Cores</Filter>
     </ClInclude>
-    <ClInclude Include="terminal_interface_policy.h">
-      <Filter>Cores\User Interface Policies</Filter>
+    <ClInclude Include="terminal_ui.h">
+      <Filter>Cores\User Interface</Filter>
     </ClInclude>
     <ClInclude Include="uci_protocol.h">
-      <Filter>Cores\User Interface Policies</Filter>
+      <Filter>Cores\User Interface</Filter>
     </ClInclude>
     <ClInclude Include="perft_driver.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="small_vec.h">
       <Filter>Cores</Filter>
+    </ClInclude>
+    <ClInclude Include="searching_policy.h">
+      <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
