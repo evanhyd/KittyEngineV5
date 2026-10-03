@@ -1,6 +1,7 @@
 #pragma once
 #include "boardstate.h"
 #include <chrono>
+#include <format>
 #include <iostream>
 
 namespace perft {
@@ -66,11 +67,11 @@ namespace perft {
     const auto ms = duration_cast<milliseconds>(high_resolution_clock::now() - start);
     if constexpr (canPrint) {
       const uint64_t knps = ms.count() > 0 ? result.nodes / ms.count() : result.nodes;
-      std::cout << "depth " << depth << ", nodes " << result.nodes << ", time " << ms.count()
-                << " ms, speed " << knps << " knps\n";
+      std::cout << std::format("depth {}, nodes {}, time {} ms, speed {} knps\n",
+                               depth, result.nodes, ms.count(), knps);
       if constexpr (config.isDetailed) {
-        std::cout << "    captures " << result.captures << " enpassants " << result.enpassants
-                  << " castles " << result.castles << " promotions " << result.promotions << '\n';
+        std::cout << std::format("    captures {} enpassants {} castles {} promotions {}\n",
+                                 result.captures, result.enpassants, result.castles, result.promotions);
       }
     }
     return result;

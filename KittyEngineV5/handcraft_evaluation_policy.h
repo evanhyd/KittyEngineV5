@@ -8,27 +8,27 @@
 
 namespace bb::evaluation {
   class HandCraftEvaluationPolicy {
-    static constexpr int32_t kDoubledPawnPenalty = -15;
-    static constexpr int32_t kIsolatedPawnPenalty = -15;
+    static constexpr int32_t kDoubledPawnPenalty = -31;
+    static constexpr int32_t kIsolatedPawnPenalty = -11;
     static constexpr int32_t kOverloadedDefenderPenalty = -8;
-    static constexpr int32_t kMinOverloadedDefenderPenalty = -16;
+    static constexpr int32_t kMinOverloadedDefenderPenalty = 0;
     static constexpr int32_t kMissingShelterPenalty = -8;
-    static constexpr int32_t kSemiOpenKingFilePenalty = -6;
+    static constexpr int32_t kSemiOpenKingFilePenalty = 0;
     static constexpr int32_t kOpenKingFilePenalty = -10;
     static constexpr int32_t kKingZoneAttackPenalty = -4;
-    static constexpr int32_t kKingZoneDoubleAttackPenalty = -2;
-    static constexpr int32_t kBishopPairBonus = 30;
-    static constexpr int32_t kSemiOpenFileBonus = 10;
-    static constexpr int32_t kOpenFileBonus = 20;
+    static constexpr int32_t kKingZoneDoubleAttackPenalty = -12;
+    static constexpr int32_t kBishopPairBonus = 37;
+    static constexpr int32_t kSemiOpenFileBonus = 9;
+    static constexpr int32_t kOpenFileBonus = 24;
+    static constexpr int32_t kMinKingWeaknessPenalty = -92;
     static constexpr int32_t kMaxPhase = 24;
-    static constexpr int32_t kMinKingWeaknessPenalty = -80;
 
     // Passed pawn bonus indexed by rank (relative to pawn advancement: rank 0..7)
-    static constexpr std::array<int32_t, kSideSize> kPassedPawnBonusTable = { 0, 0, 5, 10, 20, 40, 80, 0 };
+    static constexpr std::array<int32_t, kSideSize> kPassedPawnBonusTable = { 0, 0, 5, 8, 31, 46, 118, 0 };
 
     // Indexed by piece type (0..5: Pawn, Knight, Bishop, Rook, Queen, King)
-    static constexpr std::array<int32_t, kPieceSize> kPieceMobilityBonusTable = { 0, 4, 3, 2, 0, 0 };
-    static constexpr std::array<int32_t, kPieceSize> kPieceMaterialValueTable = { 100, 320, 335, 500, 900, 0 };
+    static constexpr std::array<int32_t, kPieceSize> kPieceMobilityBonusTable = { 0, 4, 6, 2, 0, 0 };
+    static constexpr std::array<int32_t, kPieceSize> kPieceMaterialValueTable = { 100, 309, 291, 490, 951, 0 };
 
     // Unified piece-square tables for 6 piece types, oriented from White's perspective.
     // For Black, flip the rank with square ^ 56.

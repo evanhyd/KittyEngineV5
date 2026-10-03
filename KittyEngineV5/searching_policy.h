@@ -2,6 +2,7 @@
 #include "move.h"
 #include <cstdint>
 #include <optional>
+#include <chrono>
 
 namespace bb {
   class BoardState;
@@ -16,6 +17,8 @@ namespace bb {
     struct SearchResult {
       int32_t score;
       std::optional<Move> bestMove;
+      uint64_t nodesSearched;
+      std::chrono::steady_clock::duration searchingTime;
     };
 
     template <typename SearchPolicy>

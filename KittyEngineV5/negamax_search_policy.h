@@ -69,7 +69,9 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    int32_t search(BoardState& state, const int maxDepth, int depth, int32_t alpha, int32_t beta) {
+    int32_t search(BoardState& state, const int maxDepth, int depth, int32_t alpha, int32_t beta, uint64_t& searchedNodes) {
+      ++searchedNodes;
+
       // Evaluate at leaf node.
       if (depth == maxDepth) {
         return evalPolicy_.evaluate(state);
@@ -93,7 +95,7 @@ namespace bb::searching {
       // Explore moves.
       for (const Move& move : moves) {
         MoveUndo undo = state.makeMove<meta.ally>(move);
-        int32_t score = -search < NodeMeta{ getOtherColor(meta.ally) } > (state, maxDepth, depth + 1, -beta, -alpha);
+        int32_t score = -search < NodeMeta{ getOtherColor(meta.ally) } > (state, maxDepth, depth + 1, -beta, -alpha, searchedNodes);
         state.unmakeMove<meta.ally>(move, undo);
 
         if (score > alpha) {
@@ -114,15 +116,20 @@ namespace bb::searching {
 
     template <Color ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
+      // Search statistics.
+      const auto startTime = std::chrono::steady_clock::now();
+      uint64_t searchedNodes = 1;
+
+      // Generate legal moves and check for checkmate or stalemate.
       MoveList moves;
       state.generateMoves<ally>(moves);
-
-      // Draw or checkmate, no moves available.
       if (moves.empty()) {
         if (state.isInCheck<ally>()) {
-          return SearchResult{ evaluation::kCheckmateScore, std::nullopt };
+          return SearchResult{evaluation::kCheckmateScore, std::nullopt, searchedNodes,
+                              std::chrono::steady_clock::now() - startTime};
         } else {
-          return SearchResult{ evaluation::kStalemateScore, std::nullopt };
+          return SearchResult{evaluation::kStalemateScore, std::nullopt, searchedNodes,
+                              std::chrono::steady_clock::now() - startTime};
         }
       }
       sortMoves<NodeMeta{ally}>(state, moves);
@@ -141,7 +148,7 @@ namespace bb::searching {
         Move bestMove;
         for (const Move& move : moves) {
           const MoveUndo undo = state.makeMove<ally>(move);
-          const int32_t score = -search < NodeMeta{ getOtherColor(ally) } > (state, param.maxDepth, 1, -initialBeta, -alpha);
+          const int32_t score = -search < NodeMeta{ getOtherColor(ally) } > (state, param.maxDepth, 1, -initialBeta, -alpha, searchedNodes);
           state.unmakeMove<ally>(move, undo);
 
           if (score > alpha) {
@@ -168,7 +175,12 @@ namespace bb::searching {
           continue;
         }
 
-        return SearchResult{ alpha, bestMove };
+        return SearchResult{
+          .score = alpha,
+          .bestMove = bestMove,
+          .nodesSearched = searchedNodes,
+          .searchingTime = std::chrono::steady_clock::now() - startTime
+        };
       }
     }
   };

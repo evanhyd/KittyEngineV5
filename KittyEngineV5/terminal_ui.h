@@ -1,10 +1,13 @@
 #pragma once
 #include "boardstate.h"
+#include "evaluation_policy.h"
 #include "notation.h"
 #include "position_fens.h"
 #include "uci_protocol.h"
 #include <algorithm>
 #include <charconv>
+#include <chrono>
+#include <cstdint>
 #include <format>
 #include <iostream>
 #include <optional>
@@ -26,7 +29,7 @@ namespace bb::user_interface {
       std::string safeMessage{message};
       std::replace_if(safeMessage.begin(), safeMessage.end(),
                       [](char ch) { return ch == '\r' || ch == '\n'; }, ' ');
-      uciOutput_ << "info string error: " << safeMessage << '\n';
+      uciOutput_ << std::format("info string error: {}\n", safeMessage);
     }
 
     void renderState(const BoardState& state) {
@@ -114,10 +117,30 @@ namespace bb::user_interface {
           if (depth == 0) {
             throw std::invalid_argument("go depth is required");
           }
-          const auto result = board_.search(depth);
-          uciOutput_ << "bestmove "
-                     << (result.bestMove ? notation::moveToString(*result.bestMove) : "0000")
-                     << '\n';
+          int completedDepth = 0;
+          uint64_t totalNodes = 0;
+          std::chrono::steady_clock::duration totalTime{};
+          const auto result = board_.search(depth, [this, &completedDepth, &totalNodes, &totalTime](const auto& result) {
+            ++completedDepth;
+            totalNodes += result.nodesSearched;
+            totalTime += result.searchingTime;
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(totalTime).count();
+            const double elapsedSeconds = std::chrono::duration<double>(totalTime).count();
+            const uint64_t nps = elapsedSeconds > 0
+              ? static_cast<uint64_t>(totalNodes / elapsedSeconds) : 0;
+
+            constexpr int64_t mateScore = -evaluation::kCheckmateScore;
+            const int64_t score = result.score;
+            const int64_t magnitude = score < 0 ? -score : score;
+            const std::string scoreText = magnitude >= mateScore - completedDepth && magnitude <= mateScore
+              ? std::format("mate {}", (score < 0 ? -1 : 1) * ((mateScore - magnitude + 1) / 2))
+              : std::format("cp {}", result.score);
+            uciOutput_ << std::format("info depth {} score {} time {} nodes {} nps {}\n",
+                                      completedDepth, scoreText, elapsedMs, totalNodes, nps);
+            uciOutput_.flush();
+          });
+          uciOutput_ << std::format("bestmove {}\n",
+                                    result.bestMove ? notation::moveToString(*result.bestMove) : "0000");
         },
         [this] {
           running_ = false;

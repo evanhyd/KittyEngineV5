@@ -76,7 +76,7 @@ TEST(BoardState, GettersTrackMakeAndUnmake) {
 }
 
 TEST(Board, StartsAtInitialPosition) {
-  const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
   EXPECT_EQ(board.getState().getColorToMove(), kWhite);
   EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Color, Piece>{kWhite, kKing}));
   EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Color, Piece>{kBlack, kKing}));
@@ -115,12 +115,12 @@ TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
   const void* firstAddress = nullptr;
   bool stableAddress = true;
   Board board{searching::NegamaxSearchPolicy{
-    StatefulEvaluator{calls, copies, firstAddress, stableAddress}}};
+    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, 50}};
   const int copiesBeforeSearch = copies;
 
-  ASSERT_TRUE(board.search(1).bestMove.has_value());
+  ASSERT_TRUE(board.search(1, [](const searching::SearchResult&) {}).bestMove.has_value());
   const int callsAfterFirstSearch = calls;
-  ASSERT_TRUE(board.search(1).bestMove.has_value());
+  ASSERT_TRUE(board.search(1, [](const searching::SearchResult&) {}).bestMove.has_value());
 
   EXPECT_GT(callsAfterFirstSearch, 0);
   EXPECT_GT(calls, callsAfterFirstSearch);
@@ -183,7 +183,7 @@ TEST(TerminalUI, PrintsWelcomeMessage) {
   std::istringstream in;
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
   terminal.run();
   EXPECT_NE(humanOut.str().find("Welcome to KittyEngineV5"), std::string::npos);
@@ -195,7 +195,7 @@ TEST(TerminalUI, RunStopsAtQuitOrEndOfInput) {
   std::istringstream in{"quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
   terminal.run();
   EXPECT_EQ(humanOut.str().find("FEN: "), humanOut.str().rfind("FEN: "));
@@ -209,7 +209,7 @@ TEST(TerminalUI, RendersBoardAndSuppressesUnchangedFrames) {
     "quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
 
   terminal.run();

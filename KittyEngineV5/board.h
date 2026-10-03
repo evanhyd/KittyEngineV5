@@ -46,7 +46,7 @@ namespace bb {
     void setPosition(std::string_view fen, std::span<const std::string_view> moves) {
       const BoardState previousState = state_;
       const int32_t previousEval = historicalEval_;
-      auto previousMoves = historicalMoves_;
+      std::vector<Move> previousMoves = std::move(historicalMoves_);
       try {
         setPosition(fen);
         for (const std::string_view moveText : moves) {
@@ -60,7 +60,7 @@ namespace bb {
       }
     }
 
-    searching::SearchResult search(int maxDepth) {
+    searching::SearchResult search(int maxDepth, auto resultCallback) {
       const auto iterativeDeepening = [&]<Color ally>() {
         searching::SearchResult result;
         for (int depth = 1; depth <= maxDepth; ++depth) {
@@ -71,6 +71,7 @@ namespace bb {
           };
           result = searchPolicy_.template search<ally>(state_, param);
           historicalEval_ = result.score;
+          resultCallback(result);
         }
 
         return result;
