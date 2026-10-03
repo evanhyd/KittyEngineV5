@@ -34,13 +34,12 @@ namespace bb::searching {
         {100, 200, 300, 400, 500}  // king
     }};
 
-    template <NodeMeta meta>
     void sortMoves(const BoardState& state, MoveList& moves) const {
       struct PriorityMove {
         int32_t priority;
         Move move;
       };
-      SmallVec<PriorityMove> scoredMoves;
+      static SmallVec<PriorityMove> scoredMoves;
       scoredMoves.resize(moves.size());
 
       // Calculate the priority.
@@ -68,8 +67,10 @@ namespace bb::searching {
       std::ranges::transform(scoredMoves, moves.begin(), &PriorityMove::move);
     }
 
+
+
     template <NodeMeta meta>
-    int32_t search(BoardState& state, const int maxDepth, int depth, int32_t alpha, int32_t beta, uint64_t& searchedNodes) {
+    int32_t internalSearch(BoardState& state, const int maxDepth, int depth, int32_t alpha, int32_t beta, uint64_t& searchedNodes) {
       ++searchedNodes;
 
       // Evaluate at leaf node.
@@ -90,12 +91,12 @@ namespace bb::searching {
       }
 
       // Move ordering.
-      sortMoves<meta>(state, moves);
+      sortMoves(state, moves);
 
       // Explore moves.
       for (const Move& move : moves) {
         MoveUndo undo = state.makeMove<meta.ally>(move);
-        int32_t score = -search < NodeMeta{ getOtherColor(meta.ally) } > (state, maxDepth, depth + 1, -beta, -alpha, searchedNodes);
+        int32_t score = -internalSearch< NodeMeta{ getOtherColor(meta.ally) } > (state, maxDepth, depth + 1, -beta, -alpha, searchedNodes);
         state.unmakeMove<meta.ally>(move, undo);
 
         if (score > alpha) {
@@ -132,15 +133,19 @@ namespace bb::searching {
                               std::chrono::steady_clock::now() - startTime};
         }
       }
-      sortMoves<NodeMeta{ally}>(state, moves);
+      sortMoves(state, moves);
 
       // Set up aspiration window.
+      static constexpr auto cube = [](int32_t x) { return x * x * x; };
       int failLowCount = 0;
       int failHighCount = 0;
-      int32_t initialAlpha = param.historicalEval - aspirationWindow_;
-      int32_t initialBeta = param.historicalEval + aspirationWindow_;
-
-      static constexpr auto cube = [](int32_t x) { return x * x * x; };
+      auto [initialAlpha, initialBeta] = [&]() {
+        if (param.maxDepth <= 4) {
+          return std::array<int32_t, 2>{evaluation::kCheckmateScore, -evaluation::kCheckmateScore};
+        } else {
+          return std::array<int32_t, 2>{param.historicalEval - aspirationWindow_, param.historicalEval + aspirationWindow_};
+        }
+      }();
 
       // Search for the best move.
       for (;;) {
@@ -148,7 +153,7 @@ namespace bb::searching {
         Move bestMove;
         for (const Move& move : moves) {
           const MoveUndo undo = state.makeMove<ally>(move);
-          const int32_t score = -search < NodeMeta{ getOtherColor(ally) } > (state, param.maxDepth, 1, -initialBeta, -alpha, searchedNodes);
+          const int32_t score = -internalSearch < NodeMeta{ getOtherColor(ally) } > (state, param.maxDepth, 1, -initialBeta, -alpha, searchedNodes);
           state.unmakeMove<ally>(move, undo);
 
           if (score > alpha) {

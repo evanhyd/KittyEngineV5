@@ -60,20 +60,25 @@ namespace perft {
   }
 
   template <Config config, bool canPrint = true>
-  inline Result runPerft(const bb::BoardState& state, uint32_t depth) {
+  inline Result runPerft(const bb::BoardState& state, uint32_t depth, std::ostream& output) {
     using namespace std::chrono;
     const auto start = high_resolution_clock::now();
     const Result result = countPerft<config>(state, depth);
     const auto ms = duration_cast<milliseconds>(high_resolution_clock::now() - start);
     if constexpr (canPrint) {
       const uint64_t knps = ms.count() > 0 ? result.nodes / ms.count() : result.nodes;
-      std::cout << std::format("depth {}, nodes {}, time {} ms, speed {} knps\n",
-                               depth, result.nodes, ms.count(), knps);
+      output << std::format("depth {}, nodes {}, time {} ms, speed {} knps\n",
+                            depth, result.nodes, ms.count(), knps);
       if constexpr (config.isDetailed) {
-        std::cout << std::format("    captures {} enpassants {} castles {} promotions {}\n",
-                                 result.captures, result.enpassants, result.castles, result.promotions);
+        output << std::format("    captures {} enpassants {} castles {} promotions {}\n",
+                              result.captures, result.enpassants, result.castles, result.promotions);
       }
     }
     return result;
+  }
+
+  template <Config config, bool canPrint = true>
+  inline Result runPerft(const bb::BoardState& state, uint32_t depth) {
+    return runPerft<config, canPrint>(state, depth, std::cout);
   }
 }

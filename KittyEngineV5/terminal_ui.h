@@ -2,6 +2,7 @@
 #include "boardstate.h"
 #include "evaluation_policy.h"
 #include "notation.h"
+#include "perft_driver.h"
 #include "position_fens.h"
 #include "uci_protocol.h"
 #include <algorithm>
@@ -117,17 +118,13 @@ namespace bb::user_interface {
           if (depth == 0) {
             throw std::invalid_argument("go depth is required");
           }
+
           int completedDepth = 0;
-          uint64_t totalNodes = 0;
-          std::chrono::steady_clock::duration totalTime{};
-          const auto result = board_.search(depth, [this, &completedDepth, &totalNodes, &totalTime](const auto& result) {
+          const auto result = board_.search(depth, [this, &completedDepth](const auto& result) {
             ++completedDepth;
-            totalNodes += result.nodesSearched;
-            totalTime += result.searchingTime;
-            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(totalTime).count();
-            const double elapsedSeconds = std::chrono::duration<double>(totalTime).count();
-            const uint64_t nps = elapsedSeconds > 0
-              ? static_cast<uint64_t>(totalNodes / elapsedSeconds) : 0;
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(result.searchingTime).count();
+            const double elapsedSeconds = std::chrono::duration<double>(result.searchingTime).count();
+            const uint64_t nps = elapsedSeconds > 0 ? static_cast<uint64_t>(result.nodesSearched / elapsedSeconds) : 0;
 
             constexpr int64_t mateScore = -evaluation::kCheckmateScore;
             const int64_t score = result.score;
@@ -136,7 +133,7 @@ namespace bb::user_interface {
               ? std::format("mate {}", (score < 0 ? -1 : 1) * ((mateScore - magnitude + 1) / 2))
               : std::format("cp {}", result.score);
             uciOutput_ << std::format("info depth {} score {} time {} nodes {} nps {}\n",
-                                      completedDepth, scoreText, elapsedMs, totalNodes, nps);
+                                      completedDepth, scoreText, elapsedMs, result.nodesSearched, nps);
             uciOutput_.flush();
           });
           uciOutput_ << std::format("bestmove {}\n",
@@ -148,6 +145,15 @@ namespace bb::user_interface {
         [this](std::string_view move) {
           board_.playMove(move);
           render();
+        },
+        [this](uint32_t depth, bool detail) {
+          if (detail) {
+            constexpr perft::Config config{false, false, true};
+            perft::runPerft<config>(board_.getState(), depth, uciOutput_);
+          } else {
+            constexpr perft::Config config{false, true, false};
+            perft::runPerft<config>(board_.getState(), depth, uciOutput_);
+          }
         }
       };
 

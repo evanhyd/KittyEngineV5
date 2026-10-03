@@ -18,7 +18,6 @@ namespace bb {
   class Board {
     SearchPolicy searchPolicy_;
     BoardState state_;
-    int32_t historicalEval_;
     std::vector<Move> historicalMoves_;
 
   public:
@@ -39,13 +38,11 @@ namespace bb {
     constexpr void setPosition(std::string_view fen) {
       // TODO: reset search policy state if needed.
       state_.setPosition(fen);
-      historicalEval_ = 0;
       historicalMoves_.clear();
     }
 
     void setPosition(std::string_view fen, std::span<const std::string_view> moves) {
       const BoardState previousState = state_;
-      const int32_t previousEval = historicalEval_;
       std::vector<Move> previousMoves = std::move(historicalMoves_);
       try {
         setPosition(fen);
@@ -54,7 +51,6 @@ namespace bb {
         }
       } catch (...) {
         state_ = previousState;
-        historicalEval_ = previousEval;
         historicalMoves_ = std::move(previousMoves);
         throw;
       }
@@ -63,14 +59,16 @@ namespace bb {
     searching::SearchResult search(int maxDepth, auto resultCallback) {
       const auto iterativeDeepening = [&]<Color ally>() {
         searching::SearchResult result;
+        int32_t historicalEval = 0;
+
         for (int depth = 1; depth <= maxDepth; ++depth) {
           const searching::SearchParam param{
             .maxDepth = depth,
-            .historicalEval = historicalEval_,
+            .historicalEval = historicalEval,
             .pvMove = std::nullopt
           };
           result = searchPolicy_.template search<ally>(state_, param);
-          historicalEval_ = result.score;
+          historicalEval = result.score;
           resultCallback(result);
         }
 

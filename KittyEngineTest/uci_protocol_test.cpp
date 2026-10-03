@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <gtest/gtest.h>
 
@@ -134,6 +135,31 @@ TEST(UciProtocol, PropagatesErrorsToItsCaller) {
   EXPECT_EQ(readyCount, 1);
 }
 
+TEST(UciProtocol, DispatchesPerftAndRejectsInvalidDepth) {
+  std::vector<std::pair<uint32_t, bool>> requests;
+  uci::UciProtocol protocol{
+    [] {}, [] {}, [] {},
+    [](std::string_view, std::span<const std::string_view>) {},
+    [](std::span<const std::string_view>) {},
+    [] {},
+    {},
+    [&](uint32_t depth, bool detail) { requests.emplace_back(depth, detail); }
+  };
+
+  protocol.send("perft depth 0");
+  protocol.send("perft depth 3 detail");
+  EXPECT_EQ(requests, (std::vector<std::pair<uint32_t, bool>>{{0, false}, {3, true}}));
+  EXPECT_THROW(protocol.send("perft"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft depth"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft 3"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft depth -1"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft depth nope"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft depth 4294967296"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft depth 1 extra"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("perft depth 1 detail extra"), std::invalid_argument);
+  EXPECT_EQ(requests.size(), 2u);
+}
+
 TEST(UciIntegration, KeepsHumanViewOffProtocolOutput) {
   std::istringstream input{"uci\nisready\nquit\nuci\n"};
   std::ostringstream uciOutput;
@@ -146,6 +172,34 @@ TEST(UciIntegration, KeepsHumanViewOffProtocolOutput) {
   EXPECT_NE(humanOutput.str().find("Welcome to KittyEngineV5"), std::string::npos);
   EXPECT_NE(humanOutput.str().find("FEN: " + std::string(fen::kStartPosition)), std::string::npos);
   EXPECT_EQ(humanOutput.str().find("uciok"), std::string::npos);
+}
+
+TEST(UciIntegration, RunsFastAndDetailedPerftOnCurrentPosition) {
+  std::istringstream input{
+    "position fen " + std::string(fen::kKiwipete) + "\n"
+    "perft depth 0\n"
+    "perft depth 1\n"
+    "perft depth 1 detail\n"
+    "quit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  std::istringstream output{uciOutput.str()};
+  std::string line;
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line.find("depth 0, nodes 1, time "), 0u);
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line.find("depth 1, nodes 48, time "), 0u);
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line.find("depth 1, nodes 48, time "), 0u);
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line, "    captures 8 enpassants 0 castles 2 promotions 0");
+  EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(notation::boardToFen(board.getState()), fen::kKiwipete);
+  EXPECT_EQ(humanOutput.str().find("depth 1, nodes"), std::string::npos);
 }
 
 TEST(SearchStatistics, CountsRootAndLeafPositions) {

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <span>
 #include <string_view>
@@ -10,6 +11,7 @@ namespace bb::uci {
     using PositionCallback = std::function<void(std::string_view, std::span<const std::string_view>)>;
     using GoCallback = std::function<void(std::span<const std::string_view>)>;
     using PlayCallback = std::function<void(std::string_view)>;
+    using PerftCallback = std::function<void(uint32_t, bool)>;
 
     explicit UciProtocol(
       SimpleCallback onUci, 
@@ -18,7 +20,8 @@ namespace bb::uci {
       PositionCallback onPosition,
       GoCallback onGo, 
       SimpleCallback onQuit,
-      PlayCallback onPlay = {});
+      PlayCallback onPlay = {},
+      PerftCallback onPerft = {});
 
     void send(std::string_view line);
 
@@ -30,5 +33,6 @@ namespace bb::uci {
     GoCallback onGo_;
     SimpleCallback onQuit_;
     PlayCallback onPlay_;
+    PerftCallback onPerft_;
   };
 }

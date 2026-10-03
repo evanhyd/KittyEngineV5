@@ -1,5 +1,6 @@
 #include "uci_protocol.h"
 #include "position_fens.h"
+#include <charconv>
 #include <cctype>
 #include <stdexcept>
 #include <string>
@@ -36,7 +37,8 @@ namespace bb::uci {
     PositionCallback onPosition,
     GoCallback onGo, 
     SimpleCallback onQuit,
-    PlayCallback onPlay)
+    PlayCallback onPlay,
+    PerftCallback onPerft)
     : 
     onUci_(std::move(onUci)), 
     onIsReady_(std::move(onIsReady)),
@@ -44,7 +46,8 @@ namespace bb::uci {
     onPosition_(std::move(onPosition)),
     onGo_(std::move(onGo)), 
     onQuit_(std::move(onQuit)),
-    onPlay_(std::move(onPlay)) {}
+    onPlay_(std::move(onPlay)),
+    onPerft_(std::move(onPerft)) {}
 
   void UciProtocol::send(std::string_view line) {
     const std::vector<std::string_view> words = splitTokens(line);
@@ -96,6 +99,19 @@ namespace bb::uci {
       onPosition_(fen, args.subspan(next));
     } else if (command == "go") {
       onGo_(args);
+    } else if (command == "perft") {
+      if ((args.size() != 2 && args.size() != 3) || args[0] != "depth" ||
+          (args.size() == 3 && args[2] != "detail")) {
+        throw std::invalid_argument("perft requires depth N [detail]");
+      }
+      uint32_t depth = 0;
+      const auto [end, error] = std::from_chars(args[1].data(), args[1].data() + args[1].size(), depth);
+      if (error != std::errc{} || end != args[1].data() + args[1].size()) {
+        throw std::invalid_argument("perft requires a nonnegative integer depth");
+      }
+      if (onPerft_) {
+        onPerft_(depth, args.size() == 3);
+      }
     } else if (command == "play") {
       if (args.size() != 1) {
         throw std::invalid_argument("play requires one move");
