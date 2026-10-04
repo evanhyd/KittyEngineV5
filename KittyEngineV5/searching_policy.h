@@ -11,7 +11,6 @@ namespace bb {
     struct SearchParam {
       int maxDepth;
       int32_t pastEval;
-      std::optional<Move> pvMove;
     };
 
     struct SearchResult {

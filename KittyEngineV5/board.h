@@ -65,7 +65,6 @@ namespace bb {
           const searching::SearchParam param{
             .maxDepth = depth,
             .pastEval = pastEval,
-            .pvMove = std::nullopt
           };
           result = searchPolicy_.template search<ally>(state_, param);
           pastEval = result.score;
