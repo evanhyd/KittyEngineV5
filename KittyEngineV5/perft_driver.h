@@ -30,7 +30,7 @@ namespace perft {
           result.captures += move.isCapture() || move.isEnpassant();
           result.enpassants += move.isEnpassant();
           result.castles += move.isCastling();
-          result.promotions += move.getPromotedPieceType() != bb::kNoPiece;
+          result.promotions += move.getPromotedPieceType() != bb::NoPiece;
         }
       }
       return;
@@ -51,10 +51,10 @@ namespace perft {
       return result;
     }
     bb::BoardState state = position;
-    if (state.getColorToMove() == bb::kWhite) {
-      countChildren<config, bb::kWhite>(state, depth, result);
+    if (state.getColorToMove() == bb::White) {
+      countChildren<config, bb::White>(state, depth, result);
     } else {
-      countChildren<config, bb::kBlack>(state, depth, result);
+      countChildren<config, bb::Black>(state, depth, result);
     }
     return result;
   }

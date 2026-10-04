@@ -45,7 +45,7 @@ size_t countMoves(const std::vector<LegalMove>& moves, Square srce, Square dest)
 Bitboard slowSliderAttack(Piece piece, Square srce, Bitboard occupancy) {
   const std::array<std::pair<int, int>, 4> rookDirections{{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}};
   const std::array<std::pair<int, int>, 4> bishopDirections{{{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}};
-  const auto& directions = piece == kRook ? rookDirections : bishopDirections;
+  const auto& directions = piece == Rook ? rookDirections : bishopDirections;
   Bitboard attacks = 0;
   for (const auto& [dr, df] : directions) {
     int rank = static_cast<int>(getSquareRank(srce)) + dr;
@@ -68,11 +68,11 @@ Bitboard slowSliderAttack(Piece piece, Square srce, Bitboard occupancy) {
 TEST(AttackTables, EveryRelevantSliderOccupancy) {
   for (Square square = 0; square < kSquareSize; ++square) {
     SCOPED_TRACE("square " + std::to_string(square));
-    for (Piece piece : {kBishop, kRook}) {
-      const Bitboard mask = internal::sliderAttackTables[square][piece - kBishop].maxAttackNoEdge;
+    for (Piece piece : {Bishop, Rook}) {
+      const Bitboard mask = internal::sliderAttackTables[square][piece - Bishop].maxAttackNoEdge;
       for (Bitboard occupancy = mask;; occupancy = (occupancy - 1) & mask) {
-        const Bitboard actual = piece == kBishop ? getAttack<kBishop>(square, occupancy)
-                                                  : getAttack<kRook>(square, occupancy);
+        const Bitboard actual = piece == Bishop ? getAttack<Bishop>(square, occupancy)
+                                                  : getAttack<Rook>(square, occupancy);
         EXPECT_EQ(actual, slowSliderAttack(piece, square, occupancy));
         if (occupancy == 0) {
           break;
@@ -83,16 +83,16 @@ TEST(AttackTables, EveryRelevantSliderOccupancy) {
 }
 
 TEST(AttackTables, CornerLeapersDoNotWrapFiles) {
-  EXPECT_EQ(getAttack<kKnight>(A8), toBitboard(B6, C7));
-  EXPECT_EQ(getAttack<kKnight>(H1), toBitboard(F2, G3));
-  EXPECT_EQ(getAttack<kKing>(A8), toBitboard(A7, B7, B8));
-  EXPECT_EQ((getAttack<kPawn, kWhite>(A7)), toBitboard(B8));
-  EXPECT_EQ((getAttack<kPawn, kBlack>(H2)), toBitboard(G1));
+  EXPECT_EQ(getAttack<Knight>(A8), toBitboard(B6, C7));
+  EXPECT_EQ(getAttack<Knight>(H1), toBitboard(F2, G3));
+  EXPECT_EQ(getAttack<King>(A8), toBitboard(A7, B7, B8));
+  EXPECT_EQ((getAttack<Pawn, White>(A7)), toBitboard(B8));
+  EXPECT_EQ((getAttack<Pawn, Black>(H2)), toBitboard(G1));
 }
 
 TEST(LegalMoves, InitialPosition) {
   const auto state = BoardState{fen::kStartPosition};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(moves.size(), 20u);
   EXPECT_EQ(countMoves(moves, E2, E4), 1u);
@@ -106,17 +106,17 @@ TEST(LegalMoves, InitialPosition) {
 
 TEST(LegalMoves, KingMustEscapeCheck) {
   const auto state = BoardState{"4r2k/8/8/8/8/8/8/4K3 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(moves.size(), 4u);
   EXPECT_TRUE(std::all_of(moves.begin(), moves.end(), [](const LegalMove& move) {
-    return move.piece == kKing;
+    return move.piece == King;
   }));
 }
 
 TEST(LegalMoves, PinnedKnightCannotMove) {
   const auto state = BoardState{"4r2k/8/8/8/8/8/4N3/4K3 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_TRUE(std::none_of(moves.begin(), moves.end(), [](const LegalMove& move) {
     return move.srce == E2;
@@ -125,22 +125,22 @@ TEST(LegalMoves, PinnedKnightCannotMove) {
 
 TEST(LegalMoves, CastlingMovesRookAndClearsRights) {
   const auto state = BoardState{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, G1), 1u);
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
   auto afterCastle = state;
-  afterCastle.makeMove<kWhite>(Move(E1, G1, kKing, kNoPiece, Move::kCastlingFlag));
-  EXPECT_EQ(afterCastle.getPieceAt(G1), (std::tuple<Color, Piece>{kWhite, kKing}));
-  EXPECT_EQ(afterCastle.getPieceAt(F1), (std::tuple<Color, Piece>{kWhite, kRook}));
+  afterCastle.makeMove<White>(Move(E1, G1, King, NoPiece, Move::kCastlingFlag));
+  EXPECT_EQ(afterCastle.getPieceAt(G1), (std::tuple<Color, Piece>{White, King}));
+  EXPECT_EQ(afterCastle.getPieceAt(F1), (std::tuple<Color, Piece>{White, Rook}));
   EXPECT_FALSE(afterCastle.getPieceAt(H1).has_value());
-  EXPECT_NE(afterCastle.getCastlingRights() & kKingCastlePermission[kWhite], kKingCastlePermission[kWhite]);
-  EXPECT_NE(afterCastle.getCastlingRights() & kQueenCastlePermission[kWhite], kQueenCastlePermission[kWhite]);
+  EXPECT_NE(afterCastle.getCastlingRights() & kKingCastlePermission[White], kKingCastlePermission[White]);
+  EXPECT_NE(afterCastle.getCastlingRights() & kQueenCastlePermission[White], kQueenCastlePermission[White]);
 }
 
 TEST(LegalMoves, CannotCastleThroughAttack) {
   const auto state = BoardState{"4k3/8/8/8/8/5r2/8/R3K2R w KQ - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, G1), 0u);
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
@@ -148,7 +148,7 @@ TEST(LegalMoves, CannotCastleThroughAttack) {
 
 TEST(LegalMoves, CannotCastleOutOfCheck) {
   const auto state = BoardState{"4r2k/8/8/8/8/8/8/R3K2R w KQ - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, G1), 0u);
   EXPECT_EQ(countMoves(moves, E1, C1), 0u);
@@ -156,7 +156,7 @@ TEST(LegalMoves, CannotCastleOutOfCheck) {
 
 TEST(LegalMoves, BlackCanCastleOnBothSides) {
   const auto state = BoardState{"r3k2r/8/8/8/8/8/8/4K3 b kq - 0 1"};
-  const auto& moves = legalMoves<kBlack>(state);
+  const auto& moves = legalMoves<Black>(state);
 
   EXPECT_EQ(countMoves(moves, E8, G8), 1u);
   EXPECT_EQ(countMoves(moves, E8, C8), 1u);
@@ -164,14 +164,14 @@ TEST(LegalMoves, BlackCanCastleOnBothSides) {
 
 TEST(LegalMoves, QueenSideCastleMayPassAttackedRookSquare) {
   const auto state = BoardState{"1r5k/8/8/8/8/8/8/R3K2R w KQ - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
 }
 
 TEST(LegalMoves, PinnedEnemyKnightStillAttacksCastlingPath) {
   const auto state = BoardState{"6k1/8/8/8/8/6n1/6Q1/4K2R w K - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, G1), 0u);
 }
@@ -179,11 +179,11 @@ TEST(LegalMoves, PinnedEnemyKnightStillAttacksCastlingPath) {
 TEST(BoardState, MovingRookPermanentlyRemovesItsCastlingRight) {
   const auto state = BoardState{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"};
   auto afterRookReturns = state;
-  afterRookReturns.makeMove<kWhite>(Move(H1, H2, kRook));
-  afterRookReturns.makeMove<kBlack>(Move(E8, E7, kKing));
-  afterRookReturns.makeMove<kWhite>(Move(H2, H1, kRook));
-  afterRookReturns.makeMove<kBlack>(Move(E7, E8, kKing));
-  const auto& moves = legalMoves<kWhite>(afterRookReturns);
+  afterRookReturns.makeMove<White>(Move(H1, H2, Rook));
+  afterRookReturns.makeMove<Black>(Move(E8, E7, King));
+  afterRookReturns.makeMove<White>(Move(H2, H1, Rook));
+  afterRookReturns.makeMove<Black>(Move(E7, E8, King));
+  const auto& moves = legalMoves<White>(afterRookReturns);
 
   EXPECT_EQ(countMoves(moves, E1, G1), 0u);
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
@@ -192,30 +192,30 @@ TEST(BoardState, MovingRookPermanentlyRemovesItsCastlingRight) {
 TEST(BoardState, CapturingCornerRookRemovesCastlingRight) {
   const auto state = BoardState{"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1"};
   auto afterCapture = state;
-  afterCapture.makeMove<kBlack>(Move(A8, A1, kRook, kNoPiece, Move::kCaptureFlag));
+  afterCapture.makeMove<Black>(Move(A8, A1, Rook, NoPiece, Move::kCaptureFlag));
 
-  EXPECT_NE(afterCapture.getCastlingRights() & kQueenCastlePermission[kWhite], kQueenCastlePermission[kWhite]);
-  EXPECT_NE(afterCapture.getCastlingRights() & kQueenCastlePermission[kBlack], kQueenCastlePermission[kBlack]);
-  EXPECT_EQ(afterCapture.getCastlingRights() & kKingCastlePermission[kWhite], kKingCastlePermission[kWhite]);
+  EXPECT_NE(afterCapture.getCastlingRights() & kQueenCastlePermission[White], kQueenCastlePermission[White]);
+  EXPECT_NE(afterCapture.getCastlingRights() & kQueenCastlePermission[Black], kQueenCastlePermission[Black]);
+  EXPECT_EQ(afterCapture.getCastlingRights() & kKingCastlePermission[White], kKingCastlePermission[White]);
 }
 
 TEST(LegalMoves, PawnHasFourPromotionChoices) {
   const auto state = BoardState{"7k/P7/8/8/8/8/8/7K w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, A7, A8), 4u);
   auto promoted = state;
-  promoted.makeMove<kWhite>(Move(A7, A8, kPawn, kQueen));
+  promoted.makeMove<White>(Move(A7, A8, Pawn, Queen));
   EXPECT_FALSE(promoted.getPieceAt(A7).has_value());
-  EXPECT_EQ(promoted.getPieceAt(A8), (std::tuple<Color, Piece>{kWhite, kQueen}));
+  EXPECT_EQ(promoted.getPieceAt(A8), (std::tuple<Color, Piece>{White, Queen}));
 }
 
 TEST(BoardState, CaptureRemovesOpponentPiece) {
   const auto state = BoardState{"7k/8/8/8/8/8/4p3/4R2K w - - 17 1"};
   auto afterCapture = state;
-  afterCapture.makeMove<kWhite>(Move(E1, E2, kRook, kNoPiece, Move::kCaptureFlag));
+  afterCapture.makeMove<White>(Move(E1, E2, Rook, NoPiece, Move::kCaptureFlag));
 
-  EXPECT_EQ(afterCapture.getPieceAt(E2), (std::tuple<Color, Piece>{kWhite, kRook}));
+  EXPECT_EQ(afterCapture.getPieceAt(E2), (std::tuple<Color, Piece>{White, Rook}));
   EXPECT_FALSE(afterCapture.getPieceAt(E1).has_value());
   EXPECT_EQ(afterCapture.getHalfmoveClock(), 0);
 }
@@ -223,22 +223,22 @@ TEST(BoardState, CaptureRemovesOpponentPiece) {
 TEST(BoardState, EnPassantCaptureExpiresImmediately) {
   const auto state = BoardState{"7k/2pp4/8/4P3/8/8/8/7K b - - 0 1"};
   auto afterPush = state;
-  afterPush.makeMove<kBlack>(Move(D7, D5, kPawn, kNoPiece, Move::kDoublePushFlag));
+  afterPush.makeMove<Black>(Move(D7, D5, Pawn, NoPiece, Move::kDoublePushFlag));
   EXPECT_EQ(afterPush.getEnpassantSquare(), D6);
 
-  const auto& whiteMoves = legalMoves<kWhite>(afterPush);
+  const auto& whiteMoves = legalMoves<White>(afterPush);
   const auto capture = std::find_if(whiteMoves.begin(), whiteMoves.end(), [](const LegalMove& move) {
     return move.srce == E5 && move.dest == D6 && move.enpassant;
   });
   ASSERT_NE(capture, whiteMoves.end());
 
   auto afterCapture = afterPush;
-  afterCapture.makeMove<kWhite>(Move(E5, D6, kPawn, kNoPiece, Move::kEnpassantFlag));
-  EXPECT_EQ(afterCapture.getEnpassantSquare(), kNoSquare);
-  EXPECT_EQ(afterCapture.getPieceAt(D6), (std::tuple<Color, Piece>{kWhite, kPawn}));
+  afterCapture.makeMove<White>(Move(E5, D6, Pawn, NoPiece, Move::kEnpassantFlag));
+  EXPECT_EQ(afterCapture.getEnpassantSquare(), NoSquare);
+  EXPECT_EQ(afterCapture.getPieceAt(D6), (std::tuple<Color, Piece>{White, Pawn}));
   EXPECT_FALSE(afterCapture.getPieceAt(D5).has_value());
 
-  const auto& blackMoves = legalMoves<kBlack>(afterCapture);
+  const auto& blackMoves = legalMoves<Black>(afterCapture);
   EXPECT_EQ(countMoves(blackMoves, C7, D6), 1u);
   EXPECT_TRUE(std::none_of(blackMoves.begin(), blackMoves.end(), [](const LegalMove& move) {
     return move.enpassant;
@@ -248,33 +248,33 @@ TEST(BoardState, EnPassantCaptureExpiresImmediately) {
 TEST(BoardState, EnPassantExpiresAfterQuietMove) {
   const auto state = BoardState{"7k/3p4/8/4P3/8/8/8/7K b - - 0 1"};
   auto afterQuietMove = state;
-  afterQuietMove.makeMove<kBlack>(Move(D7, D5, kPawn, kNoPiece, Move::kDoublePushFlag));
-  afterQuietMove.makeMove<kWhite>(Move(H1, G1, kKing));
+  afterQuietMove.makeMove<Black>(Move(D7, D5, Pawn, NoPiece, Move::kDoublePushFlag));
+  afterQuietMove.makeMove<White>(Move(H1, G1, King));
 
-  EXPECT_EQ(afterQuietMove.getEnpassantSquare(), kNoSquare);
+  EXPECT_EQ(afterQuietMove.getEnpassantSquare(), NoSquare);
   EXPECT_EQ(afterQuietMove.getFullmoveNumber(), 2);
 }
 
 TEST(LegalMoves, DoubleCheckAllowsOnlyKingMoves) {
   const auto state = BoardState{"7k/8/8/3p1p2/4K3/8/8/R7 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_FALSE(moves.empty());
   EXPECT_TRUE(std::all_of(moves.begin(), moves.end(), [](const LegalMove& move) {
-    return move.piece == kKing;
+    return move.piece == King;
   }));
 }
 
 TEST(LegalMoves, KingCannotRetreatIntoOpenedRookRay) {
   const auto state = BoardState{"4r2k/8/8/8/8/8/4K3/8 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E2, E1), 0u);
 }
 
 TEST(LegalMoves, KingCannotMoveNextToEnemyKing) {
   const auto state = BoardState{"8/8/8/8/8/8/6k1/4K3 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, F1), 0u);
   EXPECT_EQ(countMoves(moves, E1, D1), 1u);
@@ -282,7 +282,7 @@ TEST(LegalMoves, KingCannotMoveNextToEnemyKing) {
 
 TEST(LegalMoves, PinnedRookCanMoveOnlyOnPinLine) {
   const auto state = BoardState{"4r2k/8/8/8/8/8/4R3/4K3 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E2, E8), 1u);
   EXPECT_EQ(countMoves(moves, E2, D2), 0u);
@@ -291,7 +291,7 @@ TEST(LegalMoves, PinnedRookCanMoveOnlyOnPinLine) {
 
 TEST(LegalMoves, DiagonallyPinnedPawnCanCapturePinner) {
   const auto state = BoardState{"7k/8/8/8/8/4b3/3P4/2K5 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, D2, E3), 1u);
   EXPECT_EQ(countMoves(moves, D2, D3), 0u);
@@ -300,7 +300,7 @@ TEST(LegalMoves, DiagonallyPinnedPawnCanCapturePinner) {
 
 TEST(LegalMoves, DoublePawnPushCanBlockDiagonalCheck) {
   const auto state = BoardState{"7k/8/1b6/8/8/8/3P4/6K1 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, D2, D4), 1u);
   EXPECT_EQ(countMoves(moves, D2, D3), 0u);
@@ -308,7 +308,7 @@ TEST(LegalMoves, DoublePawnPushCanBlockDiagonalCheck) {
 
 TEST(LegalMoves, PawnCannotJumpOverOccupiedSquare) {
   const auto state = BoardState{"7k/8/8/8/8/4n3/4P3/7K w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E2, E3), 0u);
   EXPECT_EQ(countMoves(moves, E2, E4), 0u);
@@ -316,7 +316,7 @@ TEST(LegalMoves, PawnCannotJumpOverOccupiedSquare) {
 
 TEST(LegalMoves, PawnDoublePushNeedsEmptyDestination) {
   const auto state = BoardState{"7k/8/8/8/4n3/8/4P3/7K w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E2, E3), 1u);
   EXPECT_EQ(countMoves(moves, E2, E4), 0u);
@@ -324,19 +324,19 @@ TEST(LegalMoves, PawnDoublePushNeedsEmptyDestination) {
 
 TEST(LegalMoves, EdgePawnsDoNotWrapFiles) {
   const auto state = BoardState{"7k/8/8/P6P/8/8/8/K7 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, A5, A6), 1u);
   EXPECT_EQ(countMoves(moves, H5, H6), 1u);
   EXPECT_TRUE(std::all_of(moves.begin(), moves.end(), [](const LegalMove& move) {
-    return move.piece != kPawn || (move.srce == A5 && move.dest == A6) ||
+    return move.piece != Pawn || (move.srce == A5 && move.dest == A6) ||
            (move.srce == H5 && move.dest == H6);
   }));
 }
 
 TEST(LegalMoves, CapturePromotionHasFourChoices) {
   const auto state = BoardState{"1r5k/P7/8/8/8/8/8/7K w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, A7, A8), 4u);
   EXPECT_EQ(countMoves(moves, A7, B8), 4u);
@@ -344,7 +344,7 @@ TEST(LegalMoves, CapturePromotionHasFourChoices) {
 
 TEST(LegalMoves, BlackCapturePromotionHasFourChoices) {
   const auto state = BoardState{"7k/8/8/8/8/8/p7/1R5K b - - 0 1"};
-  const auto& moves = legalMoves<kBlack>(state);
+  const auto& moves = legalMoves<Black>(state);
 
   EXPECT_EQ(countMoves(moves, A2, A1), 4u);
   EXPECT_EQ(countMoves(moves, A2, B1), 4u);
@@ -352,7 +352,7 @@ TEST(LegalMoves, BlackCapturePromotionHasFourChoices) {
 
 TEST(LegalMoves, WhiteEnPassantCanCaptureCheckingPawn) {
   const auto state = BoardState{"7k/8/8/3pP3/4K3/8/8/8 w - d6 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E5, D6), 1u);
   EXPECT_TRUE(std::any_of(moves.begin(), moves.end(), [](const LegalMove& move) {
@@ -362,28 +362,28 @@ TEST(LegalMoves, WhiteEnPassantCanCaptureCheckingPawn) {
 
 TEST(LegalMoves, WhiteEnPassantCanBlockBishopCheck) {
   const auto state = BoardState{"5b1k/8/8/3pP3/1K6/8/8/8 w - d6 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E5, D6), 1u);
 }
 
 TEST(LegalMoves, EnPassantCannotExposeHorizontalRook) {
   const auto state = BoardState{"7k/8/8/r1PpK3/8/8/8/8 w - d6 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, C5, D6), 0u);
 }
 
 TEST(LegalMoves, EnPassantCannotExposeDiagonalBishop) {
   const auto state = BoardState{"7b/8/8/3pP3/8/8/8/K6k w - d6 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E5, D6), 0u);
 }
 
 TEST(LegalMoves, BlackEnPassantIsGenerated) {
   const auto state = BoardState{"7k/8/8/8/3Pp3/8/8/7K b - d3 0 1"};
-  const auto& moves = legalMoves<kBlack>(state);
+  const auto& moves = legalMoves<Black>(state);
 
   EXPECT_EQ(countMoves(moves, E4, D3), 1u);
   EXPECT_TRUE(std::any_of(moves.begin(), moves.end(), [](const LegalMove& move) {
@@ -393,7 +393,7 @@ TEST(LegalMoves, BlackEnPassantIsGenerated) {
 
 TEST(LegalMoves, BlackEnPassantCanCaptureCheckingPawn) {
   const auto state = BoardState{"8/8/8/4k3/3Pp3/8/8/7K b - d3 0 1"};
-  const auto& moves = legalMoves<kBlack>(state);
+  const auto& moves = legalMoves<Black>(state);
 
   EXPECT_EQ(countMoves(moves, E4, D3), 1u);
   EXPECT_TRUE(std::any_of(moves.begin(), moves.end(), [](const LegalMove& move) {
@@ -403,7 +403,7 @@ TEST(LegalMoves, BlackEnPassantCanCaptureCheckingPawn) {
 
 TEST(LegalMoves, KingCannotCaptureDefendedCheckingPiece) {
   const auto state = BoardState{"7k/8/8/8/8/6n1/4r3/4K3 w - - 0 1"};
-  const auto& moves = legalMoves<kWhite>(state);
+  const auto& moves = legalMoves<White>(state);
 
   EXPECT_EQ(countMoves(moves, E1, E2), 0u);
 }
@@ -412,8 +412,8 @@ TEST(LegalMoves, CheckmateAndStalemateHaveNoMoves) {
   const auto mate = BoardState{"7k/6Q1/5K2/8/8/8/8/8 b - - 0 1"};
   const auto stalemate = BoardState{"7k/5K2/6Q1/8/8/8/8/8 b - - 0 1"};
 
-  EXPECT_TRUE(legalMoves<kBlack>(mate).empty());
-  EXPECT_TRUE(legalMoves<kBlack>(stalemate).empty());
+  EXPECT_TRUE(legalMoves<Black>(mate).empty());
+  EXPECT_TRUE(legalMoves<Black>(stalemate).empty());
 }
 
 TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
@@ -431,21 +431,21 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
     BoardState state{fen};
     const BoardState original = state;
     MoveList moves;
-    if (state.getColorToMove() == kWhite) {
-      state.generateMoves<kWhite>(moves);
+    if (state.getColorToMove() == White) {
+      state.generateMoves<White>(moves);
     } else {
-      state.generateMoves<kBlack>(moves);
+      state.generateMoves<Black>(moves);
     }
     for (const Move& move : moves) {
       SCOPED_TRACE(std::to_string(move.getSource()) + " to " + std::to_string(move.getDest()));
-      if (state.getColorToMove() == kWhite) {
-        const auto undo = state.makeMove<kWhite>(move);
-        EXPECT_EQ(state.getColorToMove(), kBlack);
-        state.unmakeMove<kWhite>(move, undo);
+      if (state.getColorToMove() == White) {
+        const auto undo = state.makeMove<White>(move);
+        EXPECT_EQ(state.getColorToMove(), Black);
+        state.unmakeMove<White>(move, undo);
       } else {
-        const auto undo = state.makeMove<kBlack>(move);
-        EXPECT_EQ(state.getColorToMove(), kWhite);
-        state.unmakeMove<kBlack>(move, undo);
+        const auto undo = state.makeMove<Black>(move);
+        EXPECT_EQ(state.getColorToMove(), White);
+        state.unmakeMove<Black>(move, undo);
       }
       for (Square square = 0; square < kSquareSize; ++square) {
         EXPECT_EQ(state.getPieceAt(square), original.getPieceAt(square));
@@ -461,15 +461,15 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
 
 TEST(BoardState, BlackMoveAndEnPassantRestoreColor) {
   BoardState black{"7k/8/8/8/8/8/8/7K b - - 0 1"};
-  const auto blackUndo = black.makeMove<kBlack>(Move(H8, G8, kKing));
-  EXPECT_EQ(black.getColorToMove(), kWhite);
-  black.unmakeMove<kBlack>(Move(H8, G8, kKing), blackUndo);
-  EXPECT_EQ(black.getColorToMove(), kBlack);
+  const auto blackUndo = black.makeMove<Black>(Move(H8, G8, King));
+  EXPECT_EQ(black.getColorToMove(), White);
+  black.unmakeMove<Black>(Move(H8, G8, King), blackUndo);
+  EXPECT_EQ(black.getColorToMove(), Black);
 
   BoardState enpassant{"7k/8/8/3pP3/8/8/8/7K w - d6 0 1"};
-  const Move capture(E5, D6, kPawn, kNoPiece, Move::kEnpassantFlag);
-  const auto undo = enpassant.makeMove<kWhite>(capture);
-  EXPECT_EQ(enpassant.getColorToMove(), kBlack);
-  enpassant.unmakeMove<kWhite>(capture, undo);
-  EXPECT_EQ(enpassant.getColorToMove(), kWhite);
+  const Move capture(E5, D6, Pawn, NoPiece, Move::kEnpassantFlag);
+  const auto undo = enpassant.makeMove<White>(capture);
+  EXPECT_EQ(enpassant.getColorToMove(), Black);
+  enpassant.unmakeMove<White>(capture, undo);
+  EXPECT_EQ(enpassant.getColorToMove(), White);
 }

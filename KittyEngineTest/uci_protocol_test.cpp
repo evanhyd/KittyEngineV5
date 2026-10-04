@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -44,6 +45,18 @@ namespace {
     template <Color ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam&) {
       return {0, std::nullopt, 1, std::chrono::steady_clock::duration{}};
+    }
+  };
+
+  struct ScoreSequenceSearchPolicy {
+    const std::vector<int32_t>* scores;
+
+    template <Color ally>
+    searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+      return {scores->at(param.maxDepth - 1), moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
+              1, std::chrono::milliseconds{1}};
     }
   };
 
@@ -205,7 +218,7 @@ TEST(UciIntegration, RunsFastAndDetailedPerftOnCurrentPosition) {
 TEST(SearchStatistics, CountsRootAndLeafPositions) {
   UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 32'000}};
   MoveList legalMoves;
-  board.getState().generateMoves<kWhite>(legalMoves);
+  board.getState().generateMoves<White>(legalMoves);
 
   const auto result = board.search(1, [](const searching::SearchResult&) {});
   EXPECT_EQ(result.nodesSearched, legalMoves.size() + 1);
@@ -247,6 +260,42 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
   EXPECT_EQ(line, "bestmove " + notation::moveToString(*results.back().bestMove));
   EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
   EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
+}
+
+TEST(UciIntegration, FormatsMateScoresWithinOneHundredPoints) {
+  const std::vector<int32_t> scores{
+    31'900, -31'900, 32'000, -32'000, 31'899, -31'899, 32'001, -32'001,
+    std::numeric_limits<int32_t>::min()};
+  const std::vector<int64_t> expectedScores{
+    50, -50, 0, 0, 31'899, -31'899, 32'001, -32'001,
+    std::numeric_limits<int32_t>::min()};
+  std::istringstream input{"go depth 9\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  Board board{ScoreSequenceSearchPolicy{&scores}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+
+  std::istringstream output{uciOutput.str()};
+  std::string line;
+  for (size_t i = 0; i < scores.size(); ++i) {
+    ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+    const auto info = parseInfoLine(line);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->depth, i + 1);
+    EXPECT_EQ(info->scoreKind, i < 4 ? "mate" : "cp");
+    EXPECT_EQ(info->score, expectedScores[i]);
+    EXPECT_EQ(info->timeMs, 1);
+    EXPECT_EQ(info->nodes, 1u);
+    EXPECT_EQ(info->nps, 1000u);
+  }
+  MoveList moves;
+  board.getState().generateMoves<White>(moves);
+  ASSERT_FALSE(moves.empty());
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line, "bestmove " + notation::moveToString(moves[0]));
+  EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
 }
 
 TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {
@@ -299,7 +348,7 @@ TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
   ASSERT_NE(moveEnd, std::string::npos);
   const std::string bestMove = output.substr(moveStart + 9, moveEnd - moveStart - 9);
   MoveList legalMoves;
-  board.getState().generateMoves<kBlack>(legalMoves);
+  board.getState().generateMoves<Black>(legalMoves);
   EXPECT_TRUE(std::any_of(legalMoves.begin(), legalMoves.end(), [&](const Move& move) {
     return notation::moveToString(move) == bestMove;
   }));

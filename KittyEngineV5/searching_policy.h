@@ -10,7 +10,7 @@ namespace bb {
   namespace searching {
     struct SearchParam {
       int maxDepth;
-      int32_t historicalEval;
+      int32_t pastEval;
       std::optional<Move> pvMove;
     };
 
@@ -23,8 +23,8 @@ namespace bb {
 
     template <typename SearchPolicy>
     concept SearchingPolicy = requires(SearchPolicy policy, BoardState& state, const SearchParam& param) {
-      { policy.search<kWhite>(state, param) } -> std::same_as<SearchResult>;
-      { policy.search<kBlack>(state, param) } -> std::same_as<SearchResult>;
+      { policy.search<White>(state, param) } -> std::same_as<SearchResult>;
+      { policy.search<Black>(state, param) } -> std::same_as<SearchResult>;
     };
   }
 }

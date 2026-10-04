@@ -35,7 +35,7 @@ namespace bb {
 
     // Constructors.
     constexpr Move(Square sourceSquare, Square destSquare, Piece movedPiece,
-                   Piece promotedPiece = kNoPiece, uint32_t flag = 0) noexcept
+                   Piece promotedPiece = NoPiece, uint32_t flag = 0) noexcept
       : rawMove((sourceSquare& kGetSquareMask) |
                 ((destSquare & kGetSquareMask) << 6) |
                 ((static_cast<uint32_t>(movedPiece) & kGetPieceMask) << 12) |
@@ -77,7 +77,7 @@ namespace bb {
 
     // Violent moves are captures and promotions.
     constexpr bool isViolentMove() const noexcept {
-      return rawMove & ((kGetPieceMask << 16) | kCaptureFlag | kEnpassantFlag);
+      return isCapture() || isEnpassant() || getPromotedPieceType() != NoPiece;
     }
   };
 

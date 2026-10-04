@@ -55,7 +55,7 @@ namespace bb {
     parsed.castlePermission_ = notation::stringToCastling(castling);
 
     parsed.enpassant_ = notation::stringToSquare(enpassant);
-    if (parsed.enpassant_ != kNoSquare && enpassant[1] != '3' && enpassant[1] != '6') {
+    if (parsed.enpassant_ != NoSquare && enpassant[1] != '3' && enpassant[1] != '6') {
       throw std::invalid_argument("Invalid FEN en passant square");
     }
 

@@ -1,6 +1,5 @@
 #pragma once
 #include <array>
-#include <concepts>
 
 namespace bb {
   template <typename T, size_t cap = 218>

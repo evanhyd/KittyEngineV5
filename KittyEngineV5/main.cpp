@@ -10,7 +10,7 @@ using namespace std;
 using namespace bb;
 
 int main() {
-  int aspirationWindow = 50;
+  int aspirationWindow = 80;
   Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, aspirationWindow}};
   user_interface::TerminalUI terminal{board, cin, cout, cerr};
   terminal.run();

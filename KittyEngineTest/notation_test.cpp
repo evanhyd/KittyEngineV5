@@ -30,13 +30,13 @@ TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
 
 TEST(BoardState, ParsesFen) {
   const BoardState state{"r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12"};
-  EXPECT_EQ(state.getColorToMove(), kWhite);
-  EXPECT_EQ(state.getPieceAt(E5), (std::tuple<Color, Piece>{kWhite, kPawn}));
-  EXPECT_EQ(state.getPieceAt(D5), (std::tuple<Color, Piece>{kBlack, kPawn}));
+  EXPECT_EQ(state.getColorToMove(), White);
+  EXPECT_EQ(state.getPieceAt(E5), (std::tuple<Color, Piece>{White, Pawn}));
+  EXPECT_EQ(state.getPieceAt(D5), (std::tuple<Color, Piece>{Black, Pawn}));
   EXPECT_EQ(state.getEnpassantSquare(), D6);
   EXPECT_EQ(state.getCastlingRights(),
-            kKingCastlePermission[kWhite] | kQueenCastlePermission[kWhite] |
-            kKingCastlePermission[kBlack] | kQueenCastlePermission[kBlack]);
+            kKingCastlePermission[White] | kQueenCastlePermission[White] |
+            kKingCastlePermission[Black] | kQueenCastlePermission[Black]);
   EXPECT_EQ(state.getHalfmoveClock(), 4);
   EXPECT_EQ(state.getFullmoveNumber(), 12);
 }
@@ -44,14 +44,14 @@ TEST(BoardState, ParsesFen) {
 TEST(BoardState, GettersReportPiecesAndPositionState) {
   const BoardState state{"r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12"};
   ASSERT_TRUE(state.getPieceAt(E5).has_value());
-  EXPECT_EQ(*state.getPieceAt(E5), (std::tuple<Color, Piece>{kWhite, kPawn}));
-  EXPECT_EQ(*state.getPieceAt(D5), (std::tuple<Color, Piece>{kBlack, kPawn}));
+  EXPECT_EQ(*state.getPieceAt(E5), (std::tuple<Color, Piece>{White, Pawn}));
+  EXPECT_EQ(*state.getPieceAt(D5), (std::tuple<Color, Piece>{Black, Pawn}));
   EXPECT_FALSE(state.getPieceAt(E4).has_value());
-  EXPECT_THROW((void)state.getPieceAt(kNoSquare), std::out_of_range);
-  EXPECT_EQ(state.getColorToMove(), kWhite);
+  EXPECT_THROW((void)state.getPieceAt(NoSquare), std::out_of_range);
+  EXPECT_EQ(state.getColorToMove(), White);
   EXPECT_EQ(state.getCastlingRights(),
-            kKingCastlePermission[kWhite] | kQueenCastlePermission[kWhite] |
-            kKingCastlePermission[kBlack] | kQueenCastlePermission[kBlack]);
+            kKingCastlePermission[White] | kQueenCastlePermission[White] |
+            kKingCastlePermission[Black] | kQueenCastlePermission[Black]);
   EXPECT_EQ(state.getEnpassantSquare(), D6);
   EXPECT_EQ(state.getHalfmoveClock(), 4);
   EXPECT_EQ(state.getFullmoveNumber(), 12);
@@ -59,27 +59,27 @@ TEST(BoardState, GettersReportPiecesAndPositionState) {
 
 TEST(BoardState, GettersTrackMakeAndUnmake) {
   BoardState state{fen::kStartPosition};
-  const Move move{E2, E4, kPawn, kNoPiece, Move::kDoublePushFlag};
-  const MoveUndo undo = state.makeMove<kWhite>(move);
+  const Move move{E2, E4, Pawn, NoPiece, Move::kDoublePushFlag};
+  const MoveUndo undo = state.makeMove<White>(move);
   EXPECT_FALSE(state.getPieceAt(E2).has_value());
-  EXPECT_EQ(*state.getPieceAt(E4), (std::tuple<Color, Piece>{kWhite, kPawn}));
-  EXPECT_EQ(state.getColorToMove(), kBlack);
+  EXPECT_EQ(*state.getPieceAt(E4), (std::tuple<Color, Piece>{White, Pawn}));
+  EXPECT_EQ(state.getColorToMove(), Black);
   EXPECT_EQ(state.getEnpassantSquare(), E3);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
   EXPECT_EQ(state.getFullmoveNumber(), 1);
-  state.unmakeMove<kWhite>(move, undo);
-  EXPECT_EQ(*state.getPieceAt(E2), (std::tuple<Color, Piece>{kWhite, kPawn}));
+  state.unmakeMove<White>(move, undo);
+  EXPECT_EQ(*state.getPieceAt(E2), (std::tuple<Color, Piece>{White, Pawn}));
   EXPECT_FALSE(state.getPieceAt(E4).has_value());
-  EXPECT_EQ(state.getColorToMove(), kWhite);
-  EXPECT_EQ(state.getEnpassantSquare(), kNoSquare);
+  EXPECT_EQ(state.getColorToMove(), White);
+  EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
   EXPECT_EQ(state.getFullmoveNumber(), 1);
 }
 
 TEST(Board, StartsAtInitialPosition) {
   const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
-  EXPECT_EQ(board.getState().getColorToMove(), kWhite);
-  EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Color, Piece>{kWhite, kKing}));
-  EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Color, Piece>{kBlack, kKing}));
+  EXPECT_EQ(board.getState().getColorToMove(), White);
+  EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Color, Piece>{White, King}));
+  EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Color, Piece>{Black, King}));
   EXPECT_EQ(board.getState().getFullmoveNumber(), 1);
 }
 
@@ -133,11 +133,11 @@ TEST(BoardState, SetPositionReplacesAllFields) {
   BoardState state{"r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12"};
   state.setPosition("7k/8/8/8/8/8/4p3/7K b - - 0 3");
 
-  EXPECT_EQ(state.getColorToMove(), kBlack);
+  EXPECT_EQ(state.getColorToMove(), Black);
   EXPECT_FALSE(state.getPieceAt(E5).has_value());
-  EXPECT_EQ(state.getPieceAt(E2), (std::tuple<Color, Piece>{kBlack, kPawn}));
+  EXPECT_EQ(state.getPieceAt(E2), (std::tuple<Color, Piece>{Black, Pawn}));
   EXPECT_EQ(state.getCastlingRights(), 0u);
-  EXPECT_EQ(state.getEnpassantSquare(), kNoSquare);
+  EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
   EXPECT_EQ(state.getFullmoveNumber(), 3);
 }
@@ -157,14 +157,14 @@ TEST(BoardState, InvalidSetPositionPreservesPreviousState) {
 }
 
 TEST(Notation, ParsesAndFormatsSharedChessNotation) {
-  EXPECT_EQ(notation::asciiToPiece('P'), (std::pair<Color, Piece>{kWhite, kPawn}));
-  EXPECT_EQ(notation::asciiToPiece('q'), (std::pair<Color, Piece>{kBlack, kQueen}));
+  EXPECT_EQ(notation::asciiToPiece('P'), (std::pair<Color, Piece>{White, Pawn}));
+  EXPECT_EQ(notation::asciiToPiece('q'), (std::pair<Color, Piece>{Black, Queen}));
   EXPECT_EQ(notation::stringToSquare("d6"), D6);
   EXPECT_EQ(notation::squareToString(D6), "d6");
-  EXPECT_EQ(notation::stringToSquare("-"), kNoSquare);
-  EXPECT_EQ(notation::stringToSide("b"), kBlack);
+  EXPECT_EQ(notation::stringToSquare("-"), NoSquare);
+  EXPECT_EQ(notation::stringToSide("b"), Black);
   EXPECT_EQ(notation::stringToCastling("Kq"),
-            kKingCastlePermission[kWhite] | kQueenCastlePermission[kBlack]);
+            kKingCastlePermission[White] | kQueenCastlePermission[Black]);
   EXPECT_EQ(notation::castleToString(notation::stringToCastling("Kq")), "Kq");
   EXPECT_THROW(notation::asciiToPiece('x'), std::invalid_argument);
   EXPECT_THROW(notation::stringToSquare("i9"), std::invalid_argument);

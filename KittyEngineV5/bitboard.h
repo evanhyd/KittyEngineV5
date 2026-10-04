@@ -23,22 +23,22 @@ namespace bb {
     A3, B3, C3, D3, E3, F3, G3, H3,
     A2, B2, C2, D2, E2, F2, G2, H2,
     A1, B1, C1, D1, E1, F1, G1, H1,
-    kNoSquare,
+    NoSquare,
   };
 
   enum : Color {
-    kWhite,
-    kBlack,
+    White,
+    Black,
   };
 
   enum : Piece {
-    kPawn,
-    kKnight,
-    kBishop,
-    kRook,
-    kQueen,
-    kKing,
-    kNoPiece,
+    Pawn,
+    Knight,
+    Bishop,
+    Rook,
+    Queen,
+    King,
+    NoPiece,
   };
 
 
@@ -145,7 +145,7 @@ namespace bb {
     return square + 9;
   }
   [[nodiscard]] inline constexpr Color getOtherColor(Color color) {
-    return (color == kWhite ? kBlack : kWhite);
+    return (color == White ? Black : White);
   }
 
 
@@ -227,8 +227,8 @@ namespace bb {
       std::array<std::array<Bitboard, kSquareSize>, kColorSize> table{};
       for (Square i = 0; i < kSquareSize; ++i) {
         Bitboard bitboard = toBitboard(i);
-        table[kWhite][i] = shiftUpLeft(bitboard) | shiftUpRight(bitboard);
-        table[kBlack][i] = shiftDownLeft(bitboard) | shiftDownRight(bitboard);
+        table[White][i] = shiftUpLeft(bitboard) | shiftUpRight(bitboard);
+        table[Black][i] = shiftDownLeft(bitboard) | shiftDownRight(bitboard);
       }
       return table;
     }();
@@ -268,7 +268,7 @@ namespace bb {
 
       template <Piece piece>
       constexpr size_t getKey(Bitboard occupancy) const {
-        constexpr size_t relevantBitsInverse = (piece == kBishop ? kSquareSize - 9 : kSquareSize - 12);
+        constexpr size_t relevantBitsInverse = (piece == Bishop ? kSquareSize - 9 : kSquareSize - 12);
         return ((occupancy & maxAttackNoEdge) * magicNum) >> relevantBitsInverse;
       }
 
@@ -291,7 +291,7 @@ namespace bb {
       constexpr std::pair<int32_t, int32_t> rookDir[] = { {int32_t(1), int32_t(0)}, {int32_t(-1), int32_t(0)}, {int32_t(0), int32_t(-1)}, {int32_t(0), int32_t(1)} };
 
       Bitboard reachable = 0;
-      for (const auto& [dx, dy] : (piece == kBishop ? bishopDir : rookDir)) {
+      for (const auto& [dx, dy] : (piece == Bishop ? bishopDir : rookDir)) {
         for (int32_t r = rank + dx, f = file + dy; isInRange(r, f); r += dx, f += dy) {
           reachable = setSquare(reachable, rankFileToSquare(r, f));
           if (isSquareSet(occupancy, rankFileToSquare(r, f))) {
@@ -348,28 +348,28 @@ namespace bb {
       std::array<std::array<SliderAttackTable, kColorSize>, kSquareSize> table{};
 
       // Generate for both bishop and rook.
-      for (Piece piece : {kBishop, kRook}) {
+      for (Piece piece : {Bishop, Rook}) {
         size_t offset = 0;
 
         for (Square i = 0; i < kSquareSize; ++i) {
-          SliderAttackTable& magic = table[i][piece - kBishop];
+          SliderAttackTable& magic = table[i][piece - Bishop];
 
           // Set up magic bitboard hashing factors.
-          magic.magicNum = kMagicNumTable[piece - kBishop][i];
+          magic.magicNum = kMagicNumTable[piece - Bishop][i];
 
           // Remove the edge since the sliding piece must stop at the edge. This reduces the occupancy permutation size.
           Bitboard edge = ((kRank1Mask | kRank8Mask) & ~kSquareToRankMasks[i]) | ((kFileAMask | kFileHMask) & ~kSquareToFileMasks[i]);
           magic.maxAttackNoEdge = internal::generateSliderAttackReachable(piece, i, 0) & ~edge;
 
           // Assign the attack table range.
-          magic.attackReachable = (piece == kBishop ? bishopAttackReachableTable.data() : rookAttackReachableTable.data()) + offset;
+          magic.attackReachable = (piece == Bishop ? bishopAttackReachableTable.data() : rookAttackReachableTable.data()) + offset;
 
-          size_t permutations = (piece == kBishop ? (1ull << 9) : (1ull << 12));
+          size_t permutations = (piece == Bishop ? (1ull << 9) : (1ull << 12));
           offset += permutations;
 
           // Generate all occupancy combination for each attack pattern.
           for (Bitboard occupancy = magic.maxAttackNoEdge; ; occupancy = (occupancy - 1) & magic.maxAttackNoEdge) {
-            size_t key = (piece == kBishop ? magic.getKey<kBishop>(occupancy) : magic.getKey<kRook>(occupancy));
+            size_t key = (piece == Bishop ? magic.getKey<Bishop>(occupancy) : magic.getKey<Rook>(occupancy));
             magic.attackReachable[key] = internal::generateSliderAttackReachable(piece, i, occupancy);
             assert(key < permutations);
             if (occupancy == 0) {
@@ -378,38 +378,38 @@ namespace bb {
           }
         }
 
-        assert(offset == (piece == kBishop ? bishopAttackReachableTable.size() : rookAttackReachableTable.size()));
+        assert(offset == (piece == Bishop ? bishopAttackReachableTable.size() : rookAttackReachableTable.size()));
       }
       return table;
     }();
   }
 
   template <Piece piece, Color color>
-    requires (piece == kPawn)
+    requires (piece == Pawn)
   inline constexpr Bitboard getAttack(Square square) {
     return internal::kPawnAttackTable[color][square];
   }
 
   template <Piece piece>
-    requires (piece == kKnight || piece == kKing)
+    requires (piece == Knight || piece == King)
   inline constexpr Bitboard getAttack(Square square) {
-    if constexpr (piece == kKnight) {
+    if constexpr (piece == Knight) {
       return internal::kKnightAttackTable[square];
-    } else if constexpr (piece == kKing) {
+    } else if constexpr (piece == King) {
       return internal::kKingAttackTable[square];
     }
   }
 
   template <Piece piece>
-    requires (piece == kBishop || piece == kRook || piece == kQueen)
+    requires (piece == Bishop || piece == Rook || piece == Queen)
   inline constexpr Bitboard getAttack(Square square, Bitboard occupancy) {
-    if constexpr (piece == kBishop) {
-      return internal::sliderAttackTables[square][0].getAttack<kBishop>(occupancy);
-    } else if constexpr (piece == kRook) {
-      return internal::sliderAttackTables[square][1].getAttack<kRook>(occupancy);
-    } else if constexpr (piece == kQueen) {
-      return internal::sliderAttackTables[square][0].getAttack<kBishop>(occupancy) |
-        internal::sliderAttackTables[square][1].getAttack<kRook>(occupancy);
+    if constexpr (piece == Bishop) {
+      return internal::sliderAttackTables[square][0].getAttack<Bishop>(occupancy);
+    } else if constexpr (piece == Rook) {
+      return internal::sliderAttackTables[square][1].getAttack<Rook>(occupancy);
+    } else if constexpr (piece == Queen) {
+      return internal::sliderAttackTables[square][0].getAttack<Bishop>(occupancy) |
+        internal::sliderAttackTables[square][1].getAttack<Rook>(occupancy);
     }
   }
 
@@ -447,9 +447,9 @@ namespace bb {
           continue;
         }
         if (kSquareToDiagonalMasks[i] == kSquareToDiagonalMasks[j] || kSquareToAntiDiagonalMaskTable[i] == kSquareToAntiDiagonalMaskTable[j]) {
-          table[i][j] = getAttack<kBishop>(i, toBitboard(j)) & getAttack<kBishop>(j, toBitboard(i));
+          table[i][j] = getAttack<Bishop>(i, toBitboard(j)) & getAttack<Bishop>(j, toBitboard(i));
         } else if (getSquareRank(i) == getSquareRank(j) || getSquareFile(i) == getSquareFile(j)) {
-          table[i][j] = getAttack<kRook>(i, toBitboard(j)) & getAttack<kRook>(j, toBitboard(i));
+          table[i][j] = getAttack<Rook>(i, toBitboard(j)) & getAttack<Rook>(j, toBitboard(i));
         }
       }
     }

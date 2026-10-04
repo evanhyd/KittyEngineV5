@@ -20,21 +20,21 @@ namespace bb::notation {
   }
 
   std::pair<Color, Piece> asciiToPiece(char ascii) {
-    const Color color = ascii >= 'A' && ascii <= 'Z' ? kWhite : kBlack;
-    const char lower = color == kWhite ? static_cast<char>(ascii - 'A' + 'a') : ascii;
+    const Color color = ascii >= 'A' && ascii <= 'Z' ? White : Black;
+    const char lower = color == White ? static_cast<char>(ascii - 'A' + 'a') : ascii;
     switch (lower) {
     case 'p':
-      return {color, kPawn};
+      return {color, Pawn};
     case 'n':
-      return {color, kKnight};
+      return {color, Knight};
     case 'b':
-      return {color, kBishop};
+      return {color, Bishop};
     case 'r':
-      return {color, kRook};
+      return {color, Rook};
     case 'q':
-      return {color, kQueen};
+      return {color, Queen};
     case 'k':
-      return {color, kKing};
+      return {color, King};
     default:
       throw std::invalid_argument("Invalid piece letter");
     }
@@ -42,19 +42,19 @@ namespace bb::notation {
 
   Color stringToSide(std::string_view side) {
     if (side == "w") {
-      return kWhite;
+      return White;
     }
     if (side == "b") {
-      return kBlack;
+      return Black;
     }
     throw std::invalid_argument("Invalid FEN side to move");
   }
 
   std::string colorToString(Color color) {
-    if (color == kWhite) {
+    if (color == White) {
       return "white";
     }
-    if (color == kBlack) {
+    if (color == Black) {
       return "black";
     }
     throw std::invalid_argument("Invalid color");
@@ -62,7 +62,7 @@ namespace bb::notation {
 
   Square stringToSquare(std::string_view square) {
     if (square == "-") {
-      return kNoSquare;
+      return NoSquare;
     }
     if (square.size() != 2 || square[0] < 'a' || square[0] > 'h' ||
         square[1] < '1' || square[1] > '8') {
@@ -72,7 +72,7 @@ namespace bb::notation {
   }
 
   std::string squareToString(Square square) {
-    if (square == kNoSquare) {
+    if (square == NoSquare) {
       return "-";
     }
     if (square >= kSquareSize) {
@@ -91,16 +91,16 @@ namespace bb::notation {
     for (const char right : rights) {
       switch (right) {
       case 'K':
-        permission |= kKingCastlePermission[kWhite];
+        permission |= kKingCastlePermission[White];
         break;
       case 'Q':
-        permission |= kQueenCastlePermission[kWhite];
+        permission |= kQueenCastlePermission[White];
         break;
       case 'k':
-        permission |= kKingCastlePermission[kBlack];
+        permission |= kKingCastlePermission[Black];
         break;
       case 'q':
-        permission |= kQueenCastlePermission[kBlack];
+        permission |= kQueenCastlePermission[Black];
         break;
       default:
         throw std::invalid_argument("Invalid FEN castling rights");
@@ -111,16 +111,16 @@ namespace bb::notation {
 
   std::string castleToString(Bitboard permission) {
     std::string result;
-    if ((permission & kKingCastlePermission[kWhite]) == kKingCastlePermission[kWhite]) {
+    if ((permission & kKingCastlePermission[White]) == kKingCastlePermission[White]) {
       result += 'K';
     }
-    if ((permission & kQueenCastlePermission[kWhite]) == kQueenCastlePermission[kWhite]) {
+    if ((permission & kQueenCastlePermission[White]) == kQueenCastlePermission[White]) {
       result += 'Q';
     }
-    if ((permission & kKingCastlePermission[kBlack]) == kKingCastlePermission[kBlack]) {
+    if ((permission & kKingCastlePermission[Black]) == kKingCastlePermission[Black]) {
       result += 'k';
     }
-    if ((permission & kQueenCastlePermission[kBlack]) == kQueenCastlePermission[kBlack]) {
+    if ((permission & kQueenCastlePermission[Black]) == kQueenCastlePermission[Black]) {
       result += 'q';
     }
     if (result.empty()) {
@@ -154,10 +154,10 @@ namespace bb::notation {
     }
 
     const Color side = state.getColorToMove();
-    if (side != kWhite && side != kBlack) {
+    if (side != White && side != Black) {
       throw std::invalid_argument("Invalid side to move");
     }
-    placement += side == kWhite ? " w " : " b ";
+    placement += side == White ? " w " : " b ";
     placement += castleToString(state.getCastlingRights());
     placement += ' ';
     placement += squareToString(state.getEnpassantSquare());
@@ -184,8 +184,8 @@ namespace bb::notation {
 
   std::string moveToString(Move move) {
     std::string str = squareToString(move.getSource()) + squareToString(move.getDest());
-    if (Piece promotedPiece = move.getPromotedPieceType(); promotedPiece != kNoPiece) {
-      str += pieceToAscii(kBlack, promotedPiece);
+    if (Piece promotedPiece = move.getPromotedPieceType(); promotedPiece != NoPiece) {
+      str += pieceToAscii(Black, promotedPiece);
     }
     return str;
   }

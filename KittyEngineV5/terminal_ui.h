@@ -9,6 +9,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <iostream>
 #include <optional>
@@ -126,12 +127,18 @@ namespace bb::user_interface {
             const double elapsedSeconds = std::chrono::duration<double>(result.searchingTime).count();
             const uint64_t nps = elapsedSeconds > 0 ? static_cast<uint64_t>(result.nodesSearched / elapsedSeconds) : 0;
 
-            constexpr int64_t mateScore = -evaluation::kCheckmateScore;
-            const int64_t score = result.score;
-            const int64_t magnitude = score < 0 ? -score : score;
-            const std::string scoreText = magnitude >= mateScore - completedDepth && magnitude <= mateScore
-              ? std::format("mate {}", (score < 0 ? -1 : 1) * ((mateScore - magnitude + 1) / 2))
-              : std::format("cp {}", result.score);
+            constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);
+            constexpr int64_t mateWindow = 100;
+            const int64_t score = static_cast<int64_t>(result.score);
+            const int64_t magnitude = std::abs(score);
+            const bool isMateScore = magnitude >= mateScore - mateWindow && magnitude <= mateScore;
+            std::string scoreText;
+            if (isMateScore) {
+              const int64_t movesToMate = (mateScore - magnitude + 1) / 2;
+              scoreText = std::format("mate {}", score < 0 ? -movesToMate : movesToMate);
+            } else {
+              scoreText = std::format("cp {}", score);
+            }
             uciOutput_ << std::format("info depth {} score {} time {} nodes {} nps {}\n",
                                       completedDepth, scoreText, elapsedMs, result.nodesSearched, nps);
             uciOutput_.flush();

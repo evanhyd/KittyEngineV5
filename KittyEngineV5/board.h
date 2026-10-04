@@ -18,13 +18,13 @@ namespace bb {
   class Board {
     SearchPolicy searchPolicy_;
     BoardState state_;
-    std::vector<Move> historicalMoves_;
+    std::vector<Move> pastMoves_;
 
   public:
     explicit Board(SearchPolicy searchPolicy)
       : searchPolicy_(std::move(searchPolicy)) {
       setPosition(fen::kStartPosition);
-      historicalMoves_.reserve(256);
+      pastMoves_.reserve(256);
     }
 
     constexpr BoardState& getState() {
@@ -38,12 +38,12 @@ namespace bb {
     constexpr void setPosition(std::string_view fen) {
       // TODO: reset search policy state if needed.
       state_.setPosition(fen);
-      historicalMoves_.clear();
+      pastMoves_.clear();
     }
 
     void setPosition(std::string_view fen, std::span<const std::string_view> moves) {
       const BoardState previousState = state_;
-      std::vector<Move> previousMoves = std::move(historicalMoves_);
+      std::vector<Move> previousMoves = std::move(pastMoves_);
       try {
         setPosition(fen);
         for (const std::string_view moveText : moves) {
@@ -51,34 +51,34 @@ namespace bb {
         }
       } catch (...) {
         state_ = previousState;
-        historicalMoves_ = std::move(previousMoves);
+        pastMoves_ = std::move(previousMoves);
         throw;
       }
     }
 
     searching::SearchResult search(int maxDepth, auto resultCallback) {
       const auto iterativeDeepening = [&]<Color ally>() {
-        searching::SearchResult result;
-        int32_t historicalEval = 0;
+        searching::SearchResult result{};
+        int32_t pastEval = 0;
 
         for (int depth = 1; depth <= maxDepth; ++depth) {
           const searching::SearchParam param{
             .maxDepth = depth,
-            .historicalEval = historicalEval,
+            .pastEval = pastEval,
             .pvMove = std::nullopt
           };
           result = searchPolicy_.template search<ally>(state_, param);
-          historicalEval = result.score;
+          pastEval = result.score;
           resultCallback(result);
         }
 
         return result;
       };
 
-      if (state_.getColorToMove() == kWhite) {
-        return iterativeDeepening.template operator()<kWhite>();
+      if (state_.getColorToMove() == White) {
+        return iterativeDeepening.template operator()<White>();
       } else {
-        return iterativeDeepening.template operator()<kBlack>();
+        return iterativeDeepening.template operator()<Black>();
       }
     }
 
@@ -89,17 +89,17 @@ namespace bb {
         for (const Move& move : moves) {
           if (notation::moveToString(move) == moveText) {
             state_.makeMove<ally>(move);
-            historicalMoves_.push_back(move);
+            pastMoves_.push_back(move);
             return;
           }
         }
         throw std::invalid_argument(std::format("Illegal UCI move: {}", moveText));
       };
 
-      if (state_.getColorToMove() == kWhite) {
-        playMoveImpl.template operator()<kWhite>();
+      if (state_.getColorToMove() == White) {
+        playMoveImpl.template operator()<White>();
       } else {
-        playMoveImpl.template operator()<kBlack>();
+        playMoveImpl.template operator()<Black>();
       }
     }
   };
