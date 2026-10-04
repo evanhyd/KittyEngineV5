@@ -24,7 +24,7 @@ namespace bb::evaluation {
     static constexpr int32_t kMaxPhase = 24;
 
     // Passed pawn bonus indexed by rank (relative to pawn advancement: rank 0..7)
-    static constexpr std::array<int32_t, kSideSize> kPassedPawnBonusTable = { 0, 0, 5, 8, 31, 46, 118, 0 };
+    static constexpr std::array<int32_t, kBoardLenSize> kPassedPawnBonusTable = { 0, 0, 5, 8, 31, 46, 118, 0 };
 
     // Indexed by piece type (0..5: Pawn, Knight, Bishop, Rook, Queen, King)
     static constexpr std::array<int32_t, kPieceSize> kPieceMobilityBonusTable = { 0, 4, 6, 2, 0, 0 };
@@ -147,22 +147,22 @@ namespace bb::evaluation {
 
     // Precompute the squares where an enemy pawn could stop each pawn from passing.
     static constexpr auto kPassedPawnMasks = [] {
-      std::array<std::array<Bitboard, kSquareSize>, kColorSize> masks{};
-      // Build a separate mask for every color and starting square.
-      for (Color color = White; color < kColorSize; ++color) {
+      std::array<std::array<Bitboard, kSquareSize>, kSideSize> masks{};
+      // Build a separate mask for every side and starting square.
+      for (Side side = White; side < kSideSize; ++side) {
         for (Square square = 0; square < kSquareSize; ++square) {
           const int rank = static_cast<int>(getSquareRank(square));
           const int file = static_cast<int>(getSquareFile(square));
           // White moves toward lower rank indices; Black moves toward higher ones.
-          for (int targetRank = 0; targetRank < static_cast<int>(kSideSize); ++targetRank) {
-            if (color == White ? targetRank >= rank : targetRank <= rank) {
+          for (int targetRank = 0; targetRank < static_cast<int>(kBoardLenSize); ++targetRank) {
+            if (side == White ? targetRank >= rank : targetRank <= rank) {
               continue;
             }
             // Enemy pawns on this file or an adjacent file can oppose the pawn.
             for (int targetFile = std::max(0, file - 1);
                  targetFile <= std::min(7, file + 1); ++targetFile) {
-              masks[color][square] = setSquare(
-                masks[color][square],
+              masks[side][square] = setSquare(
+                masks[side][square],
                 rankFileToSquare(static_cast<Square>(targetRank), static_cast<Square>(targetFile)));
             }
           }
@@ -188,25 +188,25 @@ namespace bb::evaluation {
       }
     };
 
-    template <Color color>
+    template <Side side>
     static constexpr Square positionalSquare(Square square) noexcept {
-      return color == White ? square : square ^ 56;
+      return side == White ? square : square ^ 56;
     }
 
     static constexpr int32_t blend(int32_t early, int32_t late, int32_t phase) noexcept {
       return (early * phase + late * (kMaxPhase - phase)) / kMaxPhase;
     }
 
-    template <Color color, Piece piece>
+    template <Side side, Piece piece>
     static int32_t scoreNonPawnPieces(const BoardState& state, Bitboard ownOccupancy,
                                       Bitboard bothOccupancy, Bitboard ownPawns,
                                       Bitboard enemyPawns, AttackInfo& attacks) noexcept {
       int32_t score = 0;
-      for (Bitboard pieces = state.getPieces(color, piece); pieces; pieces = popPiece(pieces)) {
+      for (Bitboard pieces = state.getPieces(side, piece); pieces; pieces = popPiece(pieces)) {
         const Square square = peekPiece(pieces);
         // Material and piece-square placement.
         score += kPieceMaterialValueTable[piece] +
-          kPiecePositionalValueTable[piece][positionalSquare<color>(square)];
+          kPiecePositionalValueTable[piece][positionalSquare<side>(square)];
 
         Bitboard attackMask;
         if constexpr (piece == Knight) {
@@ -232,18 +232,18 @@ namespace bb::evaluation {
     }
 
     // Score one side and collect its attacks for the later overload and king checks.
-    template <Color color>
+    template <Side side>
     static int32_t scoreSide(const BoardState& state, Bitboard ownOccupancy,
                              Bitboard bothOccupancy, int32_t phase,
                              AttackInfo& attacks) noexcept {
-      constexpr Color enemy = getOtherColor(color);
-      const Bitboard pawns = state.getPieces(color, Pawn);
+      constexpr Side enemy = getOtherSide(side);
+      const Bitboard pawns = state.getPieces(side, Pawn);
       const Bitboard enemyPawns = state.getPieces(enemy, Pawn);
       int32_t score = 0;
 
       for (Bitboard pieces = pawns; pieces; pieces = popPiece(pieces)) {
         const Square square = peekPiece(pieces);
-        const Square tableSquare = positionalSquare<color>(square);
+        const Square tableSquare = positionalSquare<side>(square);
         // Material and phase-blended pawn piece-square placement.
         score += kPieceMaterialValueTable[Pawn] +
           blend(kPawnPositionalValueTable[0][tableSquare],
@@ -256,53 +256,53 @@ namespace bb::evaluation {
           score += kIsolatedPawnPenalty;
         }
         // Passed pawns.
-        if ((enemyPawns & kPassedPawnMasks[color][square]) == 0) {
-          const Square advancement = color == White
+        if ((enemyPawns & kPassedPawnMasks[side][square]) == 0) {
+          const Square advancement = side == White
             ? 7 - getSquareRank(square) : getSquareRank(square);
           score += kPassedPawnBonusTable[advancement];
         }
-        attacks.add(getAttack<Pawn, color>(square));
+        attacks.add(getAttack<Pawn, side>(square));
       }
 
       // Doubled pawns.
-      for (Square file = 0; file < kSideSize; ++file) {
+      for (Square file = 0; file < kBoardLenSize; ++file) {
         const int32_t count = static_cast<int32_t>(countPiece(pawns & (kFileAMask << file)));
         if (count > 1) {
           score += (count - 1) * kDoubledPawnPenalty;
         }
       }
 
-      score += scoreNonPawnPieces<color, Knight>(
+      score += scoreNonPawnPieces<side, Knight>(
         state, ownOccupancy, bothOccupancy, pawns, enemyPawns, attacks);
-      score += scoreNonPawnPieces<color, Bishop>(
+      score += scoreNonPawnPieces<side, Bishop>(
         state, ownOccupancy, bothOccupancy, pawns, enemyPawns, attacks);
-      score += scoreNonPawnPieces<color, Rook>(
+      score += scoreNonPawnPieces<side, Rook>(
         state, ownOccupancy, bothOccupancy, pawns, enemyPawns, attacks);
-      score += scoreNonPawnPieces<color, Queen>(
+      score += scoreNonPawnPieces<side, Queen>(
         state, ownOccupancy, bothOccupancy, pawns, enemyPawns, attacks);
 
       // Bishop pair.
-      if (countPiece(state.getPieces(color, Bishop)) >= 2) {
+      if (countPiece(state.getPieces(side, Bishop)) >= 2) {
         score += kBishopPairBonus;
       }
-      const Square kingSquare = peekPiece(state.getPieces(color, King));
+      const Square kingSquare = peekPiece(state.getPieces(side, King));
       // King piece-square placement, blended by game phase.
-      score += blend(kKingPositionalValueTable[0][positionalSquare<color>(kingSquare)],
-                     kKingPositionalValueTable[1][positionalSquare<color>(kingSquare)], phase);
+      score += blend(kKingPositionalValueTable[0][positionalSquare<side>(kingSquare)],
+                     kKingPositionalValueTable[1][positionalSquare<side>(kingSquare)], phase);
       attacks.add(getAttack<King>(kingSquare));
       return score;
     }
 
     // Overloaded defenders: penalize a piece that alone protects multiple attacked valuable pieces.
-    template <Color color>
+    template <Side side>
     static int32_t overloadedDefenderPenalty(const BoardState& state,
                                               const AttackInfo& own,
                                               const AttackInfo& enemy) noexcept {
 
       // Get all the pieces that are attacked by enemies but only defended by one of our pieces.
-      const Bitboard valuable = state.getPieces(color, Knight) |
-        state.getPieces(color, Bishop) | state.getPieces(color, Rook) |
-        state.getPieces(color, Queen);
+      const Bitboard valuable = state.getPieces(side, Knight) |
+        state.getPieces(side, Bishop) | state.getPieces(side, Rook) |
+        state.getPieces(side, Queen);
       const Bitboard defendedOncePieces = valuable & enemy.atLeastOnce & ~own.atLeastTwice;
       int32_t penalty = 0;
 
@@ -317,14 +317,14 @@ namespace bb::evaluation {
     }
 
     // Combine pawn shelter, open files, and nearby attacks, then scale by game phase.
-    template <Color color>
+    template <Side side>
     static int32_t kingWeakness(const BoardState& state, Bitboard ownPawns,
                                 Bitboard enemyPawns, const AttackInfo& enemyAttacks,
                                 int32_t phase) noexcept {
       if (phase == 0) {
         return 0;
       }
-      const Square kingSquare = peekPiece(state.getPieces(color, King));
+      const Square kingSquare = peekPiece(state.getPieces(side, King));
       const int kingRank = static_cast<int>(getSquareRank(kingSquare));
       const int kingFile = static_cast<int>(getSquareFile(kingSquare));
       int32_t penalty = 0;
@@ -333,8 +333,8 @@ namespace bb::evaluation {
         Bitboard shelter = 0;
         // The shelter is the first two squares ahead of the king on this file.
         for (int distance = 1; distance <= 2; ++distance) {
-          const int rank = color == White ? kingRank - distance : kingRank + distance;
-          if (rank >= 0 && rank < static_cast<int>(kSideSize)) {
+          const int rank = side == White ? kingRank - distance : kingRank + distance;
+          if (rank >= 0 && rank < static_cast<int>(kBoardLenSize)) {
             shelter = setSquare(
               shelter, rankFileToSquare(static_cast<Square>(rank), static_cast<Square>(file)));
           }
@@ -390,7 +390,7 @@ namespace bb::evaluation {
         state, state.getPieces(Black, Pawn), state.getPieces(White, Pawn), whiteAttacks, phase);
       // Negamax expects the score from the side to move's perspective.
       const int32_t netScore = whiteScore - blackScore;
-      return state.getColorToMove() == White ? netScore : -netScore;
+      return state.getSideToMove() == White ? netScore : -netScore;
     }
   };
 

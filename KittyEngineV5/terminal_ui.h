@@ -36,9 +36,9 @@ namespace bb::user_interface {
 
     void renderState(const BoardState& state) {
       printBuffer_.clear();
-      for (Square rank = 0; rank < kSideSize; ++rank) {
+      for (Square rank = 0; rank < kBoardLenSize; ++rank) {
         printBuffer_ += "  -------------------------------\n ";
-        for (Square file = 0; file < kSideSize; ++file) {
+        for (Square file = 0; file < kBoardLenSize; ++file) {
           const auto occupant = state.getPieceAt(rankFileToSquare(rank, file));
           const char symbol = occupant
             ? notation::pieceToAsciiVisual(std::get<0>(*occupant), std::get<1>(*occupant))
@@ -53,7 +53,7 @@ namespace bb::user_interface {
       }
       printBuffer_ += "  -------------------------------\n   a   b   c   d   e   f   g   h\n";
       printBuffer_ += std::format("Side to move: {}\nCastling: {}\nEn passant: {}\nHalfmove clock: {}\nFullmove number: {}\n",
-                                  notation::colorToString(state.getColorToMove()),
+                                  notation::sideToString(state.getSideToMove()),
                                   notation::castleToString(state.getCastlingRights()),
                                   notation::squareToString(state.getEnpassantSquare()),
                                   state.getHalfmoveClock(), state.getFullmoveNumber());

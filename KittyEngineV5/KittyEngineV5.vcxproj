@@ -185,6 +185,7 @@
     <ClInclude Include="searching_policy.h" />
     <ClInclude Include="terminal_ui.h" />
     <ClInclude Include="uci_protocol.h" />
+    <ClInclude Include="zobrist_hash.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

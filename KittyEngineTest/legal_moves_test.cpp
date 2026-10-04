@@ -22,10 +22,10 @@ struct LegalMove {
   bool queenSideCastle;
 };
 
-template <Color color>
+template <Side side>
 std::vector<LegalMove> legalMoves(const BoardState& state) {
   MoveList moves;
-  state.generateMoves<color>(moves);
+  state.generateMoves<side>(moves);
   std::vector<LegalMove> result;
   for (const Move& move : moves) {
     result.push_back({move.getSource(), move.getDest(), move.getMovedPiece(),
@@ -131,8 +131,8 @@ TEST(LegalMoves, CastlingMovesRookAndClearsRights) {
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
   auto afterCastle = state;
   afterCastle.makeMove<White>(Move(E1, G1, King, NoPiece, Move::kCastlingFlag));
-  EXPECT_EQ(afterCastle.getPieceAt(G1), (std::tuple<Color, Piece>{White, King}));
-  EXPECT_EQ(afterCastle.getPieceAt(F1), (std::tuple<Color, Piece>{White, Rook}));
+  EXPECT_EQ(afterCastle.getPieceAt(G1), (std::tuple<Side, Piece>{White, King}));
+  EXPECT_EQ(afterCastle.getPieceAt(F1), (std::tuple<Side, Piece>{White, Rook}));
   EXPECT_FALSE(afterCastle.getPieceAt(H1).has_value());
   EXPECT_NE(afterCastle.getCastlingRights() & kKingCastlePermission[White], kKingCastlePermission[White]);
   EXPECT_NE(afterCastle.getCastlingRights() & kQueenCastlePermission[White], kQueenCastlePermission[White]);
@@ -207,7 +207,7 @@ TEST(LegalMoves, PawnHasFourPromotionChoices) {
   auto promoted = state;
   promoted.makeMove<White>(Move(A7, A8, Pawn, Queen));
   EXPECT_FALSE(promoted.getPieceAt(A7).has_value());
-  EXPECT_EQ(promoted.getPieceAt(A8), (std::tuple<Color, Piece>{White, Queen}));
+  EXPECT_EQ(promoted.getPieceAt(A8), (std::tuple<Side, Piece>{White, Queen}));
 }
 
 TEST(BoardState, CaptureRemovesOpponentPiece) {
@@ -215,7 +215,7 @@ TEST(BoardState, CaptureRemovesOpponentPiece) {
   auto afterCapture = state;
   afterCapture.makeMove<White>(Move(E1, E2, Rook, NoPiece, Move::kCaptureFlag));
 
-  EXPECT_EQ(afterCapture.getPieceAt(E2), (std::tuple<Color, Piece>{White, Rook}));
+  EXPECT_EQ(afterCapture.getPieceAt(E2), (std::tuple<Side, Piece>{White, Rook}));
   EXPECT_FALSE(afterCapture.getPieceAt(E1).has_value());
   EXPECT_EQ(afterCapture.getHalfmoveClock(), 0);
 }
@@ -235,7 +235,7 @@ TEST(BoardState, EnPassantCaptureExpiresImmediately) {
   auto afterCapture = afterPush;
   afterCapture.makeMove<White>(Move(E5, D6, Pawn, NoPiece, Move::kEnpassantFlag));
   EXPECT_EQ(afterCapture.getEnpassantSquare(), NoSquare);
-  EXPECT_EQ(afterCapture.getPieceAt(D6), (std::tuple<Color, Piece>{White, Pawn}));
+  EXPECT_EQ(afterCapture.getPieceAt(D6), (std::tuple<Side, Piece>{White, Pawn}));
   EXPECT_FALSE(afterCapture.getPieceAt(D5).has_value());
 
   const auto& blackMoves = legalMoves<Black>(afterCapture);
@@ -431,26 +431,26 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
     BoardState state{fen};
     const BoardState original = state;
     MoveList moves;
-    if (state.getColorToMove() == White) {
+    if (state.getSideToMove() == White) {
       state.generateMoves<White>(moves);
     } else {
       state.generateMoves<Black>(moves);
     }
     for (const Move& move : moves) {
       SCOPED_TRACE(std::to_string(move.getSource()) + " to " + std::to_string(move.getDest()));
-      if (state.getColorToMove() == White) {
+      if (state.getSideToMove() == White) {
         const auto undo = state.makeMove<White>(move);
-        EXPECT_EQ(state.getColorToMove(), Black);
+        EXPECT_EQ(state.getSideToMove(), Black);
         state.unmakeMove<White>(move, undo);
       } else {
         const auto undo = state.makeMove<Black>(move);
-        EXPECT_EQ(state.getColorToMove(), White);
+        EXPECT_EQ(state.getSideToMove(), White);
         state.unmakeMove<Black>(move, undo);
       }
       for (Square square = 0; square < kSquareSize; ++square) {
         EXPECT_EQ(state.getPieceAt(square), original.getPieceAt(square));
       }
-      EXPECT_EQ(state.getColorToMove(), original.getColorToMove());
+      EXPECT_EQ(state.getSideToMove(), original.getSideToMove());
       EXPECT_EQ(state.getCastlingRights(), original.getCastlingRights());
       EXPECT_EQ(state.getEnpassantSquare(), original.getEnpassantSquare());
       EXPECT_EQ(state.getHalfmoveClock(), original.getHalfmoveClock());
@@ -462,14 +462,14 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
 TEST(BoardState, BlackMoveAndEnPassantRestoreColor) {
   BoardState black{"7k/8/8/8/8/8/8/7K b - - 0 1"};
   const auto blackUndo = black.makeMove<Black>(Move(H8, G8, King));
-  EXPECT_EQ(black.getColorToMove(), White);
+  EXPECT_EQ(black.getSideToMove(), White);
   black.unmakeMove<Black>(Move(H8, G8, King), blackUndo);
-  EXPECT_EQ(black.getColorToMove(), Black);
+  EXPECT_EQ(black.getSideToMove(), Black);
 
   BoardState enpassant{"7k/8/8/3pP3/8/8/8/7K w - d6 0 1"};
   const Move capture(E5, D6, Pawn, NoPiece, Move::kEnpassantFlag);
   const auto undo = enpassant.makeMove<White>(capture);
-  EXPECT_EQ(enpassant.getColorToMove(), Black);
+  EXPECT_EQ(enpassant.getSideToMove(), Black);
   enpassant.unmakeMove<White>(capture, undo);
-  EXPECT_EQ(enpassant.getColorToMove(), White);
+  EXPECT_EQ(enpassant.getSideToMove(), White);
 }

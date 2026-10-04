@@ -11,7 +11,7 @@ namespace bb {
   /////////////////////////
   using Bitboard = uint64_t;
   using Square = uint32_t;
-  using Color = uint32_t;
+  using Side = uint32_t;
   using Piece = uint32_t;
 
   enum : Square {
@@ -26,7 +26,7 @@ namespace bb {
     NoSquare,
   };
 
-  enum : Color {
+  enum : Side {
     White,
     Black,
   };
@@ -144,26 +144,26 @@ namespace bb {
   [[nodiscard]] inline constexpr Square squareDownRight(Square square) {
     return square + 9;
   }
-  [[nodiscard]] inline constexpr Color getOtherColor(Color color) {
-    return (color == White ? Black : White);
+  [[nodiscard]] inline constexpr Side getOtherSide(Side side) {
+    return (side == White ? Black : White);
   }
 
 
   /////////////////////
   // GAME DEFINITION //
   /////////////////////
-  inline constexpr Square kColorSize = 2;
+  inline constexpr Square kSideSize = 2;
   inline constexpr Square kPieceSize = 6;
-  inline constexpr Square kSideSize = 8;
+  inline constexpr Square kBoardLenSize = 8;
   inline constexpr Square kSquareSize = 64;
-  inline constexpr std::array<Bitboard, kColorSize> kBackRank = { getSquareRank(A1), getSquareRank(A8) };
-  inline constexpr std::array<Bitboard, kColorSize> kPromotionRank = { getSquareRank(A8), getSquareRank(A1) };
-  inline constexpr std::array<Bitboard, kColorSize> kKingCastlePermission = { toBitboard(E1, H1) , toBitboard(E8, H8) };
-  inline constexpr std::array<Bitboard, kColorSize> kQueenCastlePermission = { toBitboard(E1, A1) , toBitboard(E8, A8) };
-  inline constexpr std::array<Bitboard, kColorSize> kKingCastleOccupancy = { toBitboard(F1, G1) , toBitboard(F8, G8) };
-  inline constexpr std::array<Bitboard, kColorSize> kQueenCastleOccupancy = { toBitboard(B1, C1, D1) , toBitboard(B8, C8, D8) };
-  inline constexpr std::array<Bitboard, kColorSize> kKingCastleSafety = { toBitboard(E1, F1, G1) , toBitboard(E8, F8, G8) };
-  inline constexpr std::array<Bitboard, kColorSize> kQueenCastleSafety = { toBitboard(C1, D1, E1) , toBitboard(C8, D8, E8) };
+  inline constexpr std::array<Bitboard, kSideSize> kBackRank = { getSquareRank(A1), getSquareRank(A8) };
+  inline constexpr std::array<Bitboard, kSideSize> kPromotionRank = { getSquareRank(A8), getSquareRank(A1) };
+  inline constexpr std::array<Bitboard, kSideSize> kKingCastlePermission = { toBitboard(E1, H1) , toBitboard(E8, H8) };
+  inline constexpr std::array<Bitboard, kSideSize> kQueenCastlePermission = { toBitboard(E1, A1) , toBitboard(E8, A8) };
+  inline constexpr std::array<Bitboard, kSideSize> kKingCastleOccupancy = { toBitboard(F1, G1) , toBitboard(F8, G8) };
+  inline constexpr std::array<Bitboard, kSideSize> kQueenCastleOccupancy = { toBitboard(B1, C1, D1) , toBitboard(B8, C8, D8) };
+  inline constexpr std::array<Bitboard, kSideSize> kKingCastleSafety = { toBitboard(E1, F1, G1) , toBitboard(E8, F8, G8) };
+  inline constexpr std::array<Bitboard, kSideSize> kQueenCastleSafety = { toBitboard(C1, D1, E1) , toBitboard(C8, D8, E8) };
 
 
   /////////////////
@@ -173,7 +173,7 @@ namespace bb {
   inline constexpr auto kSquareToRankMasks = []() {
     std::array<Bitboard, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
-      table[i] = kRank8Mask << (getSquareRank(i) * kSideSize);
+      table[i] = kRank8Mask << (getSquareRank(i) * kBoardLenSize);
     }
     return table;
   }();
@@ -213,7 +213,7 @@ namespace bb {
 
     std::array<Bitboard, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
-      table[i] = kAntiDiagonalMasks[getSquareRank(i) + kSideSize - getSquareFile(i) - 1];
+      table[i] = kAntiDiagonalMasks[getSquareRank(i) + kBoardLenSize - getSquareFile(i) - 1];
     }
     return table;
   }();
@@ -224,7 +224,7 @@ namespace bb {
   ///////////////////
   namespace internal {
     inline constexpr auto kPawnAttackTable = []() {
-      std::array<std::array<Bitboard, kSquareSize>, kColorSize> table{};
+      std::array<std::array<Bitboard, kSquareSize>, kSideSize> table{};
       for (Square i = 0; i < kSquareSize; ++i) {
         Bitboard bitboard = toBitboard(i);
         table[White][i] = shiftUpLeft(bitboard) | shiftUpRight(bitboard);
@@ -281,7 +281,7 @@ namespace bb {
     // Generate attack ray bitboard at square, spans outward and stops at occupancy bits at each direction.
     inline constexpr Bitboard generateSliderAttackReachable(Piece piece, Square square, Bitboard occupancy) {
       constexpr auto isInRange = [](int32_t r, int32_t f) {
-        return 0 <= r && r < kSideSize && 0 <= f && f < kSideSize;
+        return 0 <= r && r < kBoardLenSize && 0 <= f && f < kBoardLenSize;
       };
 
       // Cast to int to avoid underflow.
@@ -306,7 +306,7 @@ namespace bb {
     inline std::array<Bitboard, 64 * 4096> rookAttackReachableTable{};
 
     inline const auto sliderAttackTables = []() {
-      static constexpr std::array<std::array<Bitboard, kSquareSize>, kColorSize> kMagicNumTable = { {
+      static constexpr std::array<std::array<Bitboard, kSquareSize>, kSideSize> kMagicNumTable = { {
         {
           0x40040844404084ULL, 0x2004208a004208ULL, 0x10190041080202ULL, 0x108060845042010ULL,
           0x581104180800210ULL, 0x2112080446200010ULL, 0x1080820820060210ULL, 0x3c0808410220200ULL,
@@ -345,7 +345,7 @@ namespace bb {
         }
       } };
 
-      std::array<std::array<SliderAttackTable, kColorSize>, kSquareSize> table{};
+      std::array<std::array<SliderAttackTable, kSideSize>, kSquareSize> table{};
 
       // Generate for both bishop and rook.
       for (Piece piece : {Bishop, Rook}) {
@@ -384,10 +384,10 @@ namespace bb {
     }();
   }
 
-  template <Piece piece, Color color>
+  template <Piece piece, Side side>
     requires (piece == Pawn)
   inline constexpr Bitboard getAttack(Square square) {
-    return internal::kPawnAttackTable[color][square];
+    return internal::kPawnAttackTable[side][square];
   }
 
   template <Piece piece>

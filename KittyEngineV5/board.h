@@ -57,7 +57,7 @@ namespace bb {
     }
 
     searching::SearchResult search(int maxDepth, auto resultCallback) {
-      const auto iterativeDeepening = [&]<Color ally>() {
+      const auto iterativeDeepening = [&]<Side ally>() {
         searching::SearchResult result{};
         int32_t pastEval = 0;
 
@@ -74,7 +74,7 @@ namespace bb {
         return result;
       };
 
-      if (state_.getColorToMove() == White) {
+      if (state_.getSideToMove() == White) {
         return iterativeDeepening.template operator()<White>();
       } else {
         return iterativeDeepening.template operator()<Black>();
@@ -82,7 +82,7 @@ namespace bb {
     }
 
     constexpr void playMove(std::string_view moveText) {
-      const auto playMoveImpl = [&]<Color ally>() {
+      const auto playMoveImpl = [&]<Side ally>() {
         MoveList moves;
         state_.generateMoves<ally>(moves);
         for (const Move& move : moves) {
@@ -95,7 +95,7 @@ namespace bb {
         throw std::invalid_argument(std::format("Illegal UCI move: {}", moveText));
       };
 
-      if (state_.getColorToMove() == White) {
+      if (state_.getSideToMove() == White) {
         playMoveImpl.template operator()<White>();
       } else {
         playMoveImpl.template operator()<Black>();

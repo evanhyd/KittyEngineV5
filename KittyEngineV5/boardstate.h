@@ -13,20 +13,20 @@
 namespace bb {
   // BOARD STATE NODE TYPE //
   struct NodeType {
-    Color color;
+    Side side;
   };
 
   // BOARD STATE //
   class BoardState {
   private:
-    std::array<std::array<Bitboard, kPieceSize>, kColorSize> bitboards_;
+    std::array<std::array<Bitboard, kPieceSize>, kSideSize> bitboards_;
     Bitboard castlePermission_;
-    Color color_;
+    Side side_;
     Square enpassant_;
     int32_t halfmove_;
     int32_t fullmove_;
 
-    template <Color ally, bool violentOnly = false>
+    template <Side ally, bool violentOnly = false>
     constexpr void addPawnMove(MoveList& moves, Square srce, Square dest, uint32_t flags = 0) const {
       if (getSquareRank(dest) == kPromotionRank[ally]) {
         moves.push(Move(srce, dest, Pawn, Knight, flags));
@@ -40,7 +40,7 @@ namespace bb {
       }
     }
 
-    template <Color ally, bool kingSide>
+    template <Side ally, bool kingSide>
     constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const {
       constexpr Bitboard permission = kingSide ? kKingCastlePermission[ally] : kQueenCastlePermission[ally];
       constexpr Bitboard blockers = kingSide ? kKingCastleOccupancy[ally] : kQueenCastleOccupancy[ally];
@@ -59,24 +59,24 @@ namespace bb {
     explicit BoardState(std::string_view fen);
     void setPosition(std::string_view fen);
 
-    constexpr Bitboard getPieces(Color color, Piece piece) const noexcept { return bitboards_[color][piece]; }
-    constexpr Color getColorToMove() const noexcept { return color_; }
+    constexpr Bitboard getPieces(Side side, Piece piece) const noexcept { return bitboards_[side][piece]; }
+    constexpr Side getSideToMove() const noexcept { return side_; }
     constexpr Bitboard getCastlingRights() const noexcept { return castlePermission_; }
     constexpr Square getEnpassantSquare() const noexcept { return enpassant_; }
     constexpr int32_t getHalfmoveClock() const noexcept { return halfmove_; }
     constexpr int32_t getFullmoveNumber() const noexcept { return fullmove_; }
 
-    constexpr Bitboard getOccupancy(Color color) const noexcept {
-      return bitboards_[color][Pawn] | bitboards_[color][Knight] |
-        bitboards_[color][Bishop] | bitboards_[color][Rook] |
-        bitboards_[color][Queen] | bitboards_[color][King];
+    constexpr Bitboard getOccupancy(Side side) const noexcept {
+      return bitboards_[side][Pawn] | bitboards_[side][Knight] |
+        bitboards_[side][Bishop] | bitboards_[side][Rook] |
+        bitboards_[side][Queen] | bitboards_[side][King];
     }
 
-    constexpr std::optional<std::tuple<Color, Piece>> getPieceAt(Square square) const {
-      for (Color color = White; color < kColorSize; ++color) {
+    constexpr std::optional<std::tuple<Side, Piece>> getPieceAt(Square square) const {
+      for (Side side = White; side < kSideSize; ++side) {
         for (Piece piece = Pawn; piece < kPieceSize; ++piece) {
-          if (isSquareSet(bitboards_[color][piece], square)) {
-            return std::tuple<Color, Piece>{color, piece};
+          if (isSquareSet(bitboards_[side][piece], square)) {
+            return std::tuple<Side, Piece>{side, piece};
           }
         }
       }
@@ -84,9 +84,9 @@ namespace bb {
     }
 
     // Return a bitboard containing squares attacked by enemy pieces.
-    template <Color ally>
+    template <Side ally>
     constexpr Bitboard getAttackedMask(Bitboard bothOccupancy) const {
-      constexpr Color enemy = getOtherColor(ally);
+      constexpr Side enemy = getOtherSide(ally);
 
       // If king blocks the attack ray, then it may incorrectly move backward illegally.
       // Consider the move: r...K... -> r....K..
@@ -116,9 +116,9 @@ namespace bb {
 
     // Filter for non-king move destinations: all squares when there is no check,
     // blocking or capturing squares for one checker, and no squares for double check.
-    template <Color ally>
+    template <Side ally>
     constexpr Bitboard getCheckEvasionMask(Square kingSq, Bitboard bothOccupancy) const {
-      constexpr Color enemy = getOtherColor(ally);
+      constexpr Side enemy = getOtherSide(ally);
 
       Bitboard evasionMask = ~Bitboard{};
       Bitboard checkers = (getAttack<Pawn, ally>(kingSq) & bitboards_[enemy][Pawn]) |
@@ -134,9 +134,9 @@ namespace bb {
     }
 
     // Return a bitboard containing ally pieces that are pinned.
-    template <Color ally>
-    constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kColorSize> occupancy) const {
-      constexpr Color enemy = getOtherColor(ally);
+    template <Side ally>
+    constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize> occupancy) const {
+      constexpr Side enemy = getOtherSide(ally);
 
       // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
       Bitboard pinnedMask{};
@@ -152,16 +152,16 @@ namespace bb {
       return pinnedMask;
     }
 
-    template <Color ally, Piece piece, bool violentOnly = false>
+    template <Side ally, Piece piece, bool violentOnly = false>
     constexpr void getPieceMove(
       MoveList& moves,
       const Square kingSq,
-      const std::array<Bitboard, kColorSize> occupancy,
+      const std::array<Bitboard, kSideSize> occupancy,
       const Bitboard evasionMask, 
       const Bitboard pinnedMask) const {
 
       const Bitboard bothOccupancy = occupancy[White] | occupancy[Black];
-      constexpr Color enemy = getOtherColor(ally);
+      constexpr Side enemy = getOtherSide(ally);
       Bitboard sbb = bitboards_[ally][piece];
       if constexpr (piece == Knight) {
         sbb &= ~pinnedMask; // Pinned knight can never move.
@@ -204,19 +204,19 @@ namespace bb {
       }
     }
 
-    template <Color ally>
+    template <Side ally>
     constexpr bool isInCheck() const {
       const Square kingSq = peekPiece(bitboards_[ally][King]);
       const Bitboard bothOccupancy = getOccupancy(White) | getOccupancy(Black);
       return isSquareSet(getAttackedMask<ally>(bothOccupancy), kingSq);
     }
 
-    template <Color ally, bool violentOnly = false>
+    template <Side ally, bool violentOnly = false>
     constexpr void generateMoves(MoveList& moves) const {
-      assert(color_ == ally);
-      constexpr Color enemy = getOtherColor(ally);
+      assert(side_ == ally);
+      constexpr Side enemy = getOtherSide(ally);
       const Square kingSq = peekPiece(bitboards_[ally][King]);
-      const std::array<Bitboard, kColorSize> occupancy = {getOccupancy(White), getOccupancy(Black)};
+      const std::array<Bitboard, kSideSize> occupancy = {getOccupancy(White), getOccupancy(Black)};
       const Bitboard bothOccupancy = occupancy[White] | occupancy[Black];
       const Bitboard evasionMask = getCheckEvasionMask<ally>(kingSq, bothOccupancy);
       const Bitboard pinnedMask = getPinnedMask<ally>(kingSq, occupancy);
@@ -323,10 +323,10 @@ namespace bb {
 
 
     // Save only the irreversible state; piece moves can be reversed from Move.
-    template <Color ally>
+    template <Side ally>
     constexpr MoveUndo makeMove(Move move) noexcept {
-      assert(color_ == ally);
-      constexpr Color enemy = getOtherColor(ally);
+      assert(side_ == ally);
+      constexpr Side enemy = getOtherSide(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
       const Piece movedPiece = move.getMovedPiece();
@@ -364,14 +364,14 @@ namespace bb {
       if constexpr (ally == Black) {
         ++fullmove_;
       }
-      color_ = enemy;
+      side_ = enemy;
       return undo;
     }
 
-    template <Color ally>
+    template <Side ally>
     constexpr void unmakeMove(Move move, const MoveUndo& undo) noexcept {
-      assert(color_ == getOtherColor(ally));
-      constexpr Color enemy = getOtherColor(ally);
+      assert(side_ == getOtherSide(ally));
+      constexpr Side enemy = getOtherSide(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
       const Piece promotion = move.getPromotedPieceType();
@@ -396,7 +396,7 @@ namespace bb {
       enpassant_ = undo.enpassant;
       halfmove_ = undo.halfmove;
       fullmove_ = undo.fullmove;
-      color_ = ally;
+      side_ = ally;
     }
   };
   static_assert(std::is_trivially_copyable_v<BoardState>, "BoardState must remain cheap to copy");

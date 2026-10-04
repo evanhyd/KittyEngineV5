@@ -5,7 +5,7 @@
 
 namespace bb {
   BoardState::BoardState() noexcept
-    : bitboards_{}, color_{}, castlePermission_{}, enpassant_{}, halfmove_{}, fullmove_{} {}
+    : bitboards_{}, side_{}, castlePermission_{}, enpassant_{}, halfmove_{}, fullmove_{} {}
 
   BoardState::BoardState(std::string_view fen) : BoardState() {
     setPosition(fen);
@@ -16,10 +16,10 @@ namespace bb {
 
     std::istringstream input{std::string(fen)};
     std::string placement;
-    std::string side;
+    std::string sideStr;
     std::string castling;
     std::string enpassant;
-    if (!(input >> placement >> side >> castling >> enpassant)) {
+    if (!(input >> placement >> sideStr >> castling >> enpassant)) {
       throw std::invalid_argument("FEN needs placement, side, castling, and en passant fields");
     }
 
@@ -27,7 +27,7 @@ namespace bb {
     Square completedRanks = 0;
     for (const char symbol : placement) {
       if (symbol == '/') {
-        if (completedRanks == kSideSize - 1 || square != (completedRanks + 1) * kSideSize) {
+        if (completedRanks == kBoardLenSize - 1 || square != (completedRanks + 1) * kBoardLenSize) {
           throw std::invalid_argument("Invalid FEN rank");
         }
         ++completedRanks;
@@ -36,22 +36,22 @@ namespace bb {
       if (symbol >= '1' && symbol <= '8') {
         square += symbol - '0';
       } else {
-        if (square >= (completedRanks + 1) * kSideSize) {
+        if (square >= (completedRanks + 1) * kBoardLenSize) {
           throw std::invalid_argument("Invalid FEN rank width");
         }
-        const auto [color, piece] = notation::asciiToPiece(symbol);
-        parsed.bitboards_[color][piece] = setSquare(parsed.bitboards_[color][piece], square);
+        const auto [side, piece] = notation::asciiToPiece(symbol);
+        parsed.bitboards_[side][piece] = setSquare(parsed.bitboards_[side][piece], square);
         ++square;
       }
-      if (square > (completedRanks + 1) * kSideSize) {
+      if (square > (completedRanks + 1) * kBoardLenSize) {
         throw std::invalid_argument("Invalid FEN rank width");
       }
     }
-    if (completedRanks != kSideSize - 1 || square != kSquareSize) {
+    if (completedRanks != kBoardLenSize - 1 || square != kSquareSize) {
       throw std::invalid_argument("Invalid FEN placement");
     }
 
-    parsed.color_ = notation::stringToSide(side);
+    parsed.side_ = notation::stringToSide(sideStr);
     parsed.castlePermission_ = notation::stringToCastling(castling);
 
     parsed.enpassant_ = notation::stringToSquare(enpassant);

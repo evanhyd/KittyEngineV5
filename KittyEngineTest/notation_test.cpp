@@ -21,7 +21,7 @@ TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
   for (Square square = 0; square < kSquareSize; ++square) {
     EXPECT_FALSE(state.getPieceAt(square).has_value());
   }
-  EXPECT_EQ(state.getColorToMove(), 0u);
+  EXPECT_EQ(state.getSideToMove(), 0u);
   EXPECT_EQ(state.getCastlingRights(), 0u);
   EXPECT_EQ(state.getEnpassantSquare(), 0u);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
@@ -30,9 +30,9 @@ TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
 
 TEST(BoardState, ParsesFen) {
   const BoardState state{"r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12"};
-  EXPECT_EQ(state.getColorToMove(), White);
-  EXPECT_EQ(state.getPieceAt(E5), (std::tuple<Color, Piece>{White, Pawn}));
-  EXPECT_EQ(state.getPieceAt(D5), (std::tuple<Color, Piece>{Black, Pawn}));
+  EXPECT_EQ(state.getSideToMove(), White);
+  EXPECT_EQ(state.getPieceAt(E5), (std::tuple<Side, Piece>{White, Pawn}));
+  EXPECT_EQ(state.getPieceAt(D5), (std::tuple<Side, Piece>{Black, Pawn}));
   EXPECT_EQ(state.getEnpassantSquare(), D6);
   EXPECT_EQ(state.getCastlingRights(),
             kKingCastlePermission[White] | kQueenCastlePermission[White] |
@@ -44,11 +44,11 @@ TEST(BoardState, ParsesFen) {
 TEST(BoardState, GettersReportPiecesAndPositionState) {
   const BoardState state{"r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12"};
   ASSERT_TRUE(state.getPieceAt(E5).has_value());
-  EXPECT_EQ(*state.getPieceAt(E5), (std::tuple<Color, Piece>{White, Pawn}));
-  EXPECT_EQ(*state.getPieceAt(D5), (std::tuple<Color, Piece>{Black, Pawn}));
+  EXPECT_EQ(*state.getPieceAt(E5), (std::tuple<Side, Piece>{White, Pawn}));
+  EXPECT_EQ(*state.getPieceAt(D5), (std::tuple<Side, Piece>{Black, Pawn}));
   EXPECT_FALSE(state.getPieceAt(E4).has_value());
   EXPECT_THROW((void)state.getPieceAt(NoSquare), std::out_of_range);
-  EXPECT_EQ(state.getColorToMove(), White);
+  EXPECT_EQ(state.getSideToMove(), White);
   EXPECT_EQ(state.getCastlingRights(),
             kKingCastlePermission[White] | kQueenCastlePermission[White] |
             kKingCastlePermission[Black] | kQueenCastlePermission[Black]);
@@ -62,24 +62,24 @@ TEST(BoardState, GettersTrackMakeAndUnmake) {
   const Move move{E2, E4, Pawn, NoPiece, Move::kDoublePushFlag};
   const MoveUndo undo = state.makeMove<White>(move);
   EXPECT_FALSE(state.getPieceAt(E2).has_value());
-  EXPECT_EQ(*state.getPieceAt(E4), (std::tuple<Color, Piece>{White, Pawn}));
-  EXPECT_EQ(state.getColorToMove(), Black);
+  EXPECT_EQ(*state.getPieceAt(E4), (std::tuple<Side, Piece>{White, Pawn}));
+  EXPECT_EQ(state.getSideToMove(), Black);
   EXPECT_EQ(state.getEnpassantSquare(), E3);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
   EXPECT_EQ(state.getFullmoveNumber(), 1);
   state.unmakeMove<White>(move, undo);
-  EXPECT_EQ(*state.getPieceAt(E2), (std::tuple<Color, Piece>{White, Pawn}));
+  EXPECT_EQ(*state.getPieceAt(E2), (std::tuple<Side, Piece>{White, Pawn}));
   EXPECT_FALSE(state.getPieceAt(E4).has_value());
-  EXPECT_EQ(state.getColorToMove(), White);
+  EXPECT_EQ(state.getSideToMove(), White);
   EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
   EXPECT_EQ(state.getFullmoveNumber(), 1);
 }
 
 TEST(Board, StartsAtInitialPosition) {
   const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
-  EXPECT_EQ(board.getState().getColorToMove(), White);
-  EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Color, Piece>{White, King}));
-  EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Color, Piece>{Black, King}));
+  EXPECT_EQ(board.getState().getSideToMove(), White);
+  EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Side, Piece>{White, King}));
+  EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Side, Piece>{Black, King}));
   EXPECT_EQ(board.getState().getFullmoveNumber(), 1);
 }
 
@@ -133,9 +133,9 @@ TEST(BoardState, SetPositionReplacesAllFields) {
   BoardState state{"r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 4 12"};
   state.setPosition("7k/8/8/8/8/8/4p3/7K b - - 0 3");
 
-  EXPECT_EQ(state.getColorToMove(), Black);
+  EXPECT_EQ(state.getSideToMove(), Black);
   EXPECT_FALSE(state.getPieceAt(E5).has_value());
-  EXPECT_EQ(state.getPieceAt(E2), (std::tuple<Color, Piece>{Black, Pawn}));
+  EXPECT_EQ(state.getPieceAt(E2), (std::tuple<Side, Piece>{Black, Pawn}));
   EXPECT_EQ(state.getCastlingRights(), 0u);
   EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
@@ -149,7 +149,7 @@ TEST(BoardState, InvalidSetPositionPreservesPreviousState) {
   for (Square square = 0; square < kSquareSize; ++square) {
     EXPECT_EQ(state.getPieceAt(square), original.getPieceAt(square));
   }
-  EXPECT_EQ(state.getColorToMove(), original.getColorToMove());
+  EXPECT_EQ(state.getSideToMove(), original.getSideToMove());
   EXPECT_EQ(state.getCastlingRights(), original.getCastlingRights());
   EXPECT_EQ(state.getEnpassantSquare(), original.getEnpassantSquare());
   EXPECT_EQ(state.getHalfmoveClock(), original.getHalfmoveClock());
@@ -157,8 +157,8 @@ TEST(BoardState, InvalidSetPositionPreservesPreviousState) {
 }
 
 TEST(Notation, ParsesAndFormatsSharedChessNotation) {
-  EXPECT_EQ(notation::asciiToPiece('P'), (std::pair<Color, Piece>{White, Pawn}));
-  EXPECT_EQ(notation::asciiToPiece('q'), (std::pair<Color, Piece>{Black, Queen}));
+  EXPECT_EQ(notation::asciiToPiece('P'), (std::pair<Side, Piece>{White, Pawn}));
+  EXPECT_EQ(notation::asciiToPiece('q'), (std::pair<Side, Piece>{Black, Queen}));
   EXPECT_EQ(notation::stringToSquare("d6"), D6);
   EXPECT_EQ(notation::squareToString(D6), "d6");
   EXPECT_EQ(notation::stringToSquare("-"), NoSquare);

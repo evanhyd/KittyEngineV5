@@ -19,7 +19,7 @@ namespace perft {
     uint64_t promotions;
   };
 
-  template <Config config, bb::Color ally>
+  template <Config config, bb::Side ally>
   inline void countChildren(bb::BoardState& state, uint32_t depth, Result& result) {
     bb::MoveList moves;
     state.generateMoves<ally>(moves);
@@ -37,7 +37,7 @@ namespace perft {
     }
     for (const bb::Move& move : moves) {
       const bb::MoveUndo undo = state.makeMove<ally>(move);
-      countChildren<config, bb::getOtherColor(ally)>(state, depth - 1, result);
+      countChildren<config, bb::getOtherSide(ally)>(state, depth - 1, result);
       state.unmakeMove<ally>(move, undo);
     }
   }
@@ -51,7 +51,7 @@ namespace perft {
       return result;
     }
     bb::BoardState state = position;
-    if (state.getColorToMove() == bb::White) {
+    if (state.getSideToMove() == bb::White) {
       countChildren<config, bb::White>(state, depth, result);
     } else {
       countChildren<config, bb::Black>(state, depth, result);

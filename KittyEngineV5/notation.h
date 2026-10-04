@@ -11,13 +11,13 @@ namespace bb {
 
 namespace bb::notation {
   // Piece ascii.
-  char pieceToAsciiVisual(Color color, Piece piece);
-  char pieceToAscii(Color color, Piece piece);
-  std::pair<Color, Piece> asciiToPiece(char ascii);
+  char pieceToAsciiVisual(Side side, Piece piece);
+  char pieceToAscii(Side side, Piece piece);
+  std::pair<Side, Piece> asciiToPiece(char ascii);
 
   // Side to play.
-  Color stringToSide(std::string_view side);
-  std::string colorToString(Color color);
+  Side stringToSide(std::string_view side);
+  std::string sideToString(Side side);
 
   // Square.
   Square stringToSquare(std::string_view square);

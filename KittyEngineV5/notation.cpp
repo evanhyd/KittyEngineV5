@@ -3,44 +3,44 @@
 #include <stdexcept>
 
 namespace bb::notation {
-  char pieceToAsciiVisual(Color color, Piece piece) {
-    static constexpr std::array<std::array<char, kPieceSize>, kColorSize> table{{
+  char pieceToAsciiVisual(Side side, Piece piece) {
+    static constexpr std::array<std::array<char, kPieceSize>, kSideSize> table{{
       {'A', 'N', 'B', 'R', 'Q', 'K'},
       {'v', 'n', 'b', 'r', 'q', 'k'},
     }};
-    return table[color][piece];
+    return table[side][piece];
   }
 
-  char pieceToAscii(Color color, Piece piece) {
-    static constexpr std::array<std::array<char, kPieceSize>, kColorSize> table{{
+  char pieceToAscii(Side side, Piece piece) {
+    static constexpr std::array<std::array<char, kPieceSize>, kSideSize> table{{
       {'P', 'N', 'B', 'R', 'Q', 'K'},
       {'p', 'n', 'b', 'r', 'q', 'k'},
     }};
-    return table[color][piece];
+    return table[side][piece];
   }
 
-  std::pair<Color, Piece> asciiToPiece(char ascii) {
-    const Color color = ascii >= 'A' && ascii <= 'Z' ? White : Black;
-    const char lower = color == White ? static_cast<char>(ascii - 'A' + 'a') : ascii;
+  std::pair<Side, Piece> asciiToPiece(char ascii) {
+    const Side side = ascii >= 'A' && ascii <= 'Z' ? White : Black;
+    const char lower = side == White ? static_cast<char>(ascii - 'A' + 'a') : ascii;
     switch (lower) {
     case 'p':
-      return {color, Pawn};
+      return {side, Pawn};
     case 'n':
-      return {color, Knight};
+      return {side, Knight};
     case 'b':
-      return {color, Bishop};
+      return {side, Bishop};
     case 'r':
-      return {color, Rook};
+      return {side, Rook};
     case 'q':
-      return {color, Queen};
+      return {side, Queen};
     case 'k':
-      return {color, King};
+      return {side, King};
     default:
       throw std::invalid_argument("Invalid piece letter");
     }
   }
 
-  Color stringToSide(std::string_view side) {
+  Side stringToSide(std::string_view side) {
     if (side == "w") {
       return White;
     }
@@ -50,14 +50,14 @@ namespace bb::notation {
     throw std::invalid_argument("Invalid FEN side to move");
   }
 
-  std::string colorToString(Color color) {
-    if (color == White) {
+  std::string sideToString(Side side) {
+    if (side == White) {
       return "white";
     }
-    if (color == Black) {
+    if (side == Black) {
       return "black";
     }
-    throw std::invalid_argument("Invalid color");
+    throw std::invalid_argument("Invalid side");
   }
 
   Square stringToSquare(std::string_view square) {
@@ -131,12 +131,12 @@ namespace bb::notation {
 
   std::string boardToFen(const BoardState& state) {
     std::string placement;
-    for (Square rank = 0; rank < kSideSize; ++rank) {
+    for (Square rank = 0; rank < kBoardLenSize; ++rank) {
       if (rank != 0) {
         placement += '/';
       }
       int emptySquares = 0;
-      for (Square file = 0; file < kSideSize; ++file) {
+      for (Square file = 0; file < kBoardLenSize; ++file) {
         const auto occupant = state.getPieceAt(rankFileToSquare(rank, file));
         if (!occupant) {
           ++emptySquares;
@@ -153,7 +153,7 @@ namespace bb::notation {
       }
     }
 
-    const Color side = state.getColorToMove();
+    const Side side = state.getSideToMove();
     if (side != White && side != Black) {
       throw std::invalid_argument("Invalid side to move");
     }

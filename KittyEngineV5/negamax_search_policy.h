@@ -18,10 +18,10 @@ namespace bb::searching {
         Quiescence,
       };
 
-      const Color ally;
+      const Side ally;
       const NodeType type;
-      consteval NodeMeta(Color ally, NodeType type) : ally(ally), type(type) {}
-      consteval NodeMeta flip() const { return NodeMeta{ getOtherColor(ally), type }; }
+      consteval NodeMeta(Side ally, NodeType type) : ally(ally), type(type) {}
+      consteval NodeMeta flip() const { return NodeMeta{ getOtherSide(ally), type }; }
       consteval NodeMeta withType(NodeType newType) const { return NodeMeta{ ally, newType }; }
     };
     static constexpr int kQuiescenceExtraDepth = 16;
@@ -157,7 +157,7 @@ namespace bb::searching {
       : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow) {
     }
 
-    template <Color ally>
+    template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
       // Meta data.
       static constexpr NodeMeta rootMeta(ally, NodeMeta::NodeType::Root);

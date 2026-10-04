@@ -26,7 +26,7 @@ namespace {
     int* requestedDepth;
     std::vector<searching::SearchResult>* results;
 
-    template <Color ally>
+    template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
       *requestedDepth = param.maxDepth;
       MoveList moves;
@@ -42,7 +42,7 @@ namespace {
   };
 
   struct ZeroTimeSearchPolicy {
-    template <Color ally>
+    template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam&) {
       return {0, std::nullopt, 1, std::chrono::steady_clock::duration{}};
     }
@@ -51,7 +51,7 @@ namespace {
   struct ScoreSequenceSearchPolicy {
     const std::vector<int32_t>* scores;
 
-    template <Color ally>
+    template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
       MoveList moves;
       state.generateMoves<ally>(moves);

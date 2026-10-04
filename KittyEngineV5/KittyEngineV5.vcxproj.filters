@@ -78,5 +78,8 @@
     <ClInclude Include="small_vec.h">
       <Filter>Cores\Containers</Filter>
     </ClInclude>
+    <ClInclude Include="zobrist_hash.h">
+      <Filter>Cores</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
