@@ -60,7 +60,7 @@ namespace perft {
   }
 
   template <Config config, bool canPrint = true>
-  inline Result runPerft(const bb::BoardState& state, uint32_t depth, std::ostream& output) {
+  inline Result runPerft(const bb::BoardState& state, uint32_t depth, std::ostream& output = std::cout) {
     using namespace std::chrono;
     const auto start = high_resolution_clock::now();
     const Result result = countPerft<config>(state, depth);
@@ -75,10 +75,5 @@ namespace perft {
       }
     }
     return result;
-  }
-
-  template <Config config, bool canPrint = true>
-  inline Result runPerft(const bb::BoardState& state, uint32_t depth) {
-    return runPerft<config, canPrint>(state, depth, std::cout);
   }
 }

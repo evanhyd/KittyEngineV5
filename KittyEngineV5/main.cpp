@@ -9,9 +9,33 @@
 using namespace std;
 using namespace bb;
 
+void quickPerft() {
+  constexpr perft::Config config{ false, true, false };
+
+
+  cout << "Initial Position\n";
+  BoardState state(fen::kStartPosition);
+  for (int i = 1; i <= 7; ++i) {
+    perft::runPerft<config>(state, i);
+  }
+
+  cout << "Kiwipete\n";
+  state.setPosition(fen::kKiwipete);
+  for (int i = 1; i <= 6; ++i) {
+    perft::runPerft<config>(state, i);
+  }
+
+  cout << "Rook Endgame\n";
+  state.setPosition(fen::kRookEndgame);
+  for (int i = 1; i <= 7; ++i) {
+    perft::runPerft<config>(state, i);
+  }
+}
+
 int main() {
-  int aspirationWindow = 80;
-  Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, aspirationWindow}};
-  user_interface::TerminalUI terminal{board, cin, cout, cerr};
-  terminal.run();
+  quickPerft();
+  //int aspirationWindow = 80;
+  //Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, aspirationWindow}};
+  //user_interface::TerminalUI terminal{board, cin, cout, cerr};
+  //terminal.run();
 }

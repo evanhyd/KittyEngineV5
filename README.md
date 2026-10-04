@@ -9,7 +9,35 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 AMD Ryzen 7 4800H, 2.90 GHz  
 DDR4, 3200MT/s, L1 cache: 512 KB, L2 cache: 4.0 MB, L3 cache: 8.0 MB  
 
-### Initial Position  
+### Normalized Move Generation
+#### Initial Position
+depth 1, nodes 20, time 0 ms, speed 20 knps  
+depth 2, nodes 400, time 0 ms, speed 400 knps  
+depth 3, nodes 8902, time 0 ms, speed 8902 knps  
+depth 4, nodes 197281, time 0 ms, speed 197281 knps  
+depth 5, nodes 4865609, time 15 ms, speed 324373 knps  
+depth 6, nodes 119060324, time 394 ms, speed 302183 knps  
+depth 7, nodes 3195901860, time 10117 ms, speed 315894 knps  
+
+#### Kiwipete
+depth 1, nodes 48, time 0 ms, speed 48 knps  
+depth 2, nodes 2039, time 0 ms, speed 2039 knps  
+depth 3, nodes 97862, time 0 ms, speed 97862 knps  
+depth 4, nodes 4085603, time 10 ms, speed 408560 knps  
+depth 5, nodes 193690690, time 475 ms, speed 407769 knps  
+depth 6, nodes 8031647685, time 21556 ms, speed 372594 knps  
+
+#### Rook Endgame
+depth 1, nodes 14, time 0 ms, speed 14 knps  
+depth 2, nodes 191, time 0 ms, speed 191 knps  
+depth 3, nodes 2812, time 0 ms, speed 2812 knps  
+depth 4, nodes 43238, time 0 ms, speed 43238 knps  
+depth 5, nodes 674624, time 2 ms, speed 337312 knps  
+depth 6, nodes 11030083, time 40 ms, speed 275752 knps  
+depth 7, nodes 178633661, time 652 ms, speed 273978 knps  
+
+### Raw Move Generation
+#### Initial Position  
 depth 1, nodes 20, time 0ms, speed 20 knps  
 depth 2, nodes 400, time 0ms, speed 400 knps  
 depth 3, nodes 8902, time 0ms, speed 8902 knps  
@@ -18,7 +46,7 @@ depth 5, nodes 4865609, time 12ms, speed 405467 knps
 depth 6, nodes 119060740, time 299ms, speed 398196 knps  
 depth 7, nodes 3195919204, time 7881ms, speed 405522 knps  
 
-### Kiwipete  
+#### Kiwipete  
 depth 1, nodes 48, time 0ms, speed 48 knps  
 depth 2, nodes 2039, time 0ms, speed 2039 knps  
 depth 3, nodes 97863, time 0ms, speed 97863 knps  
@@ -26,7 +54,7 @@ depth 4, nodes 4085690, time 7ms, speed 583670 knps
 depth 5, nodes 193696718, time 314ms, speed 616868 knps  
 depth 6, nodes 8031974901, time 14559ms, speed 551684 knps  
 
-### Rook Endgame  
+#### Rook Endgame  
 depth 1, nodes 14, time 0ms, speed 14 knps  
 depth 2, nodes 191, time 0ms, speed 191 knps  
 depth 3, nodes 2812, time 0ms, speed 2812 knps  
