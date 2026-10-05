@@ -1,6 +1,7 @@
 #pragma once
 #include "bitboard.h"
 #include "small_vec.h"
+#include "zobrist_hash.h"
 #include <cstdint>
 
 namespace bb {
@@ -25,13 +26,13 @@ namespace bb {
     static constexpr uint32_t kGetPieceMask = 0x0Fu;
 
   public:
-    constexpr Move() noexcept = default; // Intentionally left uninitialized to save performance in MoveList creation in stack.
-
     // Flags.
     static constexpr uint32_t kCaptureFlag = 1u << 20;
     static constexpr uint32_t kEnpassantFlag = 1u << 21;
     static constexpr uint32_t kDoublePushFlag = 1u << 22;
     static constexpr uint32_t kCastlingFlag = 1u << 23;
+
+    constexpr Move() noexcept = default; // Intentionally left uninitialized to save performance in MoveList creation in stack.
 
     // Constructors.
     constexpr Move(Square sourceSquare, Square destSquare, Piece movedPiece,
@@ -41,6 +42,14 @@ namespace bb {
                 ((static_cast<uint32_t>(movedPiece) & kGetPieceMask) << 12) |
                 ((static_cast<uint32_t>(promotedPiece) & kGetPieceMask) << 16) |
                 flag) {}
+
+    bool operator==(const Move& rhs) const noexcept {
+      return rawMove == rhs.rawMove;
+    }
+
+    bool operator!=(const Move& rhs) const noexcept {
+      return !(*this == rhs);
+    }
 
     // Getters.
     constexpr Square getSource() const noexcept {
@@ -86,10 +95,11 @@ namespace bb {
 
   // MOVE UNDO //
   struct MoveUndo {
-    Bitboard castlePermission;
-    Square enpassant;
-    int32_t halfmove;
-    int32_t fullmove;
     Piece capturedPiece;
+    Square enpassant;
+    CastlePermission castlePermission;
+    int halfmove;
+    int fullmove;
+    ZobristHash::Hash hash;
   };
 }

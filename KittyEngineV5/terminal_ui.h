@@ -125,7 +125,9 @@ namespace bb::user_interface {
             ++completedDepth;
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(result.searchingTime).count();
             const double elapsedSeconds = std::chrono::duration<double>(result.searchingTime).count();
-            const uint64_t nps = elapsedSeconds > 0 ? static_cast<uint64_t>(result.nodesSearched / elapsedSeconds) : 0;
+            const uint64_t nps = elapsedSeconds <= 0 ? 0
+              : elapsedSeconds < 1 ? result.nodesSearched
+              : static_cast<uint64_t>(result.nodesSearched / elapsedSeconds);
 
             constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);
             constexpr int64_t mateWindow = 100;

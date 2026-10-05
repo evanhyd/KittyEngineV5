@@ -9,10 +9,13 @@ namespace bb {
   /////////////////////////
   // BITBOARD DEFINITION //
   /////////////////////////
+
+  // DO NOT CHANGE THE INT TYPES, THESE ARE THE FASTEST AFTER ALL THE BENCHMARK.
   using Bitboard = uint64_t;
   using Square = uint32_t;
   using Side = uint32_t;
   using Piece = uint32_t;
+  using CastlePermission = uint8_t;
 
   enum : Square {
     A8, B8, C8, D8, E8, F8, G8, H8,
@@ -39,6 +42,13 @@ namespace bb {
     Queen,
     King,
     NoPiece,
+  };
+
+  enum : CastlePermission {
+    WhiteKingCastle = 0b0001,
+    WhiteQueenCastle = 0b0010,
+    BlackKingCastle = 0b0100,
+    BlackQueenCastle = 0b1000,
   };
 
 
@@ -72,16 +82,16 @@ namespace bb {
     return ((1ull << squares) | ...);
   }
   [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, Square square) {
-    return bitboard >> square & 1;
+    return (bitboard >> square) & 1;
   }
   [[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, Square square) {
-    return bitboard | 1ull << square;
+    return bitboard | (1ull << square);
   }
   [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, Square square) {
-    return bitboard & ~(1ull << square);
+    return bitboard & (~(1ull << square));
   }
   [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, Square from, Square to) {
-    return bitboard & ~(1ull << from) | (1ull << to);
+    return (bitboard & (~(1ull << from))) | (1ull << to);
   }
   [[nodiscard]] inline constexpr Bitboard shiftUp(Bitboard bitboard) {
     return bitboard >> 8;
@@ -90,24 +100,23 @@ namespace bb {
     return bitboard << 8;
   }
   [[nodiscard]] inline constexpr Bitboard shiftLeft(Bitboard bitboard) {
-    return (bitboard >> 1) & ~kFileHMask;
+    return (bitboard >> 1) & (~kFileHMask);
   }
   [[nodiscard]] inline constexpr Bitboard shiftRight(Bitboard bitboard) {
-    return (bitboard << 1) & ~kFileAMask;
+    return (bitboard << 1) & (~kFileAMask);
   }
   [[nodiscard]] inline constexpr Bitboard shiftUpLeft(Bitboard bitboard) {
-    return (bitboard >> 9) & ~kFileHMask;
+    return (bitboard >> 9) & (~kFileHMask);
   }
   [[nodiscard]] inline constexpr Bitboard shiftUpRight(Bitboard bitboard) {
-    return (bitboard >> 7) & ~kFileAMask;
+    return (bitboard >> 7) & (~kFileAMask);
   }
   [[nodiscard]] inline constexpr Bitboard shiftDownLeft(Bitboard bitboard) {
-    return (bitboard << 7) & ~kFileHMask;
+    return (bitboard << 7) & (~kFileHMask);
   }
   [[nodiscard]] inline constexpr Bitboard shiftDownRight(Bitboard bitboard) {
-    return (bitboard << 9) & ~kFileAMask;
+    return (bitboard << 9) & (~kFileAMask);
   }
-
   [[nodiscard]] inline constexpr uint32_t countPiece(Bitboard bitboard) {
     return static_cast<uint32_t>(std::popcount(bitboard));
   }
@@ -118,31 +127,31 @@ namespace bb {
     return bitboard & (bitboard - 1);
   }
   [[nodiscard]] inline constexpr Square getSquareRank(Square square) {
-    return square / 8;
+    return square / 8ull;
   }
   [[nodiscard]] inline constexpr Square getSquareFile(Square square) {
-    return square % 8;
+    return square % 8ull;
   }
   [[nodiscard]] inline constexpr Square rankFileToSquare(Square rank, Square file) {
-    return rank * 8 + file;
+    return rank * 8ull + file;
   }
   [[nodiscard]] inline constexpr Square squareUp(Square square) {
-    return square - 8;
+    return square - 8ull;
   }
   [[nodiscard]] inline constexpr Square squareDown(Square square) {
-    return square + 8;
+    return square + 8ull;
   }
   [[nodiscard]] inline constexpr Square squareUpLeft(Square square) {
-    return square - 9;
+    return square - 9ull;
   }
   [[nodiscard]] inline constexpr Square squareUpRight(Square square) {
-    return square - 7;
+    return square - 7ull;
   }
   [[nodiscard]] inline constexpr Square squareDownLeft(Square square) {
-    return square + 7;
+    return square + 7ull;
   }
   [[nodiscard]] inline constexpr Square squareDownRight(Square square) {
-    return square + 9;
+    return square + 9ull;
   }
   [[nodiscard]] inline constexpr Side getOtherSide(Side side) {
     return (side == White ? Black : White);
@@ -156,20 +165,27 @@ namespace bb {
   inline constexpr Square kPieceSize = 6;
   inline constexpr Square kBoardLenSize = 8;
   inline constexpr Square kSquareSize = 64;
-  inline constexpr std::array<Bitboard, kSideSize> kBackRank = { getSquareRank(A1), getSquareRank(A8) };
-  inline constexpr std::array<Bitboard, kSideSize> kPromotionRank = { getSquareRank(A8), getSquareRank(A1) };
-  inline constexpr std::array<Bitboard, kSideSize> kKingCastlePermission = { toBitboard(E1, H1) , toBitboard(E8, H8) };
-  inline constexpr std::array<Bitboard, kSideSize> kQueenCastlePermission = { toBitboard(E1, A1) , toBitboard(E8, A8) };
-  inline constexpr std::array<Bitboard, kSideSize> kKingCastleOccupancy = { toBitboard(F1, G1) , toBitboard(F8, G8) };
-  inline constexpr std::array<Bitboard, kSideSize> kQueenCastleOccupancy = { toBitboard(B1, C1, D1) , toBitboard(B8, C8, D8) };
-  inline constexpr std::array<Bitboard, kSideSize> kKingCastleSafety = { toBitboard(E1, F1, G1) , toBitboard(E8, F8, G8) };
-  inline constexpr std::array<Bitboard, kSideSize> kQueenCastleSafety = { toBitboard(C1, D1, E1) , toBitboard(C8, D8, E8) };
+  inline constexpr std::array<Square, kSideSize> kPromotionRank = { getSquareRank(A8), getSquareRank(A1) };
+  inline constexpr std::array<Bitboard, kSideSize> kKingCastleOccupancyMasks = { toBitboard(F1, G1) , toBitboard(F8, G8) };
+  inline constexpr std::array<Bitboard, kSideSize> kQueenCastleOccupancyMasks = { toBitboard(B1, C1, D1) , toBitboard(B8, C8, D8) };
+  inline constexpr std::array<Bitboard, kSideSize> kKingCastleSafetyMasks = { toBitboard(E1, F1, G1) , toBitboard(E8, F8, G8) };
+  inline constexpr std::array<Bitboard, kSideSize> kQueenCastleSafetyMasks = { toBitboard(C1, D1, E1) , toBitboard(C8, D8, E8) };
+  inline constexpr auto kCastlePermissionMask = []() {
+    std::array<CastlePermission, kSquareSize> table{};
+    table.fill(0b00001111);
+    table[A1] &= ~WhiteQueenCastle;
+    table[H1] &= ~WhiteKingCastle;
+    table[E1] &= ~(WhiteQueenCastle | WhiteKingCastle);
+    table[A8] &= ~BlackQueenCastle;
+    table[H8] &= ~BlackKingCastle;
+    table[E8] &= ~(BlackQueenCastle | BlackKingCastle);
+    return table;
+  }();
 
 
   /////////////////
   // MASK TABLES //
   /////////////////
-  // TODO: investigate the performance impact of lookup table vs calculate on the fly.
   inline constexpr auto kSquareToRankMasks = []() {
     std::array<Bitboard, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
@@ -345,7 +361,7 @@ namespace bb {
         }
       } };
 
-      std::array<std::array<SliderAttackTable, kSideSize>, kSquareSize> table{};
+      std::array<std::array<SliderAttackTable, 2>, kSquareSize> table{};
 
       // Generate for both bishop and rook.
       for (Piece piece : {Bishop, Rook}) {

@@ -134,8 +134,7 @@ TEST(LegalMoves, CastlingMovesRookAndClearsRights) {
   EXPECT_EQ(afterCastle.getPieceAt(G1), (std::tuple<Side, Piece>{White, King}));
   EXPECT_EQ(afterCastle.getPieceAt(F1), (std::tuple<Side, Piece>{White, Rook}));
   EXPECT_FALSE(afterCastle.getPieceAt(H1).has_value());
-  EXPECT_NE(afterCastle.getCastlingRights() & kKingCastlePermission[White], kKingCastlePermission[White]);
-  EXPECT_NE(afterCastle.getCastlingRights() & kQueenCastlePermission[White], kQueenCastlePermission[White]);
+  EXPECT_EQ(afterCastle.getCastlingRights(), BlackKingCastle | BlackQueenCastle);
 }
 
 TEST(LegalMoves, CannotCastleThroughAttack) {
@@ -187,6 +186,7 @@ TEST(BoardState, MovingRookPermanentlyRemovesItsCastlingRight) {
 
   EXPECT_EQ(countMoves(moves, E1, G1), 0u);
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
+  EXPECT_EQ(afterRookReturns.getCastlingRights(), WhiteQueenCastle);
 }
 
 TEST(BoardState, CapturingCornerRookRemovesCastlingRight) {
@@ -194,9 +194,7 @@ TEST(BoardState, CapturingCornerRookRemovesCastlingRight) {
   auto afterCapture = state;
   afterCapture.makeMove<Black>(Move(A8, A1, Rook, NoPiece, Move::kCaptureFlag));
 
-  EXPECT_NE(afterCapture.getCastlingRights() & kQueenCastlePermission[White], kQueenCastlePermission[White]);
-  EXPECT_NE(afterCapture.getCastlingRights() & kQueenCastlePermission[Black], kQueenCastlePermission[Black]);
-  EXPECT_EQ(afterCapture.getCastlingRights() & kKingCastlePermission[White], kKingCastlePermission[White]);
+  EXPECT_EQ(afterCapture.getCastlingRights(), WhiteKingCastle | BlackKingCastle);
 }
 
 TEST(LegalMoves, PawnHasFourPromotionChoices) {

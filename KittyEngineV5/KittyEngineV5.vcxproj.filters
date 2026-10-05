@@ -17,7 +17,7 @@
     <Filter Include="Cores\Searching Policies">
       <UniqueIdentifier>{34cb0508-45b5-4fb0-95f8-e987d50fd887}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Cores\Containers">
+    <Filter Include="Cores\Data Structures">
       <UniqueIdentifier>{310f616f-ec8f-4004-9d42-424dcb5d7f3e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -76,10 +76,13 @@
       <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
     <ClInclude Include="small_vec.h">
-      <Filter>Cores\Containers</Filter>
+      <Filter>Cores\Data Structures</Filter>
+    </ClInclude>
+    <ClInclude Include="transposition_table.h">
+      <Filter>Cores\Data Structures</Filter>
     </ClInclude>
     <ClInclude Include="zobrist_hash.h">
-      <Filter>Cores</Filter>
+      <Filter>Cores\Data Structures</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

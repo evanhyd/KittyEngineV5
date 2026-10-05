@@ -184,6 +184,7 @@
     <ClInclude Include="small_vec.h" />
     <ClInclude Include="searching_policy.h" />
     <ClInclude Include="terminal_ui.h" />
+    <ClInclude Include="transposition_table.h" />
     <ClInclude Include="uci_protocol.h" />
     <ClInclude Include="zobrist_hash.h" />
   </ItemGroup>

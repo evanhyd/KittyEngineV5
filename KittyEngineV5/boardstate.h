@@ -1,6 +1,7 @@
 #pragma once
 #include "bitboard.h"
 #include "move.h"
+#include "zobrist_hash.h"
 #include <array>
 #include <cassert>
 #include <optional>
@@ -20,11 +21,12 @@ namespace bb {
   class BoardState {
   private:
     std::array<std::array<Bitboard, kPieceSize>, kSideSize> bitboards_;
-    Bitboard castlePermission_;
-    Side side_;
     Square enpassant_;
-    int32_t halfmove_;
-    int32_t fullmove_;
+    Side side_;
+    CastlePermission castlePermission_;
+    int halfmove_;
+    int fullmove_;
+    ZobristHash zobrist_;
 
     template <Side ally, bool violentOnly = false>
     constexpr void addPawnMove(MoveList& moves, Square srce, Square dest, uint32_t flags = 0) const {
@@ -42,9 +44,19 @@ namespace bb {
 
     template <Side ally, bool kingSide>
     constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const {
-      constexpr Bitboard permission = kingSide ? kKingCastlePermission[ally] : kQueenCastlePermission[ally];
-      constexpr Bitboard blockers = kingSide ? kKingCastleOccupancy[ally] : kQueenCastleOccupancy[ally];
-      constexpr Bitboard safety = kingSide ? kKingCastleSafety[ally] : kQueenCastleSafety[ally];
+      constexpr Bitboard permission = []() {
+        if constexpr (ally == White && kingSide) {
+          return WhiteKingCastle;
+        } else if constexpr (ally == White && !kingSide) {
+          return WhiteQueenCastle;
+        } else if constexpr (ally == Black && kingSide) {
+          return BlackKingCastle;
+        } else {
+          return BlackQueenCastle;
+        }
+      }();
+      constexpr Bitboard blockers = kingSide ? kKingCastleOccupancyMasks[ally] : kQueenCastleOccupancyMasks[ally];
+      constexpr Bitboard safety = kingSide ? kKingCastleSafetyMasks[ally] : kQueenCastleSafetyMasks[ally];
       if ((castlePermission_ & permission) == permission &&
           (bothOccupancy & blockers) == 0 &&
           (attackedMask & safety) == 0) {
@@ -61,10 +73,11 @@ namespace bb {
 
     constexpr Bitboard getPieces(Side side, Piece piece) const noexcept { return bitboards_[side][piece]; }
     constexpr Side getSideToMove() const noexcept { return side_; }
-    constexpr Bitboard getCastlingRights() const noexcept { return castlePermission_; }
+    constexpr CastlePermission getCastlingRights() const noexcept { return castlePermission_; }
     constexpr Square getEnpassantSquare() const noexcept { return enpassant_; }
-    constexpr int32_t getHalfmoveClock() const noexcept { return halfmove_; }
-    constexpr int32_t getFullmoveNumber() const noexcept { return fullmove_; }
+    constexpr auto getHalfmoveClock() const noexcept { return halfmove_; }
+    constexpr auto getFullmoveNumber() const noexcept { return fullmove_; }
+    constexpr ZobristHash::Hash getHash() const noexcept { return zobrist_.hash(); }
 
     constexpr Bitboard getOccupancy(Side side) const noexcept {
       return bitboards_[side][Pawn] | bitboards_[side][Knight] |
@@ -331,40 +344,75 @@ namespace bb {
       const Square dest = move.getDest();
       const Piece movedPiece = move.getMovedPiece();
       const Piece promotion = move.getPromotedPieceType();
-      MoveUndo undo{castlePermission_, enpassant_, halfmove_, fullmove_, NoPiece};
+      MoveUndo undo{
+        .capturedPiece = NoPiece,
+        .enpassant = enpassant_,
+        .castlePermission = castlePermission_,
+        .halfmove = halfmove_,
+        .fullmove = fullmove_,
+        .hash = zobrist_.hash(),
+      };
 
       if (move.isEnpassant()) {
+        // Perform enpassant.
         const Square capturedSq = (ally == White ? squareDown(dest) : squareUp(dest));
         bitboards_[enemy][Pawn] = unsetSquare(bitboards_[enemy][Pawn], capturedSq);
         undo.capturedPiece = Pawn;
+        zobrist_.markPiece(enemy, Pawn, capturedSq);
+
       } else if (move.isCapture()) {
+        // Perform capturing.
         for (Piece piece = Pawn; piece <= Queen; ++piece) {
           if (isSquareSet(bitboards_[enemy][piece], dest)) {
             bitboards_[enemy][piece] = unsetSquare(bitboards_[enemy][piece], dest);
             undo.capturedPiece = piece;
+            zobrist_.markPiece(enemy, piece, dest);
             break;
           }
         }
       }
 
+      // Move the piece.
       bitboards_[ally][movedPiece] = moveSquare(bitboards_[ally][movedPiece], srce, dest);
+      zobrist_.markPiece(ally, movedPiece, srce);
+      zobrist_.markPiece(ally, movedPiece, dest);
+
       if (promotion != NoPiece) {
+        // Perform promotion.
         bitboards_[ally][Pawn] = unsetSquare(bitboards_[ally][Pawn], dest);
         bitboards_[ally][promotion] = setSquare(bitboards_[ally][promotion], dest);
+        zobrist_.markPiece(ally, movedPiece, dest);
+        zobrist_.markPiece(ally, promotion, dest);
       }
       if (move.isCastling()) {
+        // Perform castling.
         const Square rookFrom = dest > srce ? (ally == White ? H1 : H8) : (ally == White ? A1 : A8);
         const Square rookTo = dest > srce ? dest - 1 : dest + 1;
         bitboards_[ally][Rook] = moveSquare(bitboards_[ally][Rook], rookFrom, rookTo);
+        zobrist_.markPiece(ally, Rook, rookFrom);
+        zobrist_.markPiece(ally, Rook, rookTo);
       }
 
-      castlePermission_ = unsetSquare(unsetSquare(castlePermission_, srce), dest);
+      // Update castle permission.
+      zobrist_.markCastle(castlePermission_);
+      castlePermission_ &= kCastlePermissionMask[srce] & kCastlePermissionMask[dest];
+      zobrist_.markCastle(castlePermission_);
+
+      // Update enpassant square.
+      zobrist_.markEnpassant(enpassant_);
       enpassant_ = move.isDoublePush() ? (ally == White ? squareUp(srce) : squareDown(srce)) : NoSquare;
+      zobrist_.markEnpassant(enpassant_);
+
+      // Update half move and full move..
       halfmove_ = (movedPiece == Pawn || undo.capturedPiece != NoPiece) ? 0 : halfmove_ + 1;
       if constexpr (ally == Black) {
         ++fullmove_;
       }
+
+      // Change side.
       side_ = enemy;
+      zobrist_.markSide();
+
       return undo;
     }
 
@@ -397,6 +445,7 @@ namespace bb {
       halfmove_ = undo.halfmove;
       fullmove_ = undo.fullmove;
       side_ = ally;
+      zobrist_.set(undo.hash);
     }
   };
   static_assert(std::is_trivially_copyable_v<BoardState>, "BoardState must remain cheap to copy");

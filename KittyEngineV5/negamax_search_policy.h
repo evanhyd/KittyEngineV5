@@ -2,6 +2,7 @@
 #include "boardstate.h"
 #include "evaluation_policy.h"
 #include "searching_policy.h"
+#include "transposition_table.h"
 #include <algorithm>
 #include <optional>
 #include <ranges>
@@ -23,11 +24,53 @@ namespace bb::searching {
       consteval NodeMeta(Side ally, NodeType type) : ally(ally), type(type) {}
       consteval NodeMeta flip() const { return NodeMeta{ getOtherSide(ally), type }; }
       consteval NodeMeta withType(NodeType newType) const { return NodeMeta{ ally, newType }; }
+      consteval bool isInternal() const { return type == NodeType::Internal; }
+      consteval bool isQuiescence() const { return type == NodeType::Quiescence; }
     };
     static constexpr int kQuiescenceExtraDepth = 16;
+    static constexpr int kMaxDepthHardCutoff = 1000;
 
     EvalPolicy evalPolicy_;
     int32_t aspirationWindow_;
+    TranspositionTable ttTable_;
+
+    // Convert root to mate distance penalty to current node to mate distance penalty.
+    // Root -------------------------ThisNode------------------------ Checkmate
+    //              |
+    //              v
+    //             depth
+    constexpr int32_t normalizeCheckmateScore(int32_t score, int depth) const {
+      int32_t rootToMateDepth = -evaluation::kCheckmateScore - std::abs(score);
+      if (rootToMateDepth > kMaxDepthHardCutoff) {
+        // Not checkmate.
+        return score;
+      }
+
+      if (score < 0) {
+        return score - depth;
+      } else {
+        return score + depth;
+      }
+    }
+
+    // Convert current node to mate distance penalty to root to mate distance penalty.
+    // Root -------------------------ThisNode------------------------ Checkmate
+    //              |
+    //              v
+    //             depth
+    constexpr int32_t denormalizeCheckmateScore(int32_t score, int depth) const {
+      int32_t thisNodeToMateDepth = -evaluation::kCheckmateScore - std::abs(score);
+      if (thisNodeToMateDepth > kMaxDepthHardCutoff) {
+        // Not checkmate.
+        return score;
+      }
+
+      if (score < 0) {
+        return score + depth;
+      } else {
+        return score - depth;
+      }
+    }
 
     void filterViolentMoves(MoveList& moves) const {
       auto it = std::remove_if(moves.begin(), moves.end(), [](const Move& move) {
@@ -36,14 +79,15 @@ namespace bb::searching {
       moves.resize(std::distance(moves.begin(), it));
     }
 
-    void sortMoves(const BoardState& state, MoveList& moves) const {
+    template <NodeMeta meta>
+    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove) const {
       //static constexpr int32_t kFutilityMovePriority = 0;
       //static constexpr int32_t kKillerMove = 99;
-      //static constexpr int32_t kTranspositionPriority = 20000;
       //static constexpr int32_t kPrincipalVariationPriority = 10000;
       static constexpr int32_t kEnPassantPriority = 150;
       static constexpr int32_t kCastlingPriority = 151;
       static constexpr int32_t kPromotionPriority = 506;
+      static constexpr int32_t kTranspositionPriority = 10000;
       static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
       { {
           {105, 205, 305, 405, 505}, // pawn
@@ -64,6 +108,13 @@ namespace bb::searching {
       // Calculate the priority.
       std::ranges::transform(moves, scoredMoves.begin(), [&](const Move& move) {
         int32_t priority = 0;
+
+        if constexpr (!meta.isQuiescence()) {
+          if (move == ttMove) {
+            priority += kTranspositionPriority;
+          }
+        }
+
         if (move.isEnpassant()) {
           priority += kEnPassantPriority;
         } else if (move.isCastling()) {
@@ -87,16 +138,28 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    int32_t searchInternal(BoardState& state, int maxDepth, int depth, int32_t alpha, int32_t beta, uint64_t& searchedNodes) {
+    int32_t searchInternal(BoardState& state, int maxDepth, int depth, const int32_t alpha, const int32_t beta, uint64_t& searchedNodes) {
       ++searchedNodes;
 
-      if constexpr (meta.type == NodeMeta::NodeType::Internal) {
+      std::optional<TranspositionTable::Entry> ttEntry;
+
+      if constexpr (meta.isInternal()) {
+        // Lookup transposition table.
+        if (ttEntry = ttTable_.get(state.getHash()); ttEntry && ttEntry->depth >= maxDepth - depth) {
+          ttEntry->score = denormalizeCheckmateScore(ttEntry->score, depth);
+          if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact ||
+              (ttEntry->scoreType == TranspositionTable::ScoreType::UpperBound && ttEntry->score <= alpha) ||
+              (ttEntry->scoreType == TranspositionTable::ScoreType::LowerBound && ttEntry->score >= beta)) {
+            return ttEntry->score;
+          }
+        }
+
         // Perform quiescence search for a few extra depth.
         if (depth == maxDepth) {
           --searchedNodes;
           return searchInternal<meta.withType(NodeMeta::NodeType::Quiescence)>(state, maxDepth + kQuiescenceExtraDepth, depth, alpha, beta, searchedNodes);
         }
-      } if constexpr (meta.type == NodeMeta::NodeType::Quiescence) {
+      } if constexpr (meta.isQuiescence()) {
         // Hard cutoff.
         if (depth == maxDepth) {
           return evalPolicy_.evaluate(state);
@@ -117,14 +180,18 @@ namespace bb::searching {
         }
       }
 
-      if constexpr (meta.type == NodeMeta::NodeType::Quiescence) {
+      // Quiescence stand-pat and in-check extension.
+      int32_t bestScore = alpha;
+      Move bestMove{};
+
+      if constexpr (meta.isQuiescence()) {
         if (!inCheck) {
           // Can choose not to recapture if badtrade.
           int32_t standPat = evalPolicy_.evaluate(state);
           if (standPat >= beta) {
             return beta;
           }
-          alpha = std::max(alpha, standPat);
+          bestScore = std::max(alpha, standPat);
           filterViolentMoves(moves);
         } else {
           // In-check extension. Continue the search.
@@ -133,52 +200,90 @@ namespace bb::searching {
         }
       }
 
-
       // Move ordering.
-      sortMoves(state, moves);
+      if constexpr (meta.isInternal()) {
+        sortMoves<meta>(state, moves, (ttEntry ? ttEntry->bestMove : Move{}));
+        bestMove = moves[0];
+      } else {
+        sortMoves<meta>(state, moves, Move{});
+      }
 
       // Explore moves.
       for (const Move& move : moves) {
         MoveUndo undo = state.makeMove<meta.ally>(move);
-        int32_t score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -alpha, searchedNodes);
+        int32_t score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -bestScore, searchedNodes);
         state.unmakeMove<meta.ally>(move, undo);
 
         if (score >= beta) {
+          if constexpr (meta.isInternal()) {
+            ttTable_.put(TranspositionTable::Entry{
+              .key = state.getHash(),
+              .depth = maxDepth - depth,
+              .score = normalizeCheckmateScore(score, depth),
+              .scoreType = TranspositionTable::ScoreType::LowerBound,
+              .bestMove = move
+            });
+          }
           return beta;
         }
-        alpha = std::max(alpha, score);
+        if (score > bestScore) {
+          bestScore = score;
+          bestMove = move;
+        }
       }
 
-      return alpha;
+      if constexpr (meta.isInternal()) {
+        ttTable_.put(TranspositionTable::Entry{
+              .key = state.getHash(),
+              .depth = maxDepth - depth,
+              .score = normalizeCheckmateScore(bestScore, depth),
+              .scoreType = (bestScore <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact),
+              .bestMove = bestMove
+            });
+      }
+      return bestScore;
     }
 
   public:
-    explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow)
-      : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow) {
+    explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow, size_t tranpositionTableSize)
+      : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow), ttTable_(tranpositionTableSize){
     }
 
     template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
       // Meta data.
-      static constexpr NodeMeta rootMeta(ally, NodeMeta::NodeType::Root);
+      static constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
 
       // Search statistics.
-      const auto startTime = std::chrono::steady_clock::now();
       uint64_t searchedNodes = 1;
+      const auto startTime = std::chrono::steady_clock::now();
+      const auto elapsedTime = [&] {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - startTime);
+      };
+
+      // Lookup transposition table.
+      std::optional<TranspositionTable::Entry> ttEntry = ttTable_.get(state.getHash());
+      if (ttEntry && ttEntry->depth >= param.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
+        return SearchResult{
+          .score = ttEntry->score,
+          .bestMove = ttEntry->bestMove,
+          .nodesSearched = searchedNodes,
+          .searchingTime = elapsedTime()
+        };
+      }
 
       // Generate legal moves and check for checkmate or stalemate.
       MoveList moves;
       state.generateMoves<ally>(moves);
       if (moves.empty()) {
         if (state.isInCheck<ally>()) {
-          return SearchResult{evaluation::kCheckmateScore, std::nullopt, searchedNodes,
-                              std::chrono::steady_clock::now() - startTime};
+          return SearchResult{evaluation::kCheckmateScore, std::nullopt, searchedNodes, elapsedTime()};
         } else {
-          return SearchResult{evaluation::kStalemateScore, std::nullopt, searchedNodes,
-                              std::chrono::steady_clock::now() - startTime};
+          return SearchResult{evaluation::kStalemateScore, std::nullopt, searchedNodes, elapsedTime()};
         }
       }
-      sortMoves(state, moves);
+      sortMoves<meta>(state, moves, (ttEntry ? ttEntry->bestMove : Move{}));
 
       // Set up aspiration window.
       static constexpr auto expandWindow = [](int& failTime, int32_t window) {
@@ -194,7 +299,7 @@ namespace bb::searching {
       };
       int failLowCount = 0;
       int failHighCount = 0;
-      auto [initialAlpha, initialBeta] = [&]() {
+      auto [alpha, beta] = [&]() {
         if (param.maxDepth <= 4) {
           return std::array<int32_t, 2>{evaluation::kCheckmateScore, -evaluation::kCheckmateScore};
         } else {
@@ -204,38 +309,46 @@ namespace bb::searching {
 
       // Search for the best move.
       for (;;) {
-        int32_t alpha = initialAlpha;
+        int32_t bestScore = alpha;
         Move bestMove = moves[0];
+
         for (const Move& move : moves) {
           const MoveUndo undo = state.makeMove<ally>(move);
-          const int32_t score = -searchInternal<rootMeta.flip().withType(NodeMeta::NodeType::Internal)>(state, param.maxDepth, 1, -initialBeta, -alpha, searchedNodes);
+          const int32_t score = -searchInternal<meta.flip().withType(NodeMeta::NodeType::Internal)>(state, param.maxDepth, 1, -beta, -bestScore, searchedNodes);
           state.unmakeMove<ally>(move, undo);
 
-          if (score > alpha) {
-            alpha = score;
+          if (score > bestScore) {
+            bestScore = score;
             bestMove = move;
           }
-          if (alpha >= initialBeta) {
+          if (bestScore >= beta) {
             break;
           }
-          
         }
 
-        if (alpha >= initialBeta) {
+        if (bestScore >= beta) {
           // Fail-high, the position is better than expected, increase beta and re-search.
-          initialBeta = std::min(-evaluation::kCheckmateScore, initialBeta + expandWindow(failHighCount, aspirationWindow_));
+          beta = std::min(-evaluation::kCheckmateScore, beta + expandWindow(failHighCount, aspirationWindow_));
           continue;
-        } else if (alpha <= initialAlpha) {
+        } else if (bestScore <= alpha) {
           // Fail-low, the position is worse than expected, decrease alpha and re-search.
-          initialAlpha = std::max(evaluation::kCheckmateScore, initialAlpha - expandWindow(failLowCount, aspirationWindow_));
+          alpha = std::max(evaluation::kCheckmateScore, alpha - expandWindow(failLowCount, aspirationWindow_));
           continue;
         }
+
+        ttTable_.put(TranspositionTable::Entry{
+          .key = state.getHash(),
+          .depth = param.maxDepth,
+          .score = bestScore,
+          .scoreType = TranspositionTable::ScoreType::Exact,
+          .bestMove = bestMove,
+        });
 
         return SearchResult{
-          .score = alpha,
+          .score = bestScore,
           .bestMove = bestMove,
           .nodesSearched = searchedNodes,
-          .searchingTime = std::chrono::steady_clock::now() - startTime
+          .searchingTime = elapsedTime()
         };
       }
     }

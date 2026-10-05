@@ -8,6 +8,7 @@
 #include <sstream>
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -21,6 +22,9 @@ using namespace bb;
 namespace {
   using UciSearch = searching::NegamaxSearchPolicy<evaluation::HandCraftEvaluationPolicy>;
   using UciBoard = Board<UciSearch>;
+  constexpr int32_t kMateMagnitude = -evaluation::kCheckmateScore;
+  constexpr int32_t kMateWindow = 100;
+  constexpr size_t kTestTranspositionEntries = 1024;
 
   struct RecordingSearchPolicy {
     int* requestedDepth;
@@ -32,7 +36,7 @@ namespace {
       MoveList moves;
       state.generateMoves<ally>(moves);
       const uint64_t nodes = param.maxDepth == 3 ? 100 : param.maxDepth == 2 ? 30 : 10;
-      const int32_t score = param.maxDepth == 3 ? 31'997 : param.maxDepth == 2 ? -12 : 34;
+      const int32_t score = param.maxDepth == 3 ? kMateMagnitude - 3 : param.maxDepth == 2 ? -12 : 34;
       searching::SearchResult result{
         score, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
         nodes, std::chrono::milliseconds{10 * param.maxDepth}};
@@ -44,11 +48,23 @@ namespace {
   struct ZeroTimeSearchPolicy {
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam&) {
-      return {0, std::nullopt, 1, std::chrono::steady_clock::duration{}};
+      return {0, std::nullopt, 1, std::chrono::nanoseconds{}};
+    }
+  };
+
+  struct SubMillisecondSearchPolicy {
+    static constexpr uint64_t kNodes = 100;
+    static constexpr auto kDuration = std::chrono::microseconds{250};
+
+    template <Side ally>
+    searching::SearchResult search(BoardState&, const searching::SearchParam&) {
+      return {0, std::nullopt, kNodes, kDuration};
     }
   };
 
   struct ScoreSequenceSearchPolicy {
+    static constexpr uint64_t kNodesPerDepth = 1;
+    static constexpr auto kSearchDuration = std::chrono::milliseconds{1};
     const std::vector<int32_t>* scores;
 
     template <Side ally>
@@ -56,7 +72,7 @@ namespace {
       MoveList moves;
       state.generateMoves<ally>(moves);
       return {scores->at(param.maxDepth - 1), moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-              1, std::chrono::milliseconds{1}};
+              kNodesPerDepth, kSearchDuration};
     }
   };
 
@@ -177,7 +193,7 @@ TEST(UciIntegration, KeepsHumanViewOffProtocolOutput) {
   std::istringstream input{"uci\nisready\nquit\nuci\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -196,7 +212,7 @@ TEST(UciIntegration, RunsFastAndDetailedPerftOnCurrentPosition) {
     "quit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -216,12 +232,25 @@ TEST(UciIntegration, RunsFastAndDetailedPerftOnCurrentPosition) {
 }
 
 TEST(SearchStatistics, CountsRootAndLeafPositions) {
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 32'000}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 32'000, kTestTranspositionEntries}};
   MoveList legalMoves;
   board.getState().generateMoves<White>(legalMoves);
 
   const auto result = board.search(1, [](const searching::SearchResult&) {});
   EXPECT_EQ(result.nodesSearched, legalMoves.size() + 1);
+}
+
+TEST(SearchStatistics, ReusesRootTranspositionWithNanosecondDuration) {
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
+  const auto first = board.search(1, [](const searching::SearchResult&) {});
+  const auto cached = board.search(1, [](const searching::SearchResult&) {});
+
+  ASSERT_TRUE(first.bestMove.has_value());
+  ASSERT_TRUE(cached.bestMove.has_value());
+  EXPECT_EQ(cached.score, first.score);
+  EXPECT_EQ(notation::moveToString(*cached.bestMove), notation::moveToString(*first.bestMove));
+  EXPECT_EQ(cached.nodesSearched, 1u);
+  EXPECT_GE(cached.searchingTime.count(), 0);
 }
 
 TEST(UciIntegration, PassesGoDepthToSearch) {
@@ -237,19 +266,15 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
   EXPECT_EQ(requestedDepth, 3);
   ASSERT_EQ(results.size(), 3u);
   std::istringstream output{uciOutput.str()};
-  uint64_t cumulativeNodes = 0;
-  std::chrono::steady_clock::duration cumulativeTime{};
   std::string line;
   for (size_t i = 0; i < results.size(); ++i) {
     ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
     const auto info = parseInfoLine(line);
     ASSERT_TRUE(info.has_value());
-    cumulativeNodes += results[i].nodesSearched;
-    cumulativeTime += results[i].searchingTime;
     EXPECT_EQ(info->depth, i + 1);
-    EXPECT_EQ(info->nodes, cumulativeNodes);
-    EXPECT_EQ(info->timeMs, std::chrono::duration_cast<std::chrono::milliseconds>(cumulativeTime).count());
-    EXPECT_EQ(info->nps, static_cast<uint64_t>(cumulativeNodes / std::chrono::duration<double>(cumulativeTime).count()));
+    EXPECT_EQ(info->nodes, results[i].nodesSearched);
+    EXPECT_EQ(info->timeMs, std::chrono::duration_cast<std::chrono::milliseconds>(results[i].searchingTime).count());
+    EXPECT_EQ(info->nps, static_cast<uint64_t>(results[i].nodesSearched / std::chrono::duration<double>(results[i].searchingTime).count()));
     EXPECT_EQ(info->scoreKind, i + 1 == results.size() ? "mate" : "cp");
     if (info->scoreKind == "cp") {
       EXPECT_EQ(info->score, results[i].score);
@@ -264,10 +289,15 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
 
 TEST(UciIntegration, FormatsMateScoresWithinOneHundredPoints) {
   const std::vector<int32_t> scores{
-    31'900, -31'900, 32'000, -32'000, 31'899, -31'899, 32'001, -32'001,
+    kMateMagnitude - kMateWindow, -(kMateMagnitude - kMateWindow),
+    kMateMagnitude, -kMateMagnitude,
+    kMateMagnitude - kMateWindow - 1, -(kMateMagnitude - kMateWindow - 1),
+    kMateMagnitude + 1, -(kMateMagnitude + 1),
     std::numeric_limits<int32_t>::min()};
   const std::vector<int64_t> expectedScores{
-    50, -50, 0, 0, 31'899, -31'899, 32'001, -32'001,
+    (kMateWindow + 1) / 2, -(kMateWindow + 1) / 2, 0, 0,
+    kMateMagnitude - kMateWindow - 1, -(kMateMagnitude - kMateWindow - 1),
+    kMateMagnitude + 1, -(kMateMagnitude + 1),
     std::numeric_limits<int32_t>::min()};
   std::istringstream input{"go depth 9\nquit\n"};
   std::ostringstream uciOutput;
@@ -286,9 +316,10 @@ TEST(UciIntegration, FormatsMateScoresWithinOneHundredPoints) {
     EXPECT_EQ(info->depth, i + 1);
     EXPECT_EQ(info->scoreKind, i < 4 ? "mate" : "cp");
     EXPECT_EQ(info->score, expectedScores[i]);
-    EXPECT_EQ(info->timeMs, 1);
-    EXPECT_EQ(info->nodes, 1u);
-    EXPECT_EQ(info->nps, 1000u);
+    EXPECT_EQ(info->timeMs, ScoreSequenceSearchPolicy::kSearchDuration.count());
+    EXPECT_EQ(info->nodes, ScoreSequenceSearchPolicy::kNodesPerDepth);
+    EXPECT_NEAR(static_cast<double>(info->nps), ScoreSequenceSearchPolicy::kNodesPerDepth /
+      std::chrono::duration<double>(ScoreSequenceSearchPolicy::kSearchDuration).count(), 1.0);
   }
   MoveList moves;
   board.getState().generateMoves<White>(moves);
@@ -302,7 +333,7 @@ TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {
   std::istringstream input{"position startpos moves e2e4 e7e5\nucinewgame\nposition startpos moves e2e4 e7e5\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -316,7 +347,7 @@ TEST(UciIntegration, NewGameResetsBoardWithoutAnotherPositionCommand) {
   std::istringstream input{"position startpos moves e2e4\nucinewgame\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -333,7 +364,7 @@ TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
     "isready\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -365,7 +396,7 @@ TEST(UciIntegration, RejectsInvalidDepthAndReportsNoLegalMove) {
     "go depth 2\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -398,7 +429,7 @@ TEST(UciIntegration, ReportsCheckmateWithoutLegalMove) {
   std::istringstream input{"position fen 7k/6Q1/6K1/8/8/8/8/8 b - - 0 1\ngo depth 1\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -433,11 +464,33 @@ TEST(UciIntegration, ReportsZeroNpsWhenElapsedTimeIsZero) {
   EXPECT_EQ(line, "bestmove 0000");
 }
 
+TEST(UciIntegration, UsesNanosecondsForNpsWhilePrintingWholeMilliseconds) {
+  std::istringstream input{"go depth 1\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  Board board{SubMillisecondSearchPolicy{}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  std::istringstream output{uciOutput.str()};
+  std::string line;
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  const auto info = parseInfoLine(line);
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->depth, 1);
+  EXPECT_EQ(info->timeMs, 0);
+  EXPECT_EQ(info->nodes, SubMillisecondSearchPolicy::kNodes);
+  EXPECT_NEAR(static_cast<double>(info->nps), 400'000.0, 1.0);
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line, "bestmove 0000");
+  EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
+}
+
 TEST(UciIntegration, PlayAcceptsLegalMoveAndRejectsIllegalMove) {
   std::istringstream input{"play e2e4\nplay e2e5\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -463,7 +516,7 @@ TEST(UciIntegration, ReplaysPromotionCastlingAndEnPassant) {
     std::istringstream input{example.command};
     std::ostringstream uciOutput;
     std::ostringstream humanOutput;
-    UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+    UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
     user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
     terminal.run();
     EXPECT_EQ(notation::boardToFen(board.getState()), example.expected);

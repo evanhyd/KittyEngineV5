@@ -17,7 +17,7 @@ namespace bb {
       int32_t score;
       std::optional<Move> bestMove;
       uint64_t nodesSearched;
-      std::chrono::steady_clock::duration searchingTime;
+      std::chrono::nanoseconds searchingTime;
     };
 
     template <typename SearchPolicy>

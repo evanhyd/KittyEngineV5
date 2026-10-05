@@ -5,7 +5,8 @@
 
 namespace bb {
   BoardState::BoardState() noexcept
-    : bitboards_{}, side_{}, castlePermission_{}, enpassant_{}, halfmove_{}, fullmove_{} {}
+    : bitboards_{}, side_{}, castlePermission_{}, enpassant_{}, halfmove_{}, fullmove_{}, zobrist_{} {
+  }
 
   BoardState::BoardState(std::string_view fen) : BoardState() {
     setPosition(fen);
@@ -41,6 +42,7 @@ namespace bb {
         }
         const auto [side, piece] = notation::asciiToPiece(symbol);
         parsed.bitboards_[side][piece] = setSquare(parsed.bitboards_[side][piece], square);
+        parsed.zobrist_.markPiece(side, piece, square);
         ++square;
       }
       if (square > (completedRanks + 1) * kBoardLenSize) {
@@ -52,9 +54,15 @@ namespace bb {
     }
 
     parsed.side_ = notation::stringToSide(sideStr);
+    if (parsed.side_ == Black) {
+      parsed.zobrist_.markSide();
+    }
+
     parsed.castlePermission_ = notation::stringToCastling(castling);
+    parsed.zobrist_.markCastle(parsed.castlePermission_);
 
     parsed.enpassant_ = notation::stringToSquare(enpassant);
+    parsed.zobrist_.markEnpassant(parsed.enpassant_);
     if (parsed.enpassant_ != NoSquare && enpassant[1] != '3' && enpassant[1] != '6') {
       throw std::invalid_argument("Invalid FEN en passant square");
     }

@@ -83,24 +83,24 @@ namespace bb::notation {
   }
 
 
-  Bitboard stringToCastling(std::string_view rights) {
+  CastlePermission stringToCastling(std::string_view rights) {
     if (rights == "-") {
       return 0;
     }
-    Bitboard permission = 0;
+    CastlePermission permission = 0;
     for (const char right : rights) {
       switch (right) {
       case 'K':
-        permission |= kKingCastlePermission[White];
+        permission |= WhiteKingCastle;
         break;
       case 'Q':
-        permission |= kQueenCastlePermission[White];
+        permission |= WhiteQueenCastle;
         break;
       case 'k':
-        permission |= kKingCastlePermission[Black];
+        permission |= BlackKingCastle;
         break;
       case 'q':
-        permission |= kQueenCastlePermission[Black];
+        permission |= BlackQueenCastle;
         break;
       default:
         throw std::invalid_argument("Invalid FEN castling rights");
@@ -111,16 +111,16 @@ namespace bb::notation {
 
   std::string castleToString(Bitboard permission) {
     std::string result;
-    if ((permission & kKingCastlePermission[White]) == kKingCastlePermission[White]) {
+    if ((permission & WhiteKingCastle) == WhiteKingCastle) {
       result += 'K';
     }
-    if ((permission & kQueenCastlePermission[White]) == kQueenCastlePermission[White]) {
+    if ((permission & WhiteQueenCastle) == WhiteQueenCastle) {
       result += 'Q';
     }
-    if ((permission & kKingCastlePermission[Black]) == kKingCastlePermission[Black]) {
+    if ((permission & BlackKingCastle) == BlackKingCastle) {
       result += 'k';
     }
-    if ((permission & kQueenCastlePermission[Black]) == kQueenCastlePermission[Black]) {
+    if ((permission & BlackQueenCastle) == BlackQueenCastle) {
       result += 'q';
     }
     if (result.empty()) {

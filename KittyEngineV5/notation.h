@@ -24,7 +24,7 @@ namespace bb::notation {
   std::string squareToString(Square square);
 
   // Castling.
-  Bitboard stringToCastling(std::string_view rights);
+  CastlePermission stringToCastling(std::string_view rights);
   std::string castleToString(Bitboard permission);
 
   // Full six-field FEN for a position.

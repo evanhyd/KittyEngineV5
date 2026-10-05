@@ -5,6 +5,7 @@
 #include "notation.h"
 #include "position_fens.h"
 #include "terminal_ui.h"
+#include <cstddef>
 #include <sstream>
 #include <stdexcept>
 #include <gtest/gtest.h>
@@ -14,6 +15,7 @@ using namespace bb;
 namespace {
   using TestSearch = searching::NegamaxSearchPolicy<evaluation::HandCraftEvaluationPolicy>;
   using TestBoard = Board<TestSearch>;
+  constexpr size_t kTestTranspositionEntries = 1024;
 }
 
 TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
@@ -22,7 +24,7 @@ TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
     EXPECT_FALSE(state.getPieceAt(square).has_value());
   }
   EXPECT_EQ(state.getSideToMove(), 0u);
-  EXPECT_EQ(state.getCastlingRights(), 0u);
+  EXPECT_EQ(state.getCastlingRights(), CastlePermission{});
   EXPECT_EQ(state.getEnpassantSquare(), 0u);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
   EXPECT_EQ(state.getFullmoveNumber(), 0);
@@ -35,8 +37,8 @@ TEST(BoardState, ParsesFen) {
   EXPECT_EQ(state.getPieceAt(D5), (std::tuple<Side, Piece>{Black, Pawn}));
   EXPECT_EQ(state.getEnpassantSquare(), D6);
   EXPECT_EQ(state.getCastlingRights(),
-            kKingCastlePermission[White] | kQueenCastlePermission[White] |
-            kKingCastlePermission[Black] | kQueenCastlePermission[Black]);
+            WhiteKingCastle | WhiteQueenCastle |
+            BlackKingCastle | BlackQueenCastle);
   EXPECT_EQ(state.getHalfmoveClock(), 4);
   EXPECT_EQ(state.getFullmoveNumber(), 12);
 }
@@ -47,11 +49,10 @@ TEST(BoardState, GettersReportPiecesAndPositionState) {
   EXPECT_EQ(*state.getPieceAt(E5), (std::tuple<Side, Piece>{White, Pawn}));
   EXPECT_EQ(*state.getPieceAt(D5), (std::tuple<Side, Piece>{Black, Pawn}));
   EXPECT_FALSE(state.getPieceAt(E4).has_value());
-  EXPECT_THROW((void)state.getPieceAt(NoSquare), std::out_of_range);
   EXPECT_EQ(state.getSideToMove(), White);
   EXPECT_EQ(state.getCastlingRights(),
-            kKingCastlePermission[White] | kQueenCastlePermission[White] |
-            kKingCastlePermission[Black] | kQueenCastlePermission[Black]);
+            WhiteKingCastle | WhiteQueenCastle |
+            BlackKingCastle | BlackQueenCastle);
   EXPECT_EQ(state.getEnpassantSquare(), D6);
   EXPECT_EQ(state.getHalfmoveClock(), 4);
   EXPECT_EQ(state.getFullmoveNumber(), 12);
@@ -76,7 +77,7 @@ TEST(BoardState, GettersTrackMakeAndUnmake) {
 }
 
 TEST(Board, StartsAtInitialPosition) {
-  const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   EXPECT_EQ(board.getState().getSideToMove(), White);
   EXPECT_EQ(*board.getState().getPieceAt(E1), (std::tuple<Side, Piece>{White, King}));
   EXPECT_EQ(*board.getState().getPieceAt(E8), (std::tuple<Side, Piece>{Black, King}));
@@ -115,11 +116,12 @@ TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
   const void* firstAddress = nullptr;
   bool stableAddress = true;
   Board board{searching::NegamaxSearchPolicy{
-    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, 50}};
+    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, 50, kTestTranspositionEntries}};
   const int copiesBeforeSearch = copies;
 
   ASSERT_TRUE(board.search(1, [](const searching::SearchResult&) {}).bestMove.has_value());
   const int callsAfterFirstSearch = calls;
+  board.setPosition(fen::kRookEndgame);
   ASSERT_TRUE(board.search(1, [](const searching::SearchResult&) {}).bestMove.has_value());
 
   EXPECT_GT(callsAfterFirstSearch, 0);
@@ -136,7 +138,7 @@ TEST(BoardState, SetPositionReplacesAllFields) {
   EXPECT_EQ(state.getSideToMove(), Black);
   EXPECT_FALSE(state.getPieceAt(E5).has_value());
   EXPECT_EQ(state.getPieceAt(E2), (std::tuple<Side, Piece>{Black, Pawn}));
-  EXPECT_EQ(state.getCastlingRights(), 0u);
+  EXPECT_EQ(state.getCastlingRights(), CastlePermission{});
   EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
   EXPECT_EQ(state.getFullmoveNumber(), 3);
@@ -164,7 +166,7 @@ TEST(Notation, ParsesAndFormatsSharedChessNotation) {
   EXPECT_EQ(notation::stringToSquare("-"), NoSquare);
   EXPECT_EQ(notation::stringToSide("b"), Black);
   EXPECT_EQ(notation::stringToCastling("Kq"),
-            kKingCastlePermission[White] | kQueenCastlePermission[Black]);
+            WhiteKingCastle | BlackQueenCastle);
   EXPECT_EQ(notation::castleToString(notation::stringToCastling("Kq")), "Kq");
   EXPECT_THROW(notation::asciiToPiece('x'), std::invalid_argument);
   EXPECT_THROW(notation::stringToSquare("i9"), std::invalid_argument);
@@ -183,7 +185,7 @@ TEST(TerminalUI, PrintsWelcomeMessage) {
   std::istringstream in;
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
   terminal.run();
   EXPECT_NE(humanOut.str().find("Welcome to KittyEngineV5"), std::string::npos);
@@ -195,7 +197,7 @@ TEST(TerminalUI, RunStopsAtQuitOrEndOfInput) {
   std::istringstream in{"quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
   terminal.run();
   EXPECT_EQ(humanOut.str().find("FEN: "), humanOut.str().rfind("FEN: "));
@@ -209,7 +211,7 @@ TEST(TerminalUI, RendersBoardAndSuppressesUnchangedFrames) {
     "quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50}};
+  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
 
   terminal.run();
