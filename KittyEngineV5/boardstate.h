@@ -44,7 +44,7 @@ namespace bb {
 
     template <Side ally, bool kingSide>
     constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const {
-      constexpr Bitboard permission = []() {
+      static constexpr Bitboard permission = []() {
         if constexpr (ally == White && kingSide) {
           return WhiteKingCastle;
         } else if constexpr (ally == White && !kingSide) {
@@ -55,13 +55,13 @@ namespace bb {
           return BlackQueenCastle;
         }
       }();
-      constexpr Bitboard blockers = kingSide ? kKingCastleOccupancyMasks[ally] : kQueenCastleOccupancyMasks[ally];
-      constexpr Bitboard safety = kingSide ? kKingCastleSafetyMasks[ally] : kQueenCastleSafetyMasks[ally];
+      static constexpr Bitboard blockers = kingSide ? kKingCastleOccupancyMasks[ally] : kQueenCastleOccupancyMasks[ally];
+      static constexpr Bitboard safety = kingSide ? kKingCastleSafetyMasks[ally] : kQueenCastleSafetyMasks[ally];
       if ((castlePermission_ & permission) == permission &&
           (bothOccupancy & blockers) == 0 &&
           (attackedMask & safety) == 0) {
-        constexpr Square srce = ally == White ? E1 : E8;
-        constexpr Square dest = ally == White ? (kingSide ? G1 : C1) : (kingSide ? G8 : C8);
+        static constexpr Square srce = ally == White ? E1 : E8;
+        static constexpr Square dest = ally == White ? (kingSide ? G1 : C1) : (kingSide ? G8 : C8);
         moves.push(Move(srce, dest, King, NoPiece, Move::kCastlingFlag));
       }
     }
@@ -99,7 +99,7 @@ namespace bb {
     // Return a bitboard containing squares attacked by enemy pieces.
     template <Side ally>
     constexpr Bitboard getAttackedMask(Bitboard bothOccupancy) const {
-      constexpr Side enemy = getOtherSide(ally);
+      static constexpr Side enemy = getOtherSide(ally);
 
       // If king blocks the attack ray, then it may incorrectly move backward illegally.
       // Consider the move: r...K... -> r....K..
@@ -131,7 +131,7 @@ namespace bb {
     // blocking or capturing squares for one checker, and no squares for double check.
     template <Side ally>
     constexpr Bitboard getCheckEvasionMask(Square kingSq, Bitboard bothOccupancy) const {
-      constexpr Side enemy = getOtherSide(ally);
+      static constexpr Side enemy = getOtherSide(ally);
 
       Bitboard evasionMask = ~Bitboard{};
       Bitboard checkers = (getAttack<Pawn, ally>(kingSq) & bitboards_[enemy][Pawn]) |
@@ -149,7 +149,7 @@ namespace bb {
     // Return a bitboard containing ally pieces that are pinned.
     template <Side ally>
     constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize> occupancy) const {
-      constexpr Side enemy = getOtherSide(ally);
+      static constexpr Side enemy = getOtherSide(ally);
 
       // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
       Bitboard pinnedMask{};
@@ -173,8 +173,8 @@ namespace bb {
       const Bitboard evasionMask, 
       const Bitboard pinnedMask) const {
 
+      static constexpr Side enemy = getOtherSide(ally);
       const Bitboard bothOccupancy = occupancy[White] | occupancy[Black];
-      constexpr Side enemy = getOtherSide(ally);
       Bitboard sbb = bitboards_[ally][piece];
       if constexpr (piece == Knight) {
         sbb &= ~pinnedMask; // Pinned knight can never move.
@@ -419,17 +419,16 @@ namespace bb {
     template <Side ally>
     constexpr void unmakeMove(Move move, const MoveUndo& undo) noexcept {
       assert(side_ == getOtherSide(ally));
-      constexpr Side enemy = getOtherSide(ally);
+      static constexpr Side enemy = getOtherSide(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
-      const Piece promotion = move.getPromotedPieceType();
 
       if (move.isCastling()) {
         const Square rookFrom = dest > srce ? (ally == White ? H1 : H8) : (ally == White ? A1 : A8);
         const Square rookTo = dest > srce ? dest - 1 : dest + 1;
         bitboards_[ally][Rook] = moveSquare(bitboards_[ally][Rook], rookTo, rookFrom);
       }
-      if (promotion != NoPiece) {
+      if (const Piece promotion = move.getPromotedPieceType(); promotion != NoPiece) {
         bitboards_[ally][promotion] = unsetSquare(bitboards_[ally][promotion], dest);
         bitboards_[ally][Pawn] = setSquare(bitboards_[ally][Pawn], srce);
       } else {

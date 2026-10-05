@@ -34,7 +34,7 @@ void quickPerft() {
 int main() {
   //quickPerft();
   constexpr int aspirationWindow = 80;
-  constexpr size_t ttTableSize = 1024 * 1024 * 32;
+  constexpr size_t ttTableSize = 1 << 25;
   constexpr size_t kMemoryUsageMB = ttTableSize * sizeof(std::optional<TranspositionTable::Entry>) / 1024 / 1024;
 
   Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, aspirationWindow, ttTableSize}};

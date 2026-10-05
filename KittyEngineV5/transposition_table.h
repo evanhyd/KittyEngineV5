@@ -22,15 +22,18 @@ namespace bb {
     };
 
     explicit TranspositionTable(size_t capacity)
-      : entries_(std::make_unique<std::optional<Entry>[]>(capacity)), capacity_(capacity){
+      : entries_(std::make_unique<std::optional<Entry>[]>(capacity)), capacity_(capacity) {
+      if ((capacity & (capacity - 1)) != 0) {
+        throw std::invalid_argument("transposition table entry size must be two's power");
+      }
     }
 
     void put(const Entry& entry) {
-      entries_[entry.key % capacity_] = entry;
+      entries_[entry.key & (capacity_-1)] = entry;
     }
 
     std::optional<Entry> get(ZobristHash::Hash key) const {
-      auto& entry = entries_[key % capacity_];
+      auto& entry = entries_[key & (capacity_ - 1)];
       if (!entry || entry->key != key) {
         return std::nullopt;
       }

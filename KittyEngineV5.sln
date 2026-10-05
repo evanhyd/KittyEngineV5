@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.12.35323.107
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12224.181 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KittyEngineV5", "KittyEngineV5\KittyEngineV5.vcxproj", "{55493EA5-91E7-4B93-85EC-71081B8DFFE2}"
 EndProject
@@ -11,6 +11,8 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
+		Release Profiler|x64 = Release Profiler|x64
+		Release Profiler|x86 = Release Profiler|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
@@ -19,6 +21,10 @@ Global
 		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Debug|x64.Build.0 = Debug|x64
 		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Debug|x86.ActiveCfg = Debug|Win32
 		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Debug|x86.Build.0 = Debug|Win32
+		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release Profiler|x64.ActiveCfg = Release Profiler|x64
+		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release Profiler|x64.Build.0 = Release Profiler|x64
+		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release Profiler|x86.ActiveCfg = Release Profiler|x64
+		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release Profiler|x86.Build.0 = Release Profiler|x64
 		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release|x64.ActiveCfg = Release|x64
 		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release|x64.Build.0 = Release|x64
 		{55493EA5-91E7-4B93-85EC-71081B8DFFE2}.Release|x86.ActiveCfg = Release|Win32
@@ -27,6 +33,10 @@ Global
 		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Debug|x64.Build.0 = Debug|x64
 		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Debug|x86.ActiveCfg = Debug|Win32
 		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Debug|x86.Build.0 = Debug|Win32
+		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release Profiler|x64.ActiveCfg = Release Profiler|x64
+		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release Profiler|x64.Build.0 = Release Profiler|x64
+		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release Profiler|x86.ActiveCfg = Release Profiler|x64
+		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release Profiler|x86.Build.0 = Release Profiler|x64
 		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release|x64.ActiveCfg = Release|x64
 		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release|x64.Build.0 = Release|x64
 		{92704A8E-82F9-473F-BEDA-6BB8B88D5CEF}.Release|x86.ActiveCfg = Release|Win32
