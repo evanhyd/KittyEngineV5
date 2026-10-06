@@ -29,7 +29,7 @@ namespace bb {
     ZobristHash zobrist_;
 
     template <Side ally, bool violentOnly = false>
-    constexpr void addPawnMove(MoveList& moves, Square srce, Square dest, uint32_t flags = 0) const {
+    constexpr void addPawnMove(MoveList& moves, Square srce, Square dest, uint32_t flags = 0) const noexcept {
       if (getSquareRank(dest) == kPromotionRank[ally]) {
         moves.push(Move(srce, dest, Pawn, Knight, flags));
         moves.push(Move(srce, dest, Pawn, Bishop, flags));
@@ -43,7 +43,7 @@ namespace bb {
     }
 
     template <Side ally, bool kingSide>
-    constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const {
+    constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const noexcept {
       static constexpr Bitboard permission = []() {
         if constexpr (ally == White && kingSide) {
           return WhiteKingCastle;
@@ -85,7 +85,7 @@ namespace bb {
         bitboards_[side][Queen] | bitboards_[side][King];
     }
 
-    constexpr std::optional<std::tuple<Side, Piece>> getPieceAt(Square square) const {
+    constexpr std::optional<std::tuple<Side, Piece>> getPieceAt(Square square) const noexcept {
       for (Side side = White; side < kSideSize; ++side) {
         for (Piece piece = Pawn; piece < kPieceSize; ++piece) {
           if (isSquareSet(bitboards_[side][piece], square)) {
@@ -98,7 +98,7 @@ namespace bb {
 
     // Return a bitboard containing squares attacked by enemy pieces.
     template <Side ally>
-    constexpr Bitboard getAttackedMask(Bitboard bothOccupancy) const {
+    constexpr Bitboard getAttackedMask(Bitboard bothOccupancy) const noexcept {
       static constexpr Side enemy = getOtherSide(ally);
 
       // If king blocks the attack ray, then it may incorrectly move backward illegally.
@@ -130,7 +130,7 @@ namespace bb {
     // Filter for non-king move destinations: all squares when there is no check,
     // blocking or capturing squares for one checker, and no squares for double check.
     template <Side ally>
-    constexpr Bitboard getCheckEvasionMask(Square kingSq, Bitboard bothOccupancy) const {
+    constexpr Bitboard getCheckEvasionMask(Square kingSq, Bitboard bothOccupancy) const noexcept {
       static constexpr Side enemy = getOtherSide(ally);
 
       Bitboard evasionMask = ~Bitboard{};
@@ -148,7 +148,7 @@ namespace bb {
 
     // Return a bitboard containing ally pieces that are pinned.
     template <Side ally>
-    constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize> occupancy) const {
+    constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize> occupancy) const noexcept {
       static constexpr Side enemy = getOtherSide(ally);
 
       // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
@@ -171,7 +171,7 @@ namespace bb {
       const Square kingSq,
       const std::array<Bitboard, kSideSize> occupancy,
       const Bitboard evasionMask, 
-      const Bitboard pinnedMask) const {
+      const Bitboard pinnedMask) const noexcept {
 
       static constexpr Side enemy = getOtherSide(ally);
       const Bitboard bothOccupancy = occupancy[White] | occupancy[Black];
@@ -218,14 +218,14 @@ namespace bb {
     }
 
     template <Side ally>
-    constexpr bool isInCheck() const {
+    constexpr bool isInCheck() const noexcept {
       const Square kingSq = peekPiece(bitboards_[ally][King]);
       const Bitboard bothOccupancy = getOccupancy(White) | getOccupancy(Black);
       return isSquareSet(getAttackedMask<ally>(bothOccupancy), kingSq);
     }
 
     template <Side ally, bool violentOnly = false>
-    constexpr void generateMoves(MoveList& moves) const {
+    constexpr void generateMoves(MoveList& moves) const noexcept {
       assert(side_ == ally);
       constexpr Side enemy = getOtherSide(ally);
       const Square kingSq = peekPiece(bitboards_[ally][King]);

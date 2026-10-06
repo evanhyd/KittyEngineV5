@@ -28,11 +28,11 @@ namespace bb {
       }
     }
 
-    void put(const Entry& entry) {
+    void put(const Entry& entry) noexcept {
       entries_[entry.key & (capacity_-1)] = entry;
     }
 
-    std::optional<Entry> get(ZobristHash::Hash key) const {
+    std::optional<Entry> get(ZobristHash::Hash key) const noexcept {
       auto& entry = entries_[key & (capacity_ - 1)];
       if (!entry || entry->key != key) {
         return std::nullopt;

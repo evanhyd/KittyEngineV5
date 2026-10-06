@@ -12,31 +12,31 @@ namespace bb {
   public:
     using Hash = uint64_t;
 
-    constexpr void set(Hash hash) {
+    constexpr void set(Hash hash) noexcept {
       hash_ = hash;
     }
 
-    constexpr Hash hash() const {
+    constexpr Hash hash() const noexcept {
       return hash_;
     }
 
-    constexpr void reset() {
+    constexpr void reset() noexcept {
       hash_ = 0;
     }
 
-    constexpr void markPiece(Side side, Piece piece, Square square) {
+    constexpr void markPiece(Side side, Piece piece, Square square) noexcept {
       hash_ ^= kPieceHashes[side][piece][square];
     }
 
-    constexpr void markSide() {
+    constexpr void markSide() noexcept {
       hash_ ^= kSideToMoveHash;
     }
 
-    constexpr void markCastle(CastlePermission permission) {
+    constexpr void markCastle(CastlePermission permission) noexcept {
       hash_ ^= kCastleHashes[permission];
     }
 
-    constexpr void markEnpassant(Square square) {
+    constexpr void markEnpassant(Square square) noexcept {
       if (square != NoSquare) {
         hash_ ^= kEnpassantHashes[getSquareFile(square)];
       }

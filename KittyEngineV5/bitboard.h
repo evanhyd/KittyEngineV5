@@ -81,79 +81,79 @@ namespace bb {
   [[nodiscard]] inline constexpr Bitboard toBitboard(Squares... squares) {
     return ((1ull << squares) | ...);
   }
-  [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, Square square) {
+  [[nodiscard]] inline constexpr bool isSquareSet(Bitboard bitboard, Square square) noexcept {
     return (bitboard >> square) & 1;
   }
-  [[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, Square square) {
+  [[nodiscard]] inline constexpr Bitboard setSquare(Bitboard bitboard, Square square) noexcept {
     return bitboard | (1ull << square);
   }
-  [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, Square square) {
+  [[nodiscard]] inline constexpr Bitboard unsetSquare(Bitboard bitboard, Square square) noexcept {
     return bitboard & (~(1ull << square));
   }
-  [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, Square from, Square to) {
+  [[nodiscard]] inline constexpr Bitboard moveSquare(Bitboard bitboard, Square from, Square to) noexcept {
     return (bitboard & (~(1ull << from))) | (1ull << to);
   }
-  [[nodiscard]] inline constexpr Bitboard shiftUp(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftUp(Bitboard bitboard) noexcept {
     return bitboard >> 8;
   }
-  [[nodiscard]] inline constexpr Bitboard shiftDown(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftDown(Bitboard bitboard) noexcept {
     return bitboard << 8;
   }
-  [[nodiscard]] inline constexpr Bitboard shiftLeft(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftLeft(Bitboard bitboard) noexcept {
     return (bitboard >> 1) & (~kFileHMask);
   }
-  [[nodiscard]] inline constexpr Bitboard shiftRight(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftRight(Bitboard bitboard) noexcept {
     return (bitboard << 1) & (~kFileAMask);
   }
-  [[nodiscard]] inline constexpr Bitboard shiftUpLeft(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftUpLeft(Bitboard bitboard) noexcept {
     return (bitboard >> 9) & (~kFileHMask);
   }
-  [[nodiscard]] inline constexpr Bitboard shiftUpRight(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftUpRight(Bitboard bitboard) noexcept {
     return (bitboard >> 7) & (~kFileAMask);
   }
-  [[nodiscard]] inline constexpr Bitboard shiftDownLeft(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftDownLeft(Bitboard bitboard) noexcept {
     return (bitboard << 7) & (~kFileHMask);
   }
-  [[nodiscard]] inline constexpr Bitboard shiftDownRight(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard shiftDownRight(Bitboard bitboard) noexcept {
     return (bitboard << 9) & (~kFileAMask);
   }
-  [[nodiscard]] inline constexpr uint32_t countPiece(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr uint32_t countPiece(Bitboard bitboard) noexcept {
     return static_cast<uint32_t>(std::popcount(bitboard));
   }
-  [[nodiscard]] inline constexpr Square peekPiece(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Square peekPiece(Bitboard bitboard) noexcept {
     return static_cast<Square>(std::countr_zero(bitboard));
   }
-  [[nodiscard]] inline constexpr Bitboard popPiece(Bitboard bitboard) {
+  [[nodiscard]] inline constexpr Bitboard popPiece(Bitboard bitboard) noexcept {
     return bitboard & (bitboard - 1);
   }
-  [[nodiscard]] inline constexpr Square getSquareRank(Square square) {
+  [[nodiscard]] inline constexpr Square getSquareRank(Square square) noexcept {
     return square / 8ull;
   }
-  [[nodiscard]] inline constexpr Square getSquareFile(Square square) {
+  [[nodiscard]] inline constexpr Square getSquareFile(Square square) noexcept {
     return square % 8ull;
   }
-  [[nodiscard]] inline constexpr Square rankFileToSquare(Square rank, Square file) {
+  [[nodiscard]] inline constexpr Square rankFileToSquare(Square rank, Square file) noexcept {
     return rank * 8ull + file;
   }
-  [[nodiscard]] inline constexpr Square squareUp(Square square) {
+  [[nodiscard]] inline constexpr Square squareUp(Square square) noexcept {
     return square - 8ull;
   }
-  [[nodiscard]] inline constexpr Square squareDown(Square square) {
+  [[nodiscard]] inline constexpr Square squareDown(Square square) noexcept {
     return square + 8ull;
   }
-  [[nodiscard]] inline constexpr Square squareUpLeft(Square square) {
+  [[nodiscard]] inline constexpr Square squareUpLeft(Square square) noexcept {
     return square - 9ull;
   }
-  [[nodiscard]] inline constexpr Square squareUpRight(Square square) {
+  [[nodiscard]] inline constexpr Square squareUpRight(Square square) noexcept {
     return square - 7ull;
   }
-  [[nodiscard]] inline constexpr Square squareDownLeft(Square square) {
+  [[nodiscard]] inline constexpr Square squareDownLeft(Square square) noexcept {
     return square + 7ull;
   }
-  [[nodiscard]] inline constexpr Square squareDownRight(Square square) {
+  [[nodiscard]] inline constexpr Square squareDownRight(Square square) noexcept {
     return square + 9ull;
   }
-  [[nodiscard]] inline constexpr Side getOtherSide(Side side) {
+  [[nodiscard]] inline constexpr Side getOtherSide(Side side) noexcept {
     return (side == White ? Black : White);
   }
 
@@ -283,19 +283,19 @@ namespace bb {
       Bitboard* attackReachable;  // Reachable attack table range, indexed by magic shifting
 
       template <Piece piece>
-      constexpr size_t getKey(Bitboard occupancy) const {
+      constexpr size_t getKey(Bitboard occupancy) const noexcept {
         constexpr size_t relevantBitsInverse = (piece == Bishop ? kSquareSize - 9 : kSquareSize - 12);
         return ((occupancy & maxAttackNoEdge) * magicNum) >> relevantBitsInverse;
       }
 
       template <Piece piece>
-      constexpr Bitboard getAttack(Bitboard occupancy) const {
+      constexpr Bitboard getAttack(Bitboard occupancy) const noexcept {
         return attackReachable[getKey<piece>(occupancy)];
       }
     };
 
     // Generate attack ray bitboard at square, spans outward and stops at occupancy bits at each direction.
-    inline constexpr Bitboard generateSliderAttackReachable(Piece piece, Square square, Bitboard occupancy) {
+    inline constexpr Bitboard generateSliderAttackReachable(Piece piece, Square square, Bitboard occupancy) noexcept {
       constexpr auto isInRange = [](int32_t r, int32_t f) {
         return 0 <= r && r < kBoardLenSize && 0 <= f && f < kBoardLenSize;
       };
@@ -402,13 +402,13 @@ namespace bb {
 
   template <Piece piece, Side side>
     requires (piece == Pawn)
-  inline constexpr Bitboard getAttack(Square square) {
+  inline constexpr Bitboard getAttack(Square square) noexcept {
     return internal::kPawnAttackTable[side][square];
   }
 
   template <Piece piece>
     requires (piece == Knight || piece == King)
-  inline constexpr Bitboard getAttack(Square square) {
+  inline constexpr Bitboard getAttack(Square square) noexcept {
     if constexpr (piece == Knight) {
       return internal::kKnightAttackTable[square];
     } else if constexpr (piece == King) {
@@ -418,7 +418,7 @@ namespace bb {
 
   template <Piece piece>
     requires (piece == Bishop || piece == Rook || piece == Queen)
-  inline constexpr Bitboard getAttack(Square square, Bitboard occupancy) {
+  inline constexpr Bitboard getAttack(Square square, Bitboard occupancy) noexcept {
     if constexpr (piece == Bishop) {
       return internal::sliderAttackTables[square][0].getAttack<Bishop>(occupancy);
     } else if constexpr (piece == Rook) {
