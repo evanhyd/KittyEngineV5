@@ -1,8 +1,9 @@
 #pragma once
 #include "boardstate.h"
+#include "searching_policy.h"
+#include "time_control_policy.h"
 #include "notation.h"
 #include "position_fens.h"
-#include "searching_policy.h"
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -11,18 +12,20 @@
 #include <optional>
 #include <span>
 #include <cstddef>
+#include <chrono>
 #include <vector>
 
 namespace bb {
-  template <typename SearchPolicy>
+  template <searching::SearchingPolicy SearchPolicy, time_control::TimeControlPolicy TimePolicy>
   class Board {
-    SearchPolicy searchPolicy_;
+    SearchPolicy searchingPolicy_;
+    TimePolicy timeControlPolicy_;
     BoardState state_;
     std::vector<Move> pastMoves_;
 
   public:
-    explicit Board(SearchPolicy searchPolicy)
-      : searchPolicy_(std::move(searchPolicy)) {
+    explicit Board(SearchPolicy searchPolicy, TimePolicy timePolicy)
+      : searchingPolicy_(std::move(searchPolicy)), timeControlPolicy_(std::move(timePolicy)) {
       setPosition(fen::kStartPosition);
       pastMoves_.reserve(256);
     }
@@ -56,19 +59,25 @@ namespace bb {
       }
     }
 
-    searching::SearchResult search(int maxDepth, auto resultCallback) {
+    searching::SearchResult search(int maxDepth, const std::optional<time_control::TimeControl>& timeControl, auto resultCallback) {
+      timeControlPolicy_.set(timeControl);
+
       const auto iterativeDeepening = [&]<Side ally>() {
-        searching::SearchResult result{};
-        int32_t pastEval = 0;
+        searching::SearchResult result{
+          .score = 0
+        };
 
         for (int depth = 1; depth <= maxDepth; ++depth) {
           const searching::SearchParam param{
             .maxDepth = depth,
-            .pastEval = pastEval,
+            .pastEval = result.score,
           };
-          result = searchPolicy_.template search<ally>(state_, param);
-          pastEval = result.score;
+          result = searchingPolicy_.template search<ally>(state_, param);
           resultCallback(result);
+
+          if (!timeControlPolicy_.shouldContinue(ally)) {
+            break;
+          }
         }
 
         return result;
@@ -102,7 +111,4 @@ namespace bb {
       }
     }
   };
-
-  template <typename SearchPolicy>
-  Board(SearchPolicy) -> Board<SearchPolicy>;
 }

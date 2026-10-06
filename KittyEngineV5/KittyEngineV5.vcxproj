@@ -231,6 +231,7 @@
     <ClInclude Include="bitboard.h" />
     <ClInclude Include="board.h" />
     <ClInclude Include="boardstate.h" />
+    <ClInclude Include="equal_percentage_time_control_policy.h" />
     <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
     <ClInclude Include="perft_driver.h" />
@@ -241,6 +242,7 @@
     <ClInclude Include="small_vec.h" />
     <ClInclude Include="searching_policy.h" />
     <ClInclude Include="terminal_ui.h" />
+    <ClInclude Include="time_control_policy.h" />
     <ClInclude Include="transposition_table.h" />
     <ClInclude Include="uci_protocol.h" />
     <ClInclude Include="zobrist_hash.h" />

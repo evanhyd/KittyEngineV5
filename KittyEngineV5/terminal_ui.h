@@ -4,6 +4,7 @@
 #include "notation.h"
 #include "perft_driver.h"
 #include "position_fens.h"
+#include "time_control_policy.h"
 #include "uci_protocol.h"
 #include <algorithm>
 #include <charconv>
@@ -12,6 +13,7 @@
 #include <cstdlib>
 #include <format>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -102,32 +104,76 @@ namespace bb::user_interface {
           render();
         },
         [this](std::span<const std::string_view> args) {
-          int depth = 0;
+          std::optional<int> depth;
+          std::optional<int64_t> whiteTime;
+          std::optional<int64_t> blackTime;
+          std::optional<int64_t> whiteIncrement;
+          std::optional<int64_t> blackIncrement;
+          std::optional<int64_t> movesToGo;
           for (size_t i = 0; i < args.size(); ++i) {
-            if (args[i] != "depth") {
-              continue;
-            }
             if (++i == args.size()) {
-              throw std::invalid_argument("go depth needs a positive integer");
+              throw std::invalid_argument("go option needs a value");
             }
             const std::string_view value = args[i];
-            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), depth);
-            if (error != std::errc{} || end != value.data() + value.size() || depth <= 0) {
-              throw std::invalid_argument("go depth needs a positive integer");
+            int64_t parsed = 0;
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+            if (error != std::errc{} || end != value.data() + value.size() || parsed < 0) {
+              throw std::invalid_argument("go option needs a nonnegative integer");
+            }
+            const std::string_view option = args[i - 1];
+            if (option == "depth") {
+              if (depth || parsed == 0 || parsed > std::numeric_limits<int>::max()) {
+                throw std::invalid_argument("go depth needs a positive integer");
+              }
+              depth = static_cast<int>(parsed);
+            } else {
+              std::optional<int64_t>* target = nullptr;
+              if (option == "wtime") target = &whiteTime;
+              else if (option == "btime") target = &blackTime;
+              else if (option == "winc") target = &whiteIncrement;
+              else if (option == "binc") target = &blackIncrement;
+              else if (option == "movestogo") target = &movesToGo;
+              else throw std::invalid_argument("unsupported go option");
+              if (*target) {
+                throw std::invalid_argument("duplicate go option");
+              }
+              *target = parsed;
             }
           }
-          if (depth == 0) {
-            throw std::invalid_argument("go depth is required");
+          const bool hasClock = whiteTime || blackTime;
+          if (hasClock != (whiteTime && blackTime) ||
+              (!hasClock && (whiteIncrement || blackIncrement))) {
+            throw std::invalid_argument("go time control needs wtime and btime");
+          }
+          if (!depth && !hasClock) {
+            throw std::invalid_argument("go depth or time control is required");
+          }
+
+          std::optional<time_control::TimeControl> timeControl;
+          if (hasClock) {
+            if (movesToGo && *movesToGo > std::numeric_limits<int>::max()) {
+              throw std::invalid_argument("go movestogo is too large");
+            }
+            timeControl.emplace();
+            timeControl->wtime = std::chrono::milliseconds{*whiteTime};
+            timeControl->btime = std::chrono::milliseconds{*blackTime};
+            if (whiteIncrement) timeControl->winc = std::chrono::milliseconds{*whiteIncrement};
+            if (blackIncrement) timeControl->binc = std::chrono::milliseconds{*blackIncrement};
+            if (movesToGo) timeControl->movesToGo = static_cast<int>(*movesToGo);
           }
 
           int completedDepth = 0;
-          const auto result = board_.search(depth, [this, &completedDepth](const auto& result) {
+          uint64_t totalNodes = 0;
+          const auto searchStart = std::chrono::steady_clock::now();
+          const auto result = board_.search(depth.value_or(std::numeric_limits<int>::max()), timeControl, [this, &completedDepth, &totalNodes, searchStart](const auto& result) {
             ++completedDepth;
-            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(result.searchingTime).count();
-            const double elapsedSeconds = std::chrono::duration<double>(result.searchingTime).count();
+            totalNodes += result.nodesSearched;
+            const auto elapsed = std::chrono::steady_clock::now() - searchStart;
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+            const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
             const uint64_t nps = elapsedSeconds <= 0 ? 0
-              : elapsedSeconds < 1 ? result.nodesSearched
-              : static_cast<uint64_t>(result.nodesSearched / elapsedSeconds);
+              : elapsedSeconds < 1 ? totalNodes
+              : static_cast<uint64_t>(totalNodes / elapsedSeconds);
 
             constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);
             constexpr int64_t mateWindow = 100;
@@ -142,7 +188,7 @@ namespace bb::user_interface {
               scoreText = std::format("cp {}", score);
             }
             uciOutput_ << std::format("info depth {} score {} time {} nodes {} nps {}\n",
-                                      completedDepth, scoreText, elapsedMs, result.nodesSearched, nps);
+                                      completedDepth, scoreText, elapsedMs, totalNodes, nps);
             uciOutput_.flush();
           });
           uciOutput_ << std::format("bestmove {}\n",

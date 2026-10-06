@@ -20,6 +20,9 @@
     <Filter Include="Cores\Data Structures">
       <UniqueIdentifier>{310f616f-ec8f-4004-9d42-424dcb5d7f3e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Cores\TimeControl Policies">
+      <UniqueIdentifier>{8420eac7-9598-4f04-964d-2c6fe7786bb8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -83,6 +86,12 @@
     </ClInclude>
     <ClInclude Include="zobrist_hash.h">
       <Filter>Cores\Data Structures</Filter>
+    </ClInclude>
+    <ClInclude Include="time_control_policy.h">
+      <Filter>Cores\TimeControl Policies</Filter>
+    </ClInclude>
+    <ClInclude Include="equal_percentage_time_control_policy.h">
+      <Filter>Cores\TimeControl Policies</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
