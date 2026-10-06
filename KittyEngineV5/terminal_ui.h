@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <format>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -165,7 +166,8 @@ namespace bb::user_interface {
           int completedDepth = 0;
           uint64_t totalNodes = 0;
           const auto searchStart = std::chrono::steady_clock::now();
-          const auto result = board_.search(depth.value_or(std::numeric_limits<int>::max()), timeControl, [this, &completedDepth, &totalNodes, searchStart](const auto& result) {
+          const int searchDepth = std::min(depth.value_or(searching::kMaxDepthHardCutoff), searching::kMaxDepthHardCutoff);
+          const auto result = board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, searchStart](const auto& result) {
             ++completedDepth;
             totalNodes += result.nodesSearched;
             const auto elapsed = std::chrono::steady_clock::now() - searchStart;
@@ -187,8 +189,17 @@ namespace bb::user_interface {
             } else {
               scoreText = std::format("cp {}", score);
             }
-            uciOutput_ << std::format("info depth {} score {} time {} nodes {} nps {}\n",
-                                      completedDepth, scoreText, elapsedMs, totalNodes, nps);
+            std::string infoLine = std::format("info depth {} score {} time {} nodes {} nps {}",
+                                               completedDepth, scoreText, elapsedMs, totalNodes, nps);
+            const auto& pv = result.pvLine;
+            if (!pv.empty()) {
+              infoLine += " pv";
+              for (const Move& move : pv) {
+                std::format_to(std::back_inserter(infoLine), " {}", notation::moveToString(move));
+              }
+            }
+            infoLine += '\n';
+            uciOutput_.write(infoLine.data(), static_cast<std::streamsize>(infoLine.size()));
             uciOutput_.flush();
           });
           uciOutput_ << std::format("bestmove {}\n",

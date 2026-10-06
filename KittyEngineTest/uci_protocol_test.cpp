@@ -6,6 +6,7 @@
 #include "position_fens.h"
 #include "terminal_ui.h"
 #include "uci_protocol.h"
+#include <array>
 #include <sstream>
 #include <algorithm>
 #include <chrono>
@@ -35,15 +36,28 @@ namespace {
     std::vector<searching::SearchResult>* results;
 
     template <Side ally>
-    searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
+    searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
       *requestedDepth = param.maxDepth;
       MoveList moves;
       state.generateMoves<ally>(moves);
+      searching::PVLine pvLine;
+      if (!moves.empty()) {
+        pvLine.push(moves[0]);
+        if (param.maxDepth > 1) {
+          BoardState nextState = state;
+          nextState.makeMove<ally>(moves[0]);
+          MoveList replies;
+          nextState.generateMoves<getOtherSide(ally)>(replies);
+          if (!replies.empty()) {
+            pvLine.push(replies[0]);
+          }
+        }
+      }
       const uint64_t nodes = param.maxDepth == 3 ? 100 : param.maxDepth == 2 ? 30 : 10;
       const int32_t score = param.maxDepth == 3 ? kMateMagnitude - 3 : param.maxDepth == 2 ? -12 : 34;
       searching::SearchResult result{
         score, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-        nodes, std::chrono::milliseconds{10 * param.maxDepth}};
+        nodes, std::chrono::milliseconds{10 * param.maxDepth}, pvLine};
       results->push_back(result);
       return result;
     }
@@ -94,6 +108,32 @@ namespace {
     }
   };
 
+  struct PVTrackingSearchPolicy {
+    std::vector<std::vector<Move>>* incomingLines;
+    bool seeded = false;
+
+    template <Side ally>
+    searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
+      incomingLines->emplace_back(param.pvLine.begin(), param.pvLine.end());
+      searching::PVLine pvLine = param.pvLine;
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+      if (!seeded && !moves.empty()) {
+        pvLine.push(moves[0]);
+        BoardState nextState = state;
+        nextState.makeMove<ally>(moves[0]);
+        MoveList replies;
+        nextState.generateMoves<getOtherSide(ally)>(replies);
+        if (!replies.empty()) {
+          pvLine.push(replies[0]);
+        }
+        seeded = true;
+      }
+      return {0, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
+              1, std::chrono::nanoseconds{}, pvLine};
+    }
+  };
+
   struct ParsedInfo {
     int depth;
     std::string scoreKind;
@@ -101,6 +141,7 @@ namespace {
     int64_t timeMs;
     uint64_t nodes;
     uint64_t nps;
+    std::vector<std::string> pv;
   };
 
   std::optional<ParsedInfo> parseInfoLine(const std::string& line) {
@@ -111,9 +152,20 @@ namespace {
                  >> time >> parsed.timeMs >> nodes >> parsed.nodes >> nps >> parsed.nps)) {
       return std::nullopt;
     }
-    if (stream >> extra || info != "info" || depth != "depth" || score != "score" ||
+    if (info != "info" || depth != "depth" || score != "score" ||
         time != "time" || nodes != "nodes" || nps != "nps") {
       return std::nullopt;
+    }
+    if (stream >> extra) {
+      if (extra != "pv") {
+        return std::nullopt;
+      }
+      while (stream >> extra) {
+        parsed.pv.push_back(extra);
+      }
+      if (parsed.pv.empty()) {
+        return std::nullopt;
+      }
     }
     return parsed;
   }
@@ -301,6 +353,11 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
     if (info->scoreKind == "cp") {
       EXPECT_EQ(info->score, results[i].score);
     }
+    const auto& expectedPV = results[i].pvLine;
+    ASSERT_EQ(info->pv.size(), expectedPV.size());
+    for (size_t moveIndex = 0; moveIndex < expectedPV.size(); ++moveIndex) {
+      EXPECT_EQ(info->pv[moveIndex], notation::moveToString(expectedPV[moveIndex]));
+    }
   }
   ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
   ASSERT_TRUE(results.back().bestMove.has_value());
@@ -332,6 +389,108 @@ TEST(UciIntegration, StopsTimedSearchAfterFirstCompletedDepthWhenBudgetIsZero) {
   EXPECT_EQ(line, "bestmove " + notation::moveToString(*results.back().bestMove));
   EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
   EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
+}
+
+TEST(UciIntegration, CapsRequestedSearchDepth) {
+  const int depthBeyondLimit = searching::kMaxDepthHardCutoff + 1;
+  std::istringstream input{"go depth " + std::to_string(depthBeyondLimit) + "\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  int requestedDepth = 0;
+  std::vector<searching::SearchResult> results;
+  Board board{RecordingSearchPolicy{&requestedDepth, &results}, TestTimePolicy{kTestTimePercentage}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+
+  EXPECT_EQ(requestedDepth, searching::kMaxDepthHardCutoff);
+  ASSERT_EQ(results.size(), static_cast<size_t>(searching::kMaxDepthHardCutoff));
+  EXPECT_EQ(uciOutput.str().find("info string error:"), std::string::npos);
+  EXPECT_NE(uciOutput.str().find("bestmove "), std::string::npos);
+}
+
+TEST(BoardPV, DirectMovesConsumeMatchingPrefixAndClearOnDivergence) {
+  std::vector<std::vector<Move>> incomingLines;
+  Board board{PVTrackingSearchPolicy{&incomingLines}, TestTimePolicy{kTestTimePercentage}};
+  const auto search = [&] {
+    return board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  };
+
+  const auto first = search();
+  ASSERT_EQ(first.pvLine.size(), 2u);
+  board.playMove(notation::moveToString(first.pvLine[0]));
+  search();
+  ASSERT_EQ(incomingLines.back().size(), 1u);
+  EXPECT_EQ(incomingLines.back()[0], first.pvLine[1]);
+
+  board.playMove(notation::moveToString(first.pvLine[1]));
+  search();
+  EXPECT_TRUE(incomingLines.back().empty());
+
+  std::vector<std::vector<Move>> otherIncomingLines;
+  Board otherBoard{PVTrackingSearchPolicy{&otherIncomingLines}, TestTimePolicy{kTestTimePercentage}};
+  const auto otherResult = otherBoard.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  MoveList legalMoves;
+  otherBoard.getState().generateMoves<White>(legalMoves);
+  const auto alternative = std::find_if(legalMoves.begin(), legalMoves.end(), [&](const Move& move) {
+    return move != otherResult.pvLine.front();
+  });
+  ASSERT_NE(alternative, legalMoves.end());
+  otherBoard.playMove(notation::moveToString(*alternative));
+  otherBoard.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  EXPECT_TRUE(otherIncomingLines.back().empty());
+}
+
+TEST(BoardPV, ReturnedLineFeedsTheNextDepth) {
+  std::vector<std::vector<Move>> incomingLines;
+  Board board{PVTrackingSearchPolicy{&incomingLines}, TestTimePolicy{kTestTimePercentage}};
+
+  const auto result = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
+
+  ASSERT_EQ(incomingLines.size(), 2u);
+  EXPECT_TRUE(incomingLines.front().empty());
+  EXPECT_EQ(incomingLines.back().size(), result.pvLine.size());
+  EXPECT_TRUE(std::equal(incomingLines.back().begin(), incomingLines.back().end(), result.pvLine.begin()));
+}
+
+TEST(BoardPV, ReplayedPositionMovesPreserveMatchingSuffix) {
+  std::vector<std::vector<Move>> incomingLines;
+  Board board{PVTrackingSearchPolicy{&incomingLines}, TestTimePolicy{kTestTimePercentage}};
+  const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_EQ(first.pvLine.size(), 2u);
+  const std::string firstText = notation::moveToString(first.pvLine[0]);
+  const std::string replyText = notation::moveToString(first.pvLine[1]);
+
+  const std::array<std::string_view, 1> firstMove{firstText};
+  board.setPosition(fen::kStartPosition, firstMove);
+  board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_EQ(incomingLines.back().size(), 1u);
+  EXPECT_EQ(incomingLines.back()[0], first.pvLine[1]);
+
+  const std::array<std::string_view, 2> bothMoves{firstText, replyText};
+  board.setPosition(fen::kStartPosition, bothMoves);
+  board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  EXPECT_TRUE(incomingLines.back().empty());
+}
+
+TEST(BoardPV, FenOnlySuccessorAndFailedPositionUpdateKeepCorrectPV) {
+  std::vector<std::vector<Move>> incomingLines;
+  Board board{PVTrackingSearchPolicy{&incomingLines}, TestTimePolicy{kTestTimePercentage}};
+  const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_EQ(first.pvLine.size(), 2u);
+
+  const std::array<std::string_view, 1> invalidMoves{"not-a-move"};
+  EXPECT_THROW(board.setPosition(fen::kStartPosition, invalidMoves), std::invalid_argument);
+  board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_EQ(incomingLines.back().size(), first.pvLine.size());
+  EXPECT_EQ(incomingLines.back()[0], first.pvLine[0]);
+
+  BoardState successor = board.getState();
+  successor.makeMove<White>(first.pvLine[0]);
+  board.setPosition(notation::boardToFen(successor), {});
+  board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_EQ(incomingLines.back().size(), 1u);
+  EXPECT_EQ(incomingLines.back()[0], first.pvLine[1]);
 }
 
 TEST(UciIntegration, SelectsBlackIncrementForTimedSearch) {
@@ -433,6 +592,7 @@ TEST(UciIntegration, FormatsMateScoresWithinOneHundredPoints) {
     EXPECT_EQ(info->depth, i + 1);
     EXPECT_EQ(info->scoreKind, i < 4 ? "mate" : "cp");
     EXPECT_EQ(info->score, expectedScores[i]);
+    EXPECT_TRUE(info->pv.empty());
     totalNodes += ScoreSequenceSearchPolicy::kNodesPerDepth;
     EXPECT_GE(info->timeMs, previousTimeMs);
     EXPECT_EQ(info->nodes, totalNodes);
@@ -534,6 +694,7 @@ TEST(UciIntegration, RejectsInvalidDepthAndReportsNoLegalMove) {
     EXPECT_EQ(info->depth, depth);
     EXPECT_GE(info->nodes, previousNodes);
     EXPECT_GE(info->timeMs, previousTime);
+    EXPECT_TRUE(info->pv.empty());
     previousNodes = info->nodes;
     previousTime = info->timeMs;
   }

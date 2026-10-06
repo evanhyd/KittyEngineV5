@@ -48,6 +48,7 @@ int main() {
       timePercentage
     }
    };
+
   user_interface::TerminalUI terminal{board, cin, cout, cerr};
   terminal.run();
 }
