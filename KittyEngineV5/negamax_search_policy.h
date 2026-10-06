@@ -28,7 +28,7 @@ namespace bb::searching {
     };
 
     // Magic constant.
-    static constexpr int kQuiescenceExtraDepth = 16;
+    static constexpr int kQuiescenceExtraDepth = 20;
     //static constexpr int32_t kFutilityMovePriority = 0;
     //static constexpr int32_t kKillerMove = 99;
     static constexpr int32_t kEnPassantPriority = 150;

@@ -186,6 +186,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="evaluation_test.cpp" />
     <ClCompile Include="notation_test.cpp" />
     <ClCompile Include="legal_moves_test.cpp" />
     <ClCompile Include="perft_test.cpp" />
