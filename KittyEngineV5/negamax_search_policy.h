@@ -26,7 +26,25 @@ namespace bb::searching {
       consteval bool isInternal() const { return type == NodeType::Internal; }
       consteval bool isQuiescence() const { return type == NodeType::Quiescence; }
     };
+
+    // Magic constant.
     static constexpr int kQuiescenceExtraDepth = 16;
+    //static constexpr int32_t kFutilityMovePriority = 0;
+    //static constexpr int32_t kKillerMove = 99;
+    static constexpr int32_t kEnPassantPriority = 150;
+    static constexpr int32_t kCastlingPriority = 151;
+    static constexpr int32_t kPromotionPriority = 506;
+    static constexpr int32_t kPrincipalVariationPriority = 10001;
+    static constexpr int32_t kTranspositionPriority = 10000;
+    static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
+    { {
+        {105, 205, 305, 405, 505}, // pawn
+        {104, 204, 304, 404, 504}, // knight
+        {103, 203, 303, 403, 503}, // bishop
+        {102, 202, 302, 402, 502}, // rook
+        {101, 201, 301, 401, 501}, // queen
+        {100, 200, 300, 400, 500}  // king
+    } };
 
     using PVTable = SmallVec<PVLine, kMaxDepthHardCutoff + 1>;
 
@@ -88,23 +106,6 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove) const {
-      //static constexpr int32_t kFutilityMovePriority = 0;
-      //static constexpr int32_t kKillerMove = 99;
-      static constexpr int32_t kEnPassantPriority = 150;
-      static constexpr int32_t kCastlingPriority = 151;
-      static constexpr int32_t kPromotionPriority = 506;
-      static constexpr int32_t kPrincipalVariationPriority = 10001;
-      static constexpr int32_t kTranspositionPriority = 10000;
-      static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
-      { {
-          {105, 205, 305, 405, 505}, // pawn
-          {104, 204, 304, 404, 504}, // knight
-          {103, 203, 303, 403, 503}, // bishop
-          {102, 202, 302, 402, 502}, // rook
-          {101, 201, 301, 401, 501}, // queen
-          {100, 200, 300, 400, 500}  // king
-      } };
-
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -131,9 +132,8 @@ namespace bb::searching {
           priority += kCastlingPriority;
         } else {
           if (move.isCapture()) {
-              priority += kCapturePriorityTable[move.getMovedPiece()][std::get<1>(*state.getPieceAt(move.getDest()))];
+            priority += kCapturePriorityTable[move.getMovedPiece()][std::get<1>(*state.getPieceAt(move.getDest()))];
           }
-          
           if (move.getPromotedPieceType() != NoPiece) {
             priority += kPromotionPriority;
           }
@@ -147,6 +147,9 @@ namespace bb::searching {
       std::ranges::transform(scoredMoves, moves.begin(), &PriorityMove::move);
     }
 
+    /////////////////////
+    // SEARCH INTERNAL //
+    /////////////////////
     template <NodeMeta meta>
     int32_t searchInternal(BoardState& state, int maxDepth, int depth, const int32_t alpha, const int32_t beta,
                            bool isFollowingPV, const PVLine& previousPV, uint64_t& searchedNodes) {
@@ -173,17 +176,15 @@ namespace bb::searching {
         }
 
         // Clear the old PV written by a sibling node.
-        // Might incorrectly use sibling's old PV if this position can not raise alpha.
+        // Otherwise might incorrectly use sibling's old PV if this position can not raise alpha.
         pvTable_[depth].clear();
 
-        // Perform quiescence search for a few extra depth.
+        // Perform quiescence search if reach ther max depth.
         if (depth == maxDepth) {
           --searchedNodes;
-          return searchInternal<meta.withType(NodeMeta::NodeType::Quiescence)>(state, maxDepth + kQuiescenceExtraDepth,
-                                                                                depth, alpha, beta, false, previousPV, searchedNodes);
+          return searchInternal<meta.withType(NodeMeta::NodeType::Quiescence)>(state, maxDepth + kQuiescenceExtraDepth, depth, alpha, beta, false, previousPV, searchedNodes);
         }
       } if constexpr (meta.isQuiescence()) {
-        // Hard cutoff.
         if (depth == maxDepth) {
           return evalPolicy_.evaluate(state);
         }
@@ -217,8 +218,7 @@ namespace bb::searching {
           bestScore = std::max(alpha, standPat);
           filterViolentMoves(moves);
         } else {
-          // In-check extension. Continue the search.
-          // Branches are limited, so shouldn't take too long.
+          // In-check extension. Continue the search with limited branches.
           // TODO: implement 3-fold repetition check.
         }
       }
@@ -238,8 +238,12 @@ namespace bb::searching {
       // Explore moves.
       for (const Move& move : moves) {
         MoveUndo undo = state.makeMove<meta.ally>(move);
-        int32_t score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -bestScore,
-                                                     isFollowingPV && move == pvMove, previousPV, searchedNodes);
+        int32_t score{};
+        if constexpr (meta.isInternal()) {
+          score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -bestScore, isFollowingPV && move == pvMove, previousPV, searchedNodes);
+        } else {
+          score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -bestScore, false, previousPV, searchedNodes);
+        }
         state.unmakeMove<meta.ally>(move, undo);
 
         if (score >= beta) {

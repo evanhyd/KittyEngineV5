@@ -41,7 +41,7 @@ namespace bb::time_control {
       const auto lastSearchTime = now - lastSearchStart_;
 
       // Not enough time for higher depth, stop searching.
-      if (lastSearchTime * 1.05f >= remainingTime) {
+      if (lastSearchTime * 3 >= remainingTime) {
         isTimeControlSet_ = false;
         return false;
       }
