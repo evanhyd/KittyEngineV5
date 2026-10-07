@@ -26,7 +26,7 @@ namespace bb::evaluation {
     // Passed pawn bonus indexed by rank (relative to pawn advancement: rank 0..7)
     static constexpr std::array<int32_t, kBoardLenSize> kPassedPawnBonusTable = { 0, 0, 5, 8, 31, 46, 118, 0 };
 
-    // Indexed by piece type (0..5: Pawn, Knight, Bishop, Rook, Queen, King)
+    // Indexed by piece setType (0..5: Pawn, Knight, Bishop, Rook, Queen, King)
     static constexpr std::array<int32_t, kPieceSize> kPieceMobilityBonusTable = { 0, 4, 6, 2, 0, 0 };
     static constexpr std::array<int32_t, kPieceSize> kPieceMaterialValueTable = { 100, 309, 291, 490, 951, 0 };
 

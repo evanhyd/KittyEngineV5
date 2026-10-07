@@ -41,13 +41,13 @@ int main() {
 
   Board board{
     searching::NegamaxSearchPolicy{
-      evaluation::HandCraftEvaluationPolicy{}, 
-      aspirationWindow, 
+      evaluation::HandCraftEvaluationPolicy{},
+      aspirationWindow,
       ttTableSize},
     time_control::EqualPercentageTimeControlPolicy{
       timePercentage
     }
-   };
+  };
 
   user_interface::TerminalUI terminal{board, cin, cout, cerr};
   terminal.run();

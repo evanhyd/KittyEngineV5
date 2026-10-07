@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <iterator>
 
 namespace bb {
   template <typename T, size_t cap = 218>
@@ -51,6 +52,22 @@ namespace bb {
 
     constexpr auto end() const noexcept {
       return data_.begin() + size_;
+    }
+
+    constexpr auto rbegin() noexcept {
+      return std::make_reverse_iterator(end());
+    }
+
+    constexpr auto rbegin() const noexcept {
+      return std::make_reverse_iterator(end());
+    }
+
+    constexpr auto rend() noexcept {
+      return data_.rend();
+    }
+
+    constexpr auto rend() const noexcept {
+      return data_.rend();
     }
 
     constexpr T& front() noexcept {

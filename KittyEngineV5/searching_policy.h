@@ -10,12 +10,16 @@ namespace bb {
 
   namespace searching {
     inline constexpr int kMaxDepthHardCutoff = 64;
+    inline constexpr size_t kMaxMovePerGame = 1024;
     using PVLine = SmallVec<Move, kMaxDepthHardCutoff + 1>;
+    using PositionHistory = SmallVec<ZobristHash::Hash, kMaxMovePerGame>;
+    using MoveHistory = SmallVec<Move, kMaxMovePerGame>;
 
     struct SearchParam {
-      int maxDepth;
+      int maxDepth;                     // initial max depth
       int32_t pastEval;
-      const PVLine& pvLine;
+      PositionHistory& positionHistory; // input and output
+      PVLine& pvLine;                   // input and output
     };
 
     struct SearchResult {
@@ -23,7 +27,7 @@ namespace bb {
       std::optional<Move> bestMove;
       uint64_t nodesSearched;
       std::chrono::nanoseconds searchingTime;
-      PVLine pvLine;
+      const PVLine* pvLine;
     };
 
     template <typename SearchPolicy>

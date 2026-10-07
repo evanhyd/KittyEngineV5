@@ -191,7 +191,7 @@ namespace bb::user_interface {
             }
             std::string infoLine = std::format("info depth {} score {} time {} nodes {} nps {}",
                                                completedDepth, scoreText, elapsedMs, totalNodes, nps);
-            const auto& pv = result.pvLine;
+            const auto& pv = *result.pvLine;
             if (!pv.empty()) {
               infoLine += " pv";
               for (const Move& move : pv) {

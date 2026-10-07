@@ -34,13 +34,15 @@ namespace {
   struct RecordingSearchPolicy {
     int* requestedDepth;
     std::vector<searching::SearchResult>* results;
+    std::vector<std::vector<Move>>* pvSnapshots = nullptr;
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
       *requestedDepth = param.maxDepth;
       MoveList moves;
       state.generateMoves<ally>(moves);
-      searching::PVLine pvLine;
+      searching::PVLine& pvLine = param.pvLine;
+      pvLine.clear();
       if (!moves.empty()) {
         pvLine.push(moves[0]);
         if (param.maxDepth > 1) {
@@ -57,7 +59,10 @@ namespace {
       const int32_t score = param.maxDepth == 3 ? kMateMagnitude - 3 : param.maxDepth == 2 ? -12 : 34;
       searching::SearchResult result{
         score, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-        nodes, std::chrono::milliseconds{10 * param.maxDepth}, pvLine};
+        nodes, std::chrono::milliseconds{10 * param.maxDepth}, &pvLine};
+      if (pvSnapshots) {
+        pvSnapshots->emplace_back(pvLine.begin(), pvLine.end());
+      }
       results->push_back(result);
       return result;
     }
@@ -65,8 +70,9 @@ namespace {
 
   struct ZeroTimeSearchPolicy {
     template <Side ally>
-    searching::SearchResult search(BoardState&, const searching::SearchParam&) {
-      return {0, std::nullopt, 1, std::chrono::nanoseconds{}};
+    searching::SearchResult search(BoardState&, const searching::SearchParam& param) {
+      param.pvLine.clear();
+      return {0, std::nullopt, 1, std::chrono::nanoseconds{}, &param.pvLine};
     }
   };
 
@@ -80,7 +86,8 @@ namespace {
       std::this_thread::sleep_for(pause);
       MoveList moves;
       state.generateMoves<ally>(moves);
-      return {0, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]}, 1, pause};
+      param.pvLine.clear();
+      return {0, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]}, 1, pause, &param.pvLine};
     }
   };
 
@@ -89,8 +96,9 @@ namespace {
     static constexpr auto kDuration = std::chrono::microseconds{250};
 
     template <Side ally>
-    searching::SearchResult search(BoardState&, const searching::SearchParam&) {
-      return {0, std::nullopt, kNodes, kDuration};
+    searching::SearchResult search(BoardState&, const searching::SearchParam& param) {
+      param.pvLine.clear();
+      return {0, std::nullopt, kNodes, kDuration, &param.pvLine};
     }
   };
 
@@ -103,8 +111,9 @@ namespace {
     searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
       MoveList moves;
       state.generateMoves<ally>(moves);
+      param.pvLine.clear();
       return {scores->at(param.maxDepth - 1), moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-              kNodesPerDepth, kSearchDuration};
+              kNodesPerDepth, kSearchDuration, &param.pvLine};
     }
   };
 
@@ -115,7 +124,7 @@ namespace {
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
       incomingLines->emplace_back(param.pvLine.begin(), param.pvLine.end());
-      searching::PVLine pvLine = param.pvLine;
+      searching::PVLine& pvLine = param.pvLine;
       MoveList moves;
       state.generateMoves<ally>(moves);
       if (!seeded && !moves.empty()) {
@@ -130,7 +139,7 @@ namespace {
         seeded = true;
       }
       return {0, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-              1, std::chrono::nanoseconds{}, pvLine};
+              1, std::chrono::nanoseconds{}, &pvLine};
     }
   };
 
@@ -329,7 +338,8 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
   std::ostringstream humanOutput;
   int requestedDepth = 0;
   std::vector<searching::SearchResult> results;
-  Board board{RecordingSearchPolicy{&requestedDepth, &results}, TestTimePolicy{kTestTimePercentage}};
+  std::vector<std::vector<Move>> pvSnapshots;
+  Board board{RecordingSearchPolicy{&requestedDepth, &results, &pvSnapshots}, TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -353,7 +363,7 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
     if (info->scoreKind == "cp") {
       EXPECT_EQ(info->score, results[i].score);
     }
-    const auto& expectedPV = results[i].pvLine;
+    const auto& expectedPV = pvSnapshots[i];
     ASSERT_EQ(info->pv.size(), expectedPV.size());
     for (size_t moveIndex = 0; moveIndex < expectedPV.size(); ++moveIndex) {
       EXPECT_EQ(info->pv[moveIndex], notation::moveToString(expectedPV[moveIndex]));
@@ -417,13 +427,16 @@ TEST(BoardPV, DirectMovesConsumeMatchingPrefixAndClearOnDivergence) {
   };
 
   const auto first = search();
-  ASSERT_EQ(first.pvLine.size(), 2u);
-  board.playMove(notation::moveToString(first.pvLine[0]));
+  const searching::PVLine firstPV = *first.pvLine;
+  ASSERT_EQ(firstPV.size(), 2u);
+  board.playMove(notation::moveToString(firstPV[0]));
+  ASSERT_EQ(first.pvLine->size(), 1u);
+  EXPECT_EQ(first.pvLine->front(), firstPV[1]);
   search();
   ASSERT_EQ(incomingLines.back().size(), 1u);
-  EXPECT_EQ(incomingLines.back()[0], first.pvLine[1]);
+  EXPECT_EQ(incomingLines.back()[0], firstPV[1]);
 
-  board.playMove(notation::moveToString(first.pvLine[1]));
+  board.playMove(notation::moveToString(firstPV[1]));
   search();
   EXPECT_TRUE(incomingLines.back().empty());
 
@@ -433,7 +446,7 @@ TEST(BoardPV, DirectMovesConsumeMatchingPrefixAndClearOnDivergence) {
   MoveList legalMoves;
   otherBoard.getState().generateMoves<White>(legalMoves);
   const auto alternative = std::find_if(legalMoves.begin(), legalMoves.end(), [&](const Move& move) {
-    return move != otherResult.pvLine.front();
+    return move != otherResult.pvLine->front();
   });
   ASSERT_NE(alternative, legalMoves.end());
   otherBoard.playMove(notation::moveToString(*alternative));
@@ -449,23 +462,24 @@ TEST(BoardPV, ReturnedLineFeedsTheNextDepth) {
 
   ASSERT_EQ(incomingLines.size(), 2u);
   EXPECT_TRUE(incomingLines.front().empty());
-  EXPECT_EQ(incomingLines.back().size(), result.pvLine.size());
-  EXPECT_TRUE(std::equal(incomingLines.back().begin(), incomingLines.back().end(), result.pvLine.begin()));
+  EXPECT_EQ(incomingLines.back().size(), result.pvLine->size());
+  EXPECT_TRUE(std::equal(incomingLines.back().begin(), incomingLines.back().end(), result.pvLine->begin()));
 }
 
 TEST(BoardPV, ReplayedPositionMovesPreserveMatchingSuffix) {
   std::vector<std::vector<Move>> incomingLines;
   Board board{PVTrackingSearchPolicy{&incomingLines}, TestTimePolicy{kTestTimePercentage}};
   const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
-  ASSERT_EQ(first.pvLine.size(), 2u);
-  const std::string firstText = notation::moveToString(first.pvLine[0]);
-  const std::string replyText = notation::moveToString(first.pvLine[1]);
+  const searching::PVLine firstPV = *first.pvLine;
+  ASSERT_EQ(firstPV.size(), 2u);
+  const std::string firstText = notation::moveToString(firstPV[0]);
+  const std::string replyText = notation::moveToString(firstPV[1]);
 
   const std::array<std::string_view, 1> firstMove{firstText};
   board.setPosition(fen::kStartPosition, firstMove);
   board.search(1, std::nullopt, [](const searching::SearchResult&) {});
   ASSERT_EQ(incomingLines.back().size(), 1u);
-  EXPECT_EQ(incomingLines.back()[0], first.pvLine[1]);
+  EXPECT_EQ(incomingLines.back()[0], firstPV[1]);
 
   const std::array<std::string_view, 2> bothMoves{firstText, replyText};
   board.setPosition(fen::kStartPosition, bothMoves);
@@ -477,20 +491,21 @@ TEST(BoardPV, FenOnlySuccessorAndFailedPositionUpdateKeepCorrectPV) {
   std::vector<std::vector<Move>> incomingLines;
   Board board{PVTrackingSearchPolicy{&incomingLines}, TestTimePolicy{kTestTimePercentage}};
   const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
-  ASSERT_EQ(first.pvLine.size(), 2u);
+  const searching::PVLine firstPV = *first.pvLine;
+  ASSERT_EQ(firstPV.size(), 2u);
 
   const std::array<std::string_view, 1> invalidMoves{"not-a-move"};
   EXPECT_THROW(board.setPosition(fen::kStartPosition, invalidMoves), std::invalid_argument);
   board.search(1, std::nullopt, [](const searching::SearchResult&) {});
-  ASSERT_EQ(incomingLines.back().size(), first.pvLine.size());
-  EXPECT_EQ(incomingLines.back()[0], first.pvLine[0]);
+  ASSERT_EQ(incomingLines.back().size(), firstPV.size());
+  EXPECT_EQ(incomingLines.back()[0], firstPV[0]);
 
   BoardState successor = board.getState();
-  successor.makeMove<White>(first.pvLine[0]);
+  successor.makeMove<White>(firstPV[0]);
   board.setPosition(notation::boardToFen(successor), {});
   board.search(1, std::nullopt, [](const searching::SearchResult&) {});
   ASSERT_EQ(incomingLines.back().size(), 1u);
-  EXPECT_EQ(incomingLines.back()[0], first.pvLine[1]);
+  EXPECT_EQ(incomingLines.back()[0], firstPV[1]);
 }
 
 TEST(UciIntegration, SelectsBlackIncrementForTimedSearch) {

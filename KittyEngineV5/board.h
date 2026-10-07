@@ -19,7 +19,8 @@ namespace bb {
     SearchPolicy searchingPolicy_;
     TimePolicy timeControlPolicy_;
     BoardState state_;
-    std::vector<Move> pastMoves_;
+    searching::PositionHistory positionHistory_;
+    searching::MoveHistory moveHistory_;
     searching::PVLine pvLine_;
 
     void advancePV(const Move& move) {
@@ -35,7 +36,6 @@ namespace bb {
     explicit Board(SearchPolicy searchPolicy, TimePolicy timePolicy)
       : searchingPolicy_(std::move(searchPolicy)), timeControlPolicy_(std::move(timePolicy)) {
       setPosition(fen::kStartPosition);
-      pastMoves_.reserve(256);
     }
 
     constexpr BoardState& getState() {
@@ -49,35 +49,27 @@ namespace bb {
     constexpr void setPosition(std::string_view fen) {
       // TODO: reset search policy state if needed.
       state_.setPosition(fen);
-      pastMoves_.clear();
+      positionHistory_.clear();
+      positionHistory_.push(state_.getHash());
+      moveHistory_.clear();
       pvLine_.clear();
     }
 
     void setPosition(std::string_view fen, std::span<const std::string_view> moves) {
       const BoardState previousState = state_;
-      const auto matchesPosition = [](const BoardState& lhs, const BoardState& rhs) {
-        return lhs.getHash() == rhs.getHash() &&
-          lhs.getHalfmoveClock() == rhs.getHalfmoveClock() &&
-          lhs.getFullmoveNumber() == rhs.getFullmoveNumber();
-      };
+      const searching::PositionHistory previousPositionHistory = positionHistory_;
+      const searching::MoveHistory previousMoveHistory = moveHistory_;
       const searching::PVLine previousPV = pvLine_;
-      std::vector<Move> previousMoves = std::move(pastMoves_);
       try {
         setPosition(fen);
-        bool reachedPreviousPosition = false;
-        const auto restorePreviousPV = [&] {
-          if (!reachedPreviousPosition && matchesPosition(state_, previousState)) {
-            pvLine_ = previousPV;
-            reachedPreviousPosition = true;
-          }
-        };
-        restorePreviousPV();
         for (const std::string_view moveText : moves) {
           playMove(moveText);
-          restorePreviousPV();
         }
 
-        if (!reachedPreviousPosition && !previousPV.empty()) {
+        // Keep the old PV if replay ends at the same position, or advance it by one move if it ends at the PV successor.
+        if (state_.getHash() == previousState.getHash()) {
+          pvLine_ = previousPV;
+        } else if (!previousPV.empty()) {
           const auto matchesExpectedSuccessor = [&]<Side ally>() {
             MoveList legalMoves;
             previousState.generateMoves<ally>(legalMoves);
@@ -87,7 +79,7 @@ namespace bb {
             }
             BoardState nextState = previousState;
             nextState.makeMove<ally>(pvMove);
-            return matchesPosition(nextState, state_);
+            return nextState.getHash() == state_.getHash();
           };
           const bool matches = previousState.getSideToMove() == White
             ? matchesExpectedSuccessor.template operator()<White>()
@@ -99,43 +91,10 @@ namespace bb {
         }
       } catch (...) {
         state_ = previousState;
-        pastMoves_ = std::move(previousMoves);
+        positionHistory_ = previousPositionHistory;
+        moveHistory_ = previousMoveHistory;
         pvLine_ = previousPV;
         throw;
-      }
-    }
-
-    searching::SearchResult search(int maxDepth, const std::optional<time_control::TimeControl>& timeControl, auto resultCallback) {
-      timeControlPolicy_.set(timeControl);
-      maxDepth = std::min(maxDepth, searching::kMaxDepthHardCutoff);
-
-      const auto iterativeDeepening = [&]<Side ally>() {
-        searching::SearchResult result{
-          .score = 0
-        };
-
-        for (int depth = 1; depth <= maxDepth; ++depth) {
-          const searching::SearchParam param{
-            .maxDepth = depth,
-            .pastEval = result.score,
-            .pvLine = pvLine_,
-          };
-          result = searchingPolicy_.template search<ally>(state_, param);
-          pvLine_ = result.pvLine;
-          resultCallback(result);
-
-          if (!timeControlPolicy_.shouldContinue(ally)) {
-            break;
-          }
-        }
-
-        return result;
-      };
-
-      if (state_.getSideToMove() == White) {
-        return iterativeDeepening.template operator()<White>();
-      } else {
-        return iterativeDeepening.template operator()<Black>();
       }
     }
 
@@ -146,7 +105,8 @@ namespace bb {
         for (const Move& move : moves) {
           if (notation::moveToString(move) == moveText) {
             state_.makeMove<ally>(move);
-            pastMoves_.push_back(move);
+            positionHistory_.push(state_.getHash());
+            moveHistory_.push(move);
             advancePV(move);
             return;
           }
@@ -158,6 +118,41 @@ namespace bb {
         playMoveImpl.template operator()<White>();
       } else {
         playMoveImpl.template operator()<Black>();
+      }
+    }
+
+    searching::SearchResult search(int maxDepth, const std::optional<time_control::TimeControl>& timeControl, auto resultCallback) {
+      timeControlPolicy_.set(timeControl);
+      maxDepth = std::min(maxDepth, searching::kMaxDepthHardCutoff);
+
+      const auto iterativeDeepening = [&]<Side ally>() {
+        searching::SearchResult result{
+          .score = 0,
+          .pvLine = &pvLine_,
+        };
+
+        for (int depth = 1; depth <= maxDepth; ++depth) {
+          const searching::SearchParam param{
+            .maxDepth = depth,
+            .pastEval = result.score,
+            .positionHistory = positionHistory_,
+            .pvLine = pvLine_,
+          };
+          result = searchingPolicy_.template search<ally>(state_, param);
+          resultCallback(result);
+
+          if (!timeControlPolicy_.shouldContinue(ally)) {
+            break;
+          }
+        }
+
+        return result;
+      };
+
+      if (state_.getSideToMove() == White) {
+        return iterativeDeepening.template operator() < White > ();
+      } else {
+        return iterativeDeepening.template operator() < Black > ();
       }
     }
   };

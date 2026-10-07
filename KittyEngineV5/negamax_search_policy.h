@@ -4,6 +4,7 @@
 #include "searching_policy.h"
 #include "transposition_table.h"
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <ranges>
 #include <utility>
@@ -22,15 +23,36 @@ namespace bb::searching {
       const NodeType type;
       consteval NodeMeta(Side ally, NodeType type) : ally(ally), type(type) {}
       consteval NodeMeta flip() const { return NodeMeta{ getOtherSide(ally), type }; }
-      consteval NodeMeta withType(NodeType newType) const { return NodeMeta{ ally, newType }; }
+      consteval NodeMeta toInternal() const { return NodeMeta{ ally, NodeType::Internal }; }
+      consteval NodeMeta toQuiescence() const { return NodeMeta{ ally, NodeType::Quiescence }; }
       consteval bool isInternal() const { return type == NodeType::Internal; }
       consteval bool isQuiescence() const { return type == NodeType::Quiescence; }
     };
 
+    struct Eval {
+      int32_t score;
+      bool historyDependent;
+      explicit constexpr Eval(int32_t score, bool historyDependent) noexcept
+        : score(score), historyDependent(historyDependent) {}
+    };
+
+    struct SearchContext {
+      BoardState& state;
+      PositionHistory& positionHistory;
+      PVLine& pvLine;
+      int maxDepth; // main search max depth
+      uint64_t searchedNodes = 1;
+    };
+
+    struct SearchStack {
+      const int depth;
+      bool isFollowingPV = false;
+      PVLine pvLine;
+    };
+
     // Magic constant.
-    static constexpr int kQuiescenceExtraDepth = 20;
-    //static constexpr int32_t kFutilityMovePriority = 0;
-    //static constexpr int32_t kKillerMove = 99;
+    // static constexpr int32_t kFutilityMovePriority = 0;
+    // static constexpr int32_t kKillerMove = 99;
     static constexpr int32_t kEnPassantPriority = 150;
     static constexpr int32_t kCastlingPriority = 151;
     static constexpr int32_t kPromotionPriority = 506;
@@ -46,12 +68,15 @@ namespace bb::searching {
         {100, 200, 300, 400, 500}  // king
     } };
 
-    using PVTable = SmallVec<PVLine, kMaxDepthHardCutoff + 1>;
+    template <size_t... Indices>
+    static constexpr auto makeSearchStack(std::index_sequence<Indices...>) {
+      return std::array<SearchStack, sizeof...(Indices)>{{SearchStack{static_cast<int>(Indices)}...}};
+    }
 
     EvalPolicy evalPolicy_;
     int32_t aspirationWindow_;
     TranspositionTable ttTable_;
-    PVTable pvTable_;
+    std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
 
     // Convert root to mate distance penalty to current node to mate distance penalty.
     // Root -------------------------ThisNode------------------------ Checkmate
@@ -91,10 +116,10 @@ namespace bb::searching {
       }
     }
 
-    void updatePV(int depth, Move move) {
-      pvTable_[depth].resize(pvTable_[depth + 1].size() + 1);
-      pvTable_[depth].front() = move;
-      std::copy(pvTable_[depth + 1].begin(), pvTable_[depth + 1].end(), pvTable_[depth].begin() + 1);
+    void updatePV(SearchStack* frame, Move move) {
+      frame->pvLine.resize((frame + 1)->pvLine.size() + 1);
+      frame->pvLine.front() = move;
+      std::copy((frame + 1)->pvLine.begin(), (frame + 1)->pvLine.end(), frame->pvLine.begin() + 1);
     }
 
     void filterViolentMoves(MoveList& moves) const {
@@ -151,71 +176,77 @@ namespace bb::searching {
     // SEARCH INTERNAL //
     /////////////////////
     template <NodeMeta meta>
-    int32_t searchInternal(BoardState& state, int maxDepth, int depth, const int32_t alpha, const int32_t beta,
-                           bool isFollowingPV, const PVLine& previousPV, uint64_t& searchedNodes) {
-      ++searchedNodes;
-
+    Eval searchInternal(SearchContext& context, SearchStack* frame, const int32_t alpha, const int32_t beta) {
+      ++context.searchedNodes;
       Move ttMove{};
+
+      // Clear the old PV written by a sibling node.
+      if constexpr (meta.isInternal()) {
+        frame->pvLine.clear();
+      }
+
+      // Twofold Repetition heuristics.
+      // Losing side incentivized to draw, winning side try to avoid.
+      if (std::find(context.positionHistory.rbegin() + 1, context.positionHistory.rend(), context.state.getHash())
+          != context.positionHistory.rend()) {
+        return Eval(0, true);
+      }
 
       if constexpr (meta.isInternal()) {
         // Lookup transposition table.
-        if (auto ttEntry = ttTable_.get(state.getHash()); ttEntry) {
-          if (ttEntry->depth >= maxDepth - depth) {
-            ttEntry->score = denormalizeCheckmateScore(ttEntry->score, depth);
+        if (auto ttEntry = ttTable_.get(context.state.getHash()); ttEntry) {
+          if (ttEntry->depth >= context.maxDepth - frame->depth) {
+            ttEntry->score = denormalizeCheckmateScore(ttEntry->score, frame->depth);
             if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact ||
                 (ttEntry->scoreType == TranspositionTable::ScoreType::UpperBound && ttEntry->score <= alpha) ||
                 (ttEntry->scoreType == TranspositionTable::ScoreType::LowerBound && ttEntry->score >= beta)) {
 
               // TODO: retireve the PV moves after the truncation.
-              pvTable_[depth].resize(1);
-              pvTable_[depth].front() = ttEntry->bestMove;
-              return ttEntry->score;
+              frame->pvLine.resize(1);
+              frame->pvLine.front() = ttEntry->bestMove;
+              return Eval(ttEntry->score, false);
             }
           }
           ttMove = ttEntry->bestMove;
         }
 
-        // Clear the old PV written by a sibling node.
-        // Otherwise might incorrectly use sibling's old PV if this position can not raise alpha.
-        pvTable_[depth].clear();
-
         // Perform quiescence search if reach ther max depth.
-        if (depth == maxDepth) {
-          --searchedNodes;
-          return searchInternal<meta.withType(NodeMeta::NodeType::Quiescence)>(state, maxDepth + kQuiescenceExtraDepth, depth, alpha, beta, false, previousPV, searchedNodes);
+        if (frame->depth == context.maxDepth) {
+          --context.searchedNodes;
+          return searchInternal<meta.toQuiescence()>(context, frame, alpha, beta);
         }
-      } if constexpr (meta.isQuiescence()) {
-        if (depth == maxDepth) {
-          return evalPolicy_.evaluate(state);
-        }
+      }
+
+      if (meta.isQuiescence() && frame->depth == kMaxDepthHardCutoff) {
+        return Eval(evalPolicy_.evaluate(context.state), false);
       }
 
       // Generate moves.
       MoveList moves;
-      state.generateMoves<meta.ally>(moves);
+      context.state.template generateMoves<meta.ally>(moves);
 
       // Check for checkmate or stalemate.
-      const bool inCheck = state.isInCheck<meta.ally>();
+      const bool inCheck = context.state.template isInCheck<meta.ally>();
       if (moves.empty()) {
         if (inCheck) {
-          return evaluation::kCheckmateScore + depth;
+          return Eval(evaluation::kCheckmateScore + frame->depth, false);
         } else {
-          return evaluation::kStalemateScore;
+          return Eval(evaluation::kStalemateScore, false);
         }
       }
 
       // Quiescence stand-pat and in-check extension.
-      int32_t bestScore = alpha;
+      Eval bestEval(alpha, false);
       Move bestMove{};
 
       if constexpr (meta.isQuiescence()) {
         if (!inCheck) {
           // Can choose not to recapture if badtrade.
-          int32_t standPat = evalPolicy_.evaluate(state);
+          int32_t standPat = evalPolicy_.evaluate(context.state);
           if (standPat >= beta) {
-            return beta;
+            return Eval(beta, false);
           }
-          bestScore = std::max(alpha, standPat);
+          bestEval.score = std::max(alpha, standPat);
           filterViolentMoves(moves);
         } else {
           // In-check extension. Continue the search with limited branches.
@@ -226,103 +257,97 @@ namespace bb::searching {
       // Move ordering.
       Move pvMove{};
       if constexpr (meta.isInternal()) {
-        if (isFollowingPV && previousPV.size() > depth) {
-          pvMove = previousPV[depth];
+        if (frame->isFollowingPV && context.pvLine.size() > frame->depth) {
+          pvMove = context.pvLine[frame->depth];
         }
-        sortMoves<meta>(state, moves, ttMove, pvMove);
+        sortMoves<meta>(context.state, moves, ttMove, pvMove);
         bestMove = moves[0];
       } else {
-        sortMoves<meta>(state, moves, Move{}, Move{});
+        sortMoves<meta>(context.state, moves, Move{}, Move{});
       }
 
       // Explore moves.
       for (const Move& move : moves) {
-        MoveUndo undo = state.makeMove<meta.ally>(move);
-        int32_t score{};
-        if constexpr (meta.isInternal()) {
-          score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -bestScore, isFollowingPV && move == pvMove, previousPV, searchedNodes);
-        } else {
-          score = -searchInternal<meta.flip()>(state, maxDepth, depth + 1, -beta, -bestScore, false, previousPV, searchedNodes);
-        }
-        state.unmakeMove<meta.ally>(move, undo);
+        MoveUndo undo = context.state.template makeMove<meta.ally>(move);
+        context.positionHistory.push(context.state.getHash());
+        (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
+        Eval eval = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
+        eval.score = -eval.score;
+        context.positionHistory.pop();
+        context.state.template unmakeMove<meta.ally>(move, undo);
 
-        if (score >= beta) {
-          if constexpr (meta.isInternal()) {
+        if (eval.score >= beta) {
+          if (meta.isInternal() && !eval.historyDependent) {
             ttTable_.put(TranspositionTable::Entry{
-              .key = state.getHash(),
-              .depth = maxDepth - depth,
-              .score = normalizeCheckmateScore(score, depth),
+              .key = context.state.getHash(),
+              .depth = context.maxDepth - frame->depth,
+              .score = normalizeCheckmateScore(eval.score, frame->depth),
               .scoreType = TranspositionTable::ScoreType::LowerBound,
               .bestMove = move
             });
           }
-          return beta;
+          return eval;
         }
-        if (score > bestScore) {
-          bestScore = score;
+        if (eval.score > bestEval.score) {
+          bestEval = eval;
           bestMove = move;
           if constexpr (meta.isInternal()) {
-            updatePV(depth, bestMove);
+            updatePV(frame, bestMove);
           }
         }
       }
 
       // Update TT and PV.
-      if constexpr (meta.isInternal()) {
+      if (meta.isInternal() && !bestEval.historyDependent) {
         ttTable_.put(TranspositionTable::Entry{
-          .key = state.getHash(),
-          .depth = maxDepth - depth,
-          .score = normalizeCheckmateScore(bestScore, depth),
-          .scoreType = (bestScore <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact),
+          .key = context.state.getHash(),
+          .depth = context.maxDepth - frame->depth,
+          .score = normalizeCheckmateScore(bestEval.score, frame->depth),
+          .scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact),
           .bestMove = bestMove
         });
       }
-      return bestScore;
+      return bestEval;
     }
 
   public:
     explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow, size_t tranpositionTableSize)
-      : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow), ttTable_(tranpositionTableSize), pvTable_() {
+      : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow), ttTable_(tranpositionTableSize),
+        searchStack_(makeSearchStack(std::make_index_sequence<kMaxDepthHardCutoff + 1>{})) {
     }
 
     template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      // Meta data.
       static constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
 
-      // Search statistics.
-      uint64_t searchedNodes = 1;
+      // Result statistics.
+      SearchContext context{state, param.positionHistory, param.pvLine,
+                            std::clamp(param.maxDepth, 1, kMaxDepthHardCutoff)};
       const auto startTime = std::chrono::steady_clock::now();
       const auto elapsedTime = [&] {
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
           std::chrono::steady_clock::now() - startTime);
       };
+      const auto makeResult = [&](int32_t score, std::optional<Move> bestMove) {
+        return SearchResult{score, bestMove, context.searchedNodes, elapsedTime(), &param.pvLine};
+      };
 
       // PV table.
       Move pvMove{};
-      if (!param.pvLine.empty()) {
-        pvMove = param.pvLine.front();
+      if (!context.pvLine.empty()) {
+        pvMove = context.pvLine.front();
       }
-      pvTable_.resize(param.maxDepth + 1);
-      pvTable_.front().clear();
+      searchStack_[0].pvLine.clear();
 
       // Lookup transposition table.
       Move ttMove{};
       if (auto ttEntry = ttTable_.get(state.getHash())) {
-        if (ttEntry->depth >= param.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
-          PVLine cachedPV = param.pvLine;
-          if (param.pvLine.empty() || param.pvLine.front() != ttEntry->bestMove) {
-            cachedPV.resize(1);
-            cachedPV.front() = ttEntry->bestMove;
+        if (ttEntry->depth >= context.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
+          if (context.pvLine.empty() || context.pvLine.front() != ttEntry->bestMove) {
+            context.pvLine.resize(1);
+            context.pvLine.front() = ttEntry->bestMove;
           }
-
-          return SearchResult{
-            .score = ttEntry->score,
-            .bestMove = ttEntry->bestMove,
-            .nodesSearched = searchedNodes,
-            .searchingTime = elapsedTime(),
-            .pvLine = cachedPV,
-          };
+          return makeResult(ttEntry->score, ttEntry->bestMove);
         }
         ttMove = ttEntry->bestMove;
       }
@@ -331,11 +356,9 @@ namespace bb::searching {
       MoveList moves;
       state.generateMoves<ally>(moves);
       if (moves.empty()) {
-        if (state.isInCheck<ally>()) {
-          return SearchResult{evaluation::kCheckmateScore, std::nullopt, searchedNodes, elapsedTime()};
-        } else {
-          return SearchResult{evaluation::kStalemateScore, std::nullopt, searchedNodes, elapsedTime()};
-        }
+        context.pvLine.clear();
+        const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateScore : evaluation::kStalemateScore;
+        return makeResult(score, std::nullopt);
       }
       sortMoves<meta>(state, moves, ttMove, pvMove);
 
@@ -354,7 +377,7 @@ namespace bb::searching {
       int failLowCount = 0;
       int failHighCount = 0;
       auto [alpha, beta] = [&]() {
-        if (param.maxDepth <= 4) {
+        if (context.maxDepth <= 4) {
           return std::array<int32_t, 2>{evaluation::kCheckmateScore, -evaluation::kCheckmateScore};
         } else {
           return std::array<int32_t, 2>{param.pastEval - aspirationWindow_, param.pastEval + aspirationWindow_};
@@ -363,54 +386,51 @@ namespace bb::searching {
 
       // Search for the best move.
       for (;;) {
-        int32_t bestScore = alpha;
+        Eval bestEval(alpha, false);
         Move bestMove = moves[0];
 
         for (const Move& move : moves) {
           const MoveUndo undo = state.makeMove<ally>(move);
-          const int32_t score = -searchInternal<meta.flip().withType(NodeMeta::NodeType::Internal)>(state, param.maxDepth, 1,
-                                                                                                     -beta, -bestScore, move == pvMove,
-                                                                                                     param.pvLine, searchedNodes);
+          param.positionHistory.push(state.getHash());
+          searchStack_[1].isFollowingPV = move == pvMove;
+          Eval eval = searchInternal<meta.flip().toInternal()>(context, searchStack_.data() + 1, -beta, -bestEval.score);
+          eval.score = -eval.score;
+          param.positionHistory.pop();
           state.unmakeMove<ally>(move, undo);
-
-          if (score > bestScore) {
-            bestScore = score;
+          if (eval.score > bestEval.score) {
+            bestEval = eval;
             bestMove = move;
-
-            if (bestScore >= beta) {
+            if (bestEval.score >= beta) {
               break;
             } else {
               // Update PV.
-              updatePV(0, bestMove);
+              updatePV(searchStack_.data(), bestMove);
             }
           }
         }
 
-        if (bestScore >= beta) {
+        if (bestEval.score >= beta) {
           // Fail-high, the position is better than expected, increase beta and re-search.
           beta = std::min(-evaluation::kCheckmateScore, beta + expandWindow(failHighCount, aspirationWindow_));
           continue;
-        } else if (bestScore <= alpha) {
+        } else if (bestEval.score <= alpha) {
           // Fail-low, the position is worse than expected, decrease alpha and re-search.
           alpha = std::max(evaluation::kCheckmateScore, alpha - expandWindow(failLowCount, aspirationWindow_));
           continue;
         }
 
         // Update TT and PV.
-        ttTable_.put(TranspositionTable::Entry{
+        if (!bestEval.historyDependent) {
+          ttTable_.put(TranspositionTable::Entry{
           .key = state.getHash(),
-          .depth = param.maxDepth,
-          .score = bestScore,
+          .depth = context.maxDepth,
+          .score = bestEval.score,
           .scoreType = TranspositionTable::ScoreType::Exact,
           .bestMove = bestMove,
         });
-        return SearchResult{
-          .score = bestScore,
-          .bestMove = bestMove,
-          .nodesSearched = searchedNodes,
-          .searchingTime = elapsedTime(),
-          .pvLine = pvTable_.front(),
-        };
+        }
+        param.pvLine = searchStack_[0].pvLine;
+        return makeResult(bestEval.score, bestMove);
       }
     }
   };
