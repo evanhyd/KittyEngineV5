@@ -56,8 +56,8 @@ namespace bb::searching {
     static constexpr int32_t kEnPassantPriority = 150;
     static constexpr int32_t kCastlingPriority = 151;
     static constexpr int32_t kPromotionPriority = 506;
-    static constexpr int32_t kPrincipalVariationPriority = 10001;
     static constexpr int32_t kTranspositionPriority = 10000;
+    static constexpr int32_t kPrincipalVariationPriority = 20000;
     static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
     { {
         {105, 205, 305, 405, 505}, // pawn
@@ -116,7 +116,7 @@ namespace bb::searching {
       }
     }
 
-    void updatePV(SearchStack* frame, Move move) {
+    void acceptChildPVLine(SearchStack* frame, Move move) {
       frame->pvLine.resize((frame + 1)->pvLine.size() + 1);
       frame->pvLine.front() = move;
       std::copy((frame + 1)->pvLine.begin(), (frame + 1)->pvLine.end(), frame->pvLine.begin() + 1);
@@ -178,11 +178,16 @@ namespace bb::searching {
     template <NodeMeta meta>
     Eval searchInternal(SearchContext& context, SearchStack* frame, const int32_t alpha, const int32_t beta) {
       ++context.searchedNodes;
+      Move pvMove{};
       Move ttMove{};
 
       // Clear the old PV written by a sibling node.
+      // Load up PV.
       if constexpr (meta.isInternal()) {
         frame->pvLine.clear();
+        if (frame->isFollowingPV && context.pvLine.size() > frame->depth) {
+          pvMove = context.pvLine[frame->depth];
+        }
       }
 
       // Only positions since the last pawn move or capture can repeat.
@@ -204,9 +209,14 @@ namespace bb::searching {
                 (ttEntry->scoreType == TranspositionTable::ScoreType::UpperBound && ttEntry->score <= alpha) ||
                 (ttEntry->scoreType == TranspositionTable::ScoreType::LowerBound && ttEntry->score >= beta)) {
 
-              // TODO: retireve the PV moves after the truncation.
-              frame->pvLine.resize(1);
-              frame->pvLine.front() = ttEntry->bestMove;
+              // Retrieve POV line from context if TT move is the PV move.
+              if (ttEntry->bestMove == pvMove) {
+                frame->pvLine.resize(context.pvLine.size() - frame->depth);
+                std::copy(context.pvLine.begin() + frame->depth, context.pvLine.end(), frame->pvLine.begin());
+              } else {
+                frame->pvLine.resize(1);
+                frame->pvLine.front() = ttEntry->bestMove;
+              }
               return Eval(ttEntry->score, false);
             }
           }
@@ -258,11 +268,7 @@ namespace bb::searching {
       }
 
       // Move ordering.
-      Move pvMove{};
       if constexpr (meta.isInternal()) {
-        if (frame->isFollowingPV && context.pvLine.size() > frame->depth) {
-          pvMove = context.pvLine[frame->depth];
-        }
         sortMoves<meta>(context.state, moves, ttMove, pvMove);
         bestMove = moves[0];
       } else {
@@ -295,7 +301,7 @@ namespace bb::searching {
           bestEval = eval;
           bestMove = move;
           if constexpr (meta.isInternal()) {
-            updatePV(frame, bestMove);
+            acceptChildPVLine(frame, bestMove);
           }
         }
       }
@@ -346,7 +352,8 @@ namespace bb::searching {
       Move ttMove{};
       if (auto ttEntry = ttTable_.get(state.getHash())) {
         if (ttEntry->depth >= context.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
-          if (context.pvLine.empty() || context.pvLine.front() != ttEntry->bestMove) {
+          // Truncate if the root TT move diverges from the PV.
+          if (ttEntry->bestMove != pvMove) {
             context.pvLine.resize(1);
             context.pvLine.front() = ttEntry->bestMove;
           }
@@ -407,7 +414,7 @@ namespace bb::searching {
               break;
             } else {
               // Update PV.
-              updatePV(searchStack_.data(), bestMove);
+              acceptChildPVLine(searchStack_.data(), bestMove);
             }
           }
         }

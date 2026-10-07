@@ -66,27 +66,32 @@ namespace bb {
           playMove(moveText);
         }
 
-        // Keep the old PV if replay ends at the same position, or advance it by one move if it ends at the PV successor.
+        // Keep the old PV if replay ends at the same position or at a position along that PV.
         if (state_.getHash() == previousState.getHash()) {
           pvLine_ = previousPV;
         } else if (!previousPV.empty()) {
-          const auto matchesExpectedSuccessor = [&]<Side ally>() {
+          BoardState pvState = previousState;
+          for (size_t i = 0; i < previousPV.size(); ++i) {
             MoveList legalMoves;
-            previousState.generateMoves<ally>(legalMoves);
-            const Move pvMove = previousPV.front();
-            if (std::find(legalMoves.begin(), legalMoves.end(), pvMove) == legalMoves.end()) {
-              return false;
+            const Side ally = pvState.getSideToMove();
+            if (ally == White) {
+              pvState.generateMoves<White>(legalMoves);
+            } else {
+              pvState.generateMoves<Black>(legalMoves);
             }
-            BoardState nextState = previousState;
-            nextState.makeMove<ally>(pvMove);
-            return nextState.getHash() == state_.getHash();
-          };
-          const bool matches = previousState.getSideToMove() == White
-            ? matchesExpectedSuccessor.template operator()<White>()
-            : matchesExpectedSuccessor.template operator()<Black>();
-          if (matches) {
-            pvLine_ = previousPV;
-            advancePV(previousPV.front());
+            if (std::find(legalMoves.begin(), legalMoves.end(), previousPV[i]) == legalMoves.end()) {
+              break;
+            }
+            if (ally == White) {
+              pvState.makeMove<White>(previousPV[i]);
+            } else {
+              pvState.makeMove<Black>(previousPV[i]);
+            }
+            if (pvState.getHash() == state_.getHash()) {
+              pvLine_.resize(previousPV.size() - i - 1);
+              std::copy(previousPV.begin() + i + 1, previousPV.end(), pvLine_.begin());
+              break;
+            }
           }
         }
       } catch (...) {

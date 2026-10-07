@@ -120,6 +120,7 @@ namespace {
   struct PVTrackingSearchPolicy {
     std::vector<std::vector<Move>>* incomingLines;
     bool seeded = false;
+    size_t seedLength = 2;
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
@@ -127,14 +128,18 @@ namespace {
       searching::PVLine& pvLine = param.pvLine;
       MoveList moves;
       state.generateMoves<ally>(moves);
-      if (!seeded && !moves.empty()) {
-        pvLine.push(moves[0]);
+      if (!seeded) {
         BoardState nextState = state;
-        nextState.makeMove<ally>(moves[0]);
-        MoveList replies;
-        nextState.generateMoves<getOtherSide(ally)>(replies);
-        if (!replies.empty()) {
-          pvLine.push(replies[0]);
+        Side side = ally;
+        for (size_t i = 0; i < seedLength; ++i) {
+          MoveList legalMoves;
+          if (side == White) nextState.generateMoves<White>(legalMoves);
+          else nextState.generateMoves<Black>(legalMoves);
+          if (legalMoves.empty()) break;
+          pvLine.push(legalMoves[0]);
+          if (side == White) nextState.makeMove<White>(legalMoves[0]);
+          else nextState.makeMove<Black>(legalMoves[0]);
+          side = getOtherSide(side);
         }
         seeded = true;
       }
@@ -485,6 +490,23 @@ TEST(BoardPV, ReplayedPositionMovesPreserveMatchingSuffix) {
   board.setPosition(fen::kStartPosition, bothMoves);
   board.search(1, std::nullopt, [](const searching::SearchResult&) {});
   EXPECT_TRUE(incomingLines.back().empty());
+}
+
+TEST(BoardPV, ReplayedEngineMoveAndOpponentReplyPreserveRemainingPV) {
+  std::vector<std::vector<Move>> incomingLines;
+  Board board{PVTrackingSearchPolicy{&incomingLines, false, 4}, TestTimePolicy{kTestTimePercentage}};
+  const searching::PVLine originalPV = *board.search(1, std::nullopt, [](const searching::SearchResult&) {}).pvLine;
+  ASSERT_EQ(originalPV.size(), 4u);
+
+  const std::string firstText = notation::moveToString(originalPV[0]);
+  const std::string replyText = notation::moveToString(originalPV[1]);
+  const std::array<std::string_view, 2> moves{firstText, replyText};
+  board.setPosition(fen::kStartPosition, moves);
+  board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+
+  ASSERT_EQ(incomingLines.back().size(), 2u);
+  EXPECT_EQ(incomingLines.back()[0], originalPV[2]);
+  EXPECT_EQ(incomingLines.back()[1], originalPV[3]);
 }
 
 TEST(BoardPV, FenOnlySuccessorAndFailedPositionUpdateKeepCorrectPV) {
