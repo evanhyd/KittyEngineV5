@@ -190,11 +190,20 @@ namespace bb::searching {
         }
       }
 
-      // Only positions since the last pawn move or capture can repeat.
+      
       {
+        // Threefold repetition.
+        // Search position up to the half-move.
         const auto hBegin = context.positionHistory.rbegin();
         const auto hEnd = hBegin + std::min(context.positionHistory.size(), static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
-        if ((hBegin != hEnd && std::find(hBegin + 1, hEnd, context.state.getHash()) != hEnd) || context.state.getHalfmoveClock() >= 100) {
+        const auto it = std::find(hBegin + 1, hEnd, context.state.getHash());
+        if (it != hEnd) {
+          if (int dist = int(std::distance(hBegin, it)); dist >= frame->depth) {
+            return Eval(0, false); // Position played in the actual board, insert to TT.
+          }
+          return Eval(0, true); // Position played in the search tree only, don't insert to TT.
+        }
+        if (context.state.getHalfmoveClock() >= 100) {
           return Eval(0, true);
         }
       }
