@@ -46,7 +46,7 @@ namespace bb::searching {
 
     struct SearchStack {
       const int depth;
-      bool isFollowingPV = false;
+      bool isFollowingPV;
       PVLine pvLine;
     };
 
@@ -68,9 +68,9 @@ namespace bb::searching {
         {100, 200, 300, 400, 500}  // king
     } };
 
-    template <size_t... Indices>
-    static constexpr auto makeSearchStack(std::index_sequence<Indices...>) {
-      return std::array<SearchStack, sizeof...(Indices)>{{SearchStack{static_cast<int>(Indices)}...}};
+    template <int... Indices>
+    static constexpr auto makeSearchStack(std::integer_sequence<int, Indices...>) {
+      return std::array<SearchStack, sizeof...(Indices)>{{SearchStack{.depth = Indices }...}};
     }
 
     EvalPolicy evalPolicy_;
@@ -135,7 +135,7 @@ namespace bb::searching {
         int32_t priority;
         Move move;
       };
-      static SmallVec<PriorityMove> scoredMoves;
+      static SmallVec<PriorityMove> scoredMoves{};
       scoredMoves.resize(moves.size());
 
       // Calculate the priority.
@@ -185,12 +185,15 @@ namespace bb::searching {
         frame->pvLine.clear();
       }
 
-      // Twofold Repetition heuristics.
-      // Losing side incentivized to draw, winning side try to avoid.
-      if (std::find(context.positionHistory.rbegin() + 1, context.positionHistory.rend(), context.state.getHash())
-          != context.positionHistory.rend()) {
-        return Eval(0, true);
+      // Only positions since the last pawn move or capture can repeat.
+      {
+        const auto hBegin = context.positionHistory.rbegin();
+        const auto hEnd = hBegin + std::min(context.positionHistory.size(), static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
+        if ((hBegin != hEnd && std::find(hBegin + 1, hEnd, context.state.getHash()) != hEnd) || context.state.getHalfmoveClock() >= 100) {
+          return Eval(0, true);
+        }
       }
+      
 
       if constexpr (meta.isInternal()) {
         // Lookup transposition table.
@@ -313,7 +316,7 @@ namespace bb::searching {
   public:
     explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow, size_t tranpositionTableSize)
       : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow), ttTable_(tranpositionTableSize),
-        searchStack_(makeSearchStack(std::make_index_sequence<kMaxDepthHardCutoff + 1>{})) {
+        searchStack_(makeSearchStack(std::make_integer_sequence<int, kMaxDepthHardCutoff + 1>{})) {
     }
 
     template <Side ally>
