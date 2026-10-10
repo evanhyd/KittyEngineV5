@@ -38,7 +38,11 @@ namespace bb::uci {
     GoCallback onGo, 
     SimpleCallback onQuit,
     PlayCallback onPlay,
-    PerftCallback onPerft)
+    PerftCallback onPerft
+#if KITTY_ENABLE_SYZYGY
+    , OptionCallback onOption
+#endif
+  )
     : 
     onUci_(std::move(onUci)), 
     onIsReady_(std::move(onIsReady)),
@@ -47,7 +51,11 @@ namespace bb::uci {
     onGo_(std::move(onGo)), 
     onQuit_(std::move(onQuit)),
     onPlay_(std::move(onPlay)),
-    onPerft_(std::move(onPerft)) {}
+    onPerft_(std::move(onPerft))
+#if KITTY_ENABLE_SYZYGY
+    , onOption_(std::move(onOption))
+#endif
+  {}
 
   void UciProtocol::send(std::string_view line) {
     const std::vector<std::string_view> words = splitTokens(line);
@@ -97,6 +105,22 @@ namespace bb::uci {
         ++next;
       }
       onPosition_(fen, args.subspan(next));
+#if KITTY_ENABLE_SYZYGY
+    } else if (command == "setoption") {
+      if (args.size() < 2 || args[0] != "name") throw std::invalid_argument("setoption needs name");
+      size_t separator = 2;
+      while (separator < args.size() && args[separator] != "value") ++separator;
+      const auto first = args[1];
+      const auto last = args[separator - 1];
+      const std::string_view name(first.data(), last.data() + last.size() - first.data());
+      std::string_view value;
+      if (separator + 1 < args.size()) {
+        const auto begin = args[separator + 1];
+        const auto end = args.back();
+        value = {begin.data(), static_cast<size_t>(end.data() + end.size() - begin.data())};
+      }
+      if (onOption_) onOption_(name, value);
+#endif
     } else if (command == "go") {
       onGo_(args);
     } else if (command == "perft") {

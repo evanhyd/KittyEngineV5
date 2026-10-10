@@ -4,6 +4,9 @@
 #include "searching_policy.h"
 #include "search_draw.h"
 #include "transposition_table.h"
+#if KITTY_ENABLE_SYZYGY
+#include "tablebase.h"
+#endif
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -43,6 +46,9 @@ namespace bb::searching {
       PVLine& pvLine;
       int maxDepth; // main search max depth
       uint64_t searchedNodes = 1;
+#if KITTY_ENABLE_SYZYGY
+      uint64_t tablebaseHits = 0;
+#endif
 
       uint64_t transpositionKey() const noexcept {
         // No search, including quiescence, goes beyond the hard ply limit.
@@ -87,6 +93,11 @@ namespace bb::searching {
     const int32_t aspirationWindow_;
     TranspositionTable ttTable_;
     std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
+#if KITTY_ENABLE_SYZYGY
+    tablebase::Service* tablebases_ = nullptr;
+    std::optional<tablebase::RootResult> rootTablebase_;
+    bool rootProbed_ = false;
+#endif
 
     // Convert root to mate distance penalty to current node to mate distance penalty.
     // Root -------------------------ThisNode------------------------ Checkmate
@@ -185,7 +196,11 @@ namespace bb::searching {
     /////////////////////
     // SEARCH INTERNAL //
     /////////////////////
-    template <NodeMeta meta>
+    template <NodeMeta meta
+#if KITTY_ENABLE_SYZYGY
+      , bool UseTablebases
+#endif
+    >
     Eval searchInternal(SearchContext& context, SearchStack* frame, const int32_t alpha, const int32_t beta) {
       ++context.searchedNodes;
       Move pvMove{};
@@ -210,12 +225,42 @@ namespace bb::searching {
         }
         return Eval(0, true);
       }
-      
 
+#if KITTY_ENABLE_SYZYGY
+      int32_t tbFloor = evaluation::kCheckmateScore;
+      int32_t tbCeiling = -evaluation::kCheckmateScore;
+      bool tbProven = false;
+      if constexpr (UseTablebases && meta.isInternal()) {
+        if (tablebases_->canProbeWdl(context.state, context.maxDepth - frame->depth)) {
+          if (auto wdl = tablebases_->probeWdl(context.state)) {
+            ++context.tablebaseHits;
+            tbProven = true;
+            const int outcome = tablebase::outcome(*wdl);
+            if (outcome == 0) return Eval(0, true);
+            if (outcome > 0) tbFloor = tablebase::kWinScore - frame->depth;
+            else {
+              // A WDL loss does not supply mate distance. Detect an actual mate.
+              if (context.state.template isInCheck<meta.ally>()) {
+                MoveList evasions;
+                context.state.template generateMoves<meta.ally>(evasions);
+                if (evasions.empty()) return Eval(evaluation::kCheckmateScore + frame->depth, false);
+              }
+              tbCeiling = -tablebase::kWinScore + frame->depth;
+            }
+            if (tbFloor >= beta) return Eval(tbFloor, true);
+            if (tbCeiling <= alpha) return Eval(tbCeiling, true);
+          }
+        }
+      }
+#endif
       if constexpr (meta.isInternal()) {
         // Lookup transposition table.
         if (auto ttEntry = ttTable_.get(context.transpositionKey()); ttEntry) {
-          if (ttEntry->depth >= context.maxDepth - frame->depth) {
+          if (ttEntry->depth >= context.maxDepth - frame->depth
+#if KITTY_ENABLE_SYZYGY
+              && (!UseTablebases || !tbProven)
+#endif
+          ) {
             ttEntry->score = denormalizeCheckmateScore(ttEntry->score, frame->depth);
             if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact ||
                 (ttEntry->scoreType == TranspositionTable::ScoreType::UpperBound && ttEntry->score <= alpha) ||
@@ -238,7 +283,19 @@ namespace bb::searching {
         // Perform quiescence search if reach ther max depth.
         if (frame->depth == context.maxDepth) {
           --context.searchedNodes;
-          return searchInternal<meta.toQuiescence()>(context, frame, alpha, beta);
+#if KITTY_ENABLE_SYZYGY
+          if constexpr (UseTablebases) {
+            auto value = searchInternal<meta.toQuiescence(), UseTablebases>(context, frame, alpha, beta);
+            value.score = std::clamp(value.score, tbFloor, tbCeiling);
+            value.historyDependent |= tbProven;
+            return value;
+          } else
+#endif
+          return searchInternal<meta.toQuiescence()
+#if KITTY_ENABLE_SYZYGY
+            , UseTablebases
+#endif
+          >(context, frame, alpha, beta);
         }
       }
 
@@ -292,10 +349,21 @@ namespace bb::searching {
         MoveUndo undo = context.state.template makeMove<meta.ally>(move, evalPolicy_);
         context.positionHistory.push(context.state.getRepetitionHash());
         (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
-        Eval eval = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
+        Eval eval = searchInternal<meta.flip()
+#if KITTY_ENABLE_SYZYGY
+          , UseTablebases
+#endif
+        >(context, frame + 1, -beta, -bestEval.score);
         eval.score = -eval.score;
         context.positionHistory.pop();
         context.state.template unmakeMove<meta.ally>(move, undo, evalPolicy_);
+#if KITTY_ENABLE_SYZYGY
+        if constexpr (UseTablebases && meta.isInternal()) {
+          // A node's proven win does not imply that every child wins.
+          eval.score = std::min(eval.score, tbCeiling);
+          eval.historyDependent |= tbProven;
+        }
+#endif
 
         if (eval.score >= beta) {
           if (meta.isInternal() && !eval.historyDependent) {
@@ -320,6 +388,13 @@ namespace bb::searching {
       }
 
       // Update TT and PV.
+#if KITTY_ENABLE_SYZYGY
+      if constexpr (UseTablebases && meta.isInternal()) {
+        if (bestEval.score < tbFloor) frame->pvLine.clear();
+        bestEval.score = std::clamp(bestEval.score, tbFloor, tbCeiling);
+        bestEval.historyDependent |= tbProven;
+      }
+#endif
       bestEval.historyDependent |= historyDependent;
       if (meta.isInternal() && !bestEval.historyDependent) {
         ttTable_.put(TranspositionTable::Entry{
@@ -334,10 +409,29 @@ namespace bb::searching {
     }
 
   public:
-    explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow, size_t tranpositionTableSize)
+    explicit NegamaxSearchPolicy(EvalPolicy evalPolicy, int32_t aspirationWindow, size_t tranpositionTableSize
+#if KITTY_ENABLE_SYZYGY
+      , tablebase::Service* tablebases = nullptr
+#endif
+    )
       : evalPolicy_(std::move(evalPolicy)), aspirationWindow_(aspirationWindow), ttTable_(tranpositionTableSize),
         searchStack_(makeSearchStack(std::make_integer_sequence<int, kMaxDepthHardCutoff + 1>{})) {
+#if KITTY_ENABLE_SYZYGY
+      tablebases_ = tablebases;
+#endif
     }
+
+#if KITTY_ENABLE_SYZYGY
+    bool tablebasesEnabled() const noexcept { return tablebases_ && tablebases_->enabled(); }
+    bool hasTablebaseService() const noexcept { return tablebases_ != nullptr; }
+    void beginTablebaseSearch() { rootProbed_ = false; rootTablebase_.reset(); }
+    std::string setTablebaseOption(std::string_view name, std::string_view value) {
+      if (!tablebases_) throw std::logic_error("No Syzygy service attached");
+      ttTable_.clear();
+      beginTablebaseSearch();
+      return tablebases_->setOption(name, value);
+    }
+#endif
 
     void reset() {
       evalPolicy_.reset();
@@ -365,7 +459,11 @@ namespace bb::searching {
       evalPolicy_.markEnpassant(square);
     }
 
-    template <Side ally>
+    template <Side ally
+#if KITTY_ENABLE_SYZYGY
+      , bool UseTablebases = false
+#endif
+    >
     SearchResult search(BoardState& state, const SearchParam& param) {
       static constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
       evalPolicy_.prepare(state);
@@ -379,7 +477,21 @@ namespace bb::searching {
           std::chrono::steady_clock::now() - startTime);
       };
       const auto makeResult = [&](int32_t score, std::optional<Move> bestMove) {
-        return SearchResult{score, bestMove, context.searchedNodes, elapsedTime(), &param.pvLine};
+#if KITTY_ENABLE_SYZYGY
+        if constexpr (UseTablebases) {
+          if (rootTablebase_ && rootTablebase_->outcome) {
+            const int outcome = *rootTablebase_->outcome;
+            if (outcome == 0) score = 0;
+            else if (outcome > 0) score = std::max(score, tablebase::kWinScore);
+            else score = std::min(score, -tablebase::kWinScore);
+          }
+        }
+#endif
+        return SearchResult{score, bestMove, context.searchedNodes, elapsedTime(), &param.pvLine
+#if KITTY_ENABLE_SYZYGY
+          , context.tablebaseHits
+#endif
+        };
       };
 
       // PV table.
@@ -402,11 +514,25 @@ namespace bb::searching {
         context.pvLine.front() = moves.front();
         return makeResult(0, moves.front());
       }
+#if KITTY_ENABLE_SYZYGY
+      if constexpr (UseTablebases) {
+        if (!rootProbed_) {
+          rootProbed_ = true;
+          rootTablebase_ = tablebases_->rankRoot(state, moves, draws::hasRepeated(param.positionHistory, state.getHalfmoveClock()));
+          if (rootTablebase_) ++context.tablebaseHits;
+        }
+        if (rootTablebase_) moves = rootTablebase_->bestMoves;
+      }
+#endif
 
       // Lookup transposition table.
       Move ttMove{};
       if (auto ttEntry = ttTable_.get(context.transpositionKey())) {
-        if (ttEntry->depth >= context.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
+        if (ttEntry->depth >= context.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact
+#if KITTY_ENABLE_SYZYGY
+            && (!UseTablebases || !rootTablebase_)
+#endif
+        ) {
           // Truncate if the root TT move diverges from the PV.
           if (ttEntry->bestMove != pvMove) {
             context.pvLine.resize(1);
@@ -434,7 +560,11 @@ namespace bb::searching {
       int failLowCount = 0;
       int failHighCount = 0;
       auto [alpha, beta] = [&]() {
-        if (context.maxDepth <= 4) {
+        if (context.maxDepth <= 4
+#if KITTY_ENABLE_SYZYGY
+            || (UseTablebases && rootTablebase_)
+#endif
+        ) {
           return std::array<int32_t, 2>{evaluation::kCheckmateScore, -evaluation::kCheckmateScore};
         } else {
           return std::array<int32_t, 2>{param.pastEval - aspirationWindow_, param.pastEval + aspirationWindow_};
@@ -451,7 +581,11 @@ namespace bb::searching {
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getRepetitionHash());
           searchStack_[1].isFollowingPV = move == pvMove;
-          Eval eval = searchInternal<meta.flip().toInternal()>(context, searchStack_.data() + 1, -beta, -bestEval.score);
+          Eval eval = searchInternal<meta.flip().toInternal()
+#if KITTY_ENABLE_SYZYGY
+            , UseTablebases
+#endif
+          >(context, searchStack_.data() + 1, -beta, -bestEval.score);
           eval.score = -eval.score;
           param.positionHistory.pop();
           state.unmakeMove<ally>(move, undo, evalPolicy_);
@@ -479,7 +613,11 @@ namespace bb::searching {
         }
 
         // Update TT and PV.
-        if (!historyDependent) {
+        if (!historyDependent
+#if KITTY_ENABLE_SYZYGY
+            && (!UseTablebases || !rootTablebase_)
+#endif
+        ) {
           ttTable_.put(TranspositionTable::Entry{
           .key = context.transpositionKey(),
           .depth = context.maxDepth,

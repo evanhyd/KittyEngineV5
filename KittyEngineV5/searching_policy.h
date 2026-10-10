@@ -1,4 +1,5 @@
 #pragma once
+#include "build_config.h"
 #include "move.h"
 #include "small_vec.h"
 #include <cstdint>
@@ -28,6 +29,9 @@ namespace bb {
       uint64_t nodesSearched;
       std::chrono::nanoseconds searchingTime;
       const PVLine* pvLine;
+#if KITTY_ENABLE_SYZYGY
+      uint64_t tablebaseHits = 0; // Successful probes in this iteration only.
+#endif
     };
 
     template <typename SearchPolicy>

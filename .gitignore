@@ -365,3 +365,7 @@ FodyWeavers.xsd
 DiagnosticsScratch/
 /KittyEngineTest/vcpkg_installed/x64-windows
 /KittyEngineV5/weights.bin
+
+# Tablebase data is installed separately, never committed with the engine.
+*.rtbw
+*.rtbz

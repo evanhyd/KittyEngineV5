@@ -192,6 +192,15 @@
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release Profiler|x64'">$(SolutionDir)KittyEngineV5;$(GTestInstalledRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
+  <Import Project="..\KittyEngine.Build.props" />
+  <ItemDefinitionGroup Condition="'$(EnableSyzygy)' == 'true'">
+    <Link>
+      <AdditionalDependencies>$(EngineObjectDirectory)tablebase.obj;$(EngineObjectDirectory)tbprobe.obj;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(EnableSyzygy)' == 'true'">
+    <ClCompile Include="tablebase_test.cpp" />
+  </ItemGroup>
   <ItemGroup>
     <ClCompile Include="evaluation_test.cpp" />
     <ClCompile Include="search_draw_test.cpp" />
@@ -205,6 +214,9 @@
       <Project>{55493ea5-91e7-4b93-85ec-71081b8dffe2}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="syzygy_test_path.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyAddressSanitizerRuntime" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

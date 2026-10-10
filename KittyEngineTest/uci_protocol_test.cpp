@@ -217,6 +217,7 @@ namespace {
     int64_t timeMs;
     uint64_t nodes;
     uint64_t nps;
+    uint64_t tablebaseHits = 0;
     std::vector<std::string> pv;
   };
 
@@ -233,6 +234,10 @@ namespace {
       return std::nullopt;
     }
     if (stream >> extra) {
+      if (extra == "tbhits") {
+        if (!(stream >> parsed.tablebaseHits)) return std::nullopt;
+        if (!(stream >> extra)) return parsed;
+      }
       if (extra != "pv") {
         return std::nullopt;
       }

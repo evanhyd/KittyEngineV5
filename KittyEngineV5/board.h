@@ -52,6 +52,20 @@ namespace bb {
       return state_;
     }
 
+#if KITTY_ENABLE_SYZYGY
+    bool hasTablebaseService() const noexcept {
+      if constexpr (requires { searchingPolicy_.hasTablebaseService(); })
+        return searchingPolicy_.hasTablebaseService();
+      else return false;
+    }
+    std::string setTablebaseOption(std::string_view name, std::string_view value) {
+      if constexpr (requires { searchingPolicy_.setTablebaseOption(name, value); }) {
+        pvLine_.clear();
+        return searchingPolicy_.setTablebaseOption(name, value);
+      } else throw std::invalid_argument("Search policy does not support Syzygy");
+    }
+#endif
+
     void reset() {
       searchingPolicy_.reset();
       positionHistory_.clear();
@@ -144,7 +158,11 @@ namespace bb {
       timeControlPolicy_.set(timeControl);
       maxDepth = std::min(maxDepth, searching::kMaxDepthHardCutoff);
 
-      const auto iterativeDeepening = [&]<Side ally>() {
+      const auto iterativeDeepening = [&]<Side ally
+#if KITTY_ENABLE_SYZYGY
+        , bool UseTablebases = false
+#endif
+      >() {
         searching::SearchResult result{
           .score = 0,
           .pvLine = &pvLine_,
@@ -157,6 +175,10 @@ namespace bb {
             .positionHistory = positionHistory_,
             .pvLine = pvLine_,
           };
+#if KITTY_ENABLE_SYZYGY
+          if constexpr (UseTablebases) result = searchingPolicy_.template search<ally, true>(state_, param);
+          else
+#endif
           result = searchingPolicy_.template search<ally>(state_, param);
           resultCallback(result);
 
@@ -168,6 +190,16 @@ namespace bb {
         return result;
       };
 
+#if KITTY_ENABLE_SYZYGY
+      // Select once for the whole iterative-deepening search, never per node.
+      if constexpr (requires { searchingPolicy_.tablebasesEnabled(); searchingPolicy_.beginTablebaseSearch(); }) {
+        if (searchingPolicy_.tablebasesEnabled()) {
+          searchingPolicy_.beginTablebaseSearch();
+          if (state_.getSideToMove() == White) return iterativeDeepening.template operator()<White, true>();
+          return iterativeDeepening.template operator()<Black, true>();
+        }
+      }
+#endif
       if (state_.getSideToMove() == White) {
         return iterativeDeepening.template operator()<White>();
       } else {

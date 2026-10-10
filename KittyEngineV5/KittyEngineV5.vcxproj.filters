@@ -123,4 +123,11 @@
       <Filter>Resources</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="tablebase.cpp" />
+    <ClCompile Include="..\third_party\fathom\tbprobe.c" />
+    <ClInclude Include="tablebase.h" />
+    <ClInclude Include="build_config.h" />
+    <ClInclude Include="search_draw.h" />
+  </ItemGroup>
 </Project>

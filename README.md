@@ -1,6 +1,158 @@
 # KittyEngineV5
 A C++ bitboard chess engine with template-meta programming performance optimizations.
 
+## Optional Syzygy tablebases
+
+Syzygy support is **off by default**. Build from a Visual Studio developer shell:
+
+```powershell
+msbuild KittyEngineV5.sln /p:Configuration=Release /p:Platform=x64 /p:EnableSyzygy=true
+```
+
+Use `/p:EnableSyzygy=false` to compile it out completely. The shared
+`KittyEngine.Build.props` controls both projects, including their object dependencies.
+Enabled and disabled outputs are isolated in `x64/Release/syzygy/` and
+`x64/Release/plain/`; switching does not require deleting intermediate files.
+Debug and Release Profiler use the same switch. The supported build target for
+this integration is x64. Install the project's v145 C++ tools and Windows SDK;
+`/p:WindowsTargetPlatformVersion=...` can select another installed SDK. Tests
+require GoogleTest, as before.
+
+Install local **WDL (`.rtbw`) and DTZ (`.rtbz`)** files separately. A complete
+3–5 piece set is a practical starting point; every piece count includes the two
+kings. Use a [Syzygy download mirror](https://tablebase.lichess.ovh/tables/standard/)
+and verify its published checksums. Install all materials up to your chosen
+limit, including the smaller tables needed after captures and promotions. SSD
+storage helps cold probes. No tablebase files or trained `weights.bin` are
+included in this repository, and the engine never downloads data during play.
+
+Configure an enabled engine through UCI:
+
+```text
+uci
+setoption name SyzygyPath value D:\Chess Tables\syzygy
+setoption name SyzygyProbeLimit value 5
+setoption name SyzygyProbeDepth value 1
+isready
+position fen 4k3/8/8/8/8/8/8/R3K3 w - - 17 1
+go depth 6
+```
+
+Windows paths can contain spaces; separate multiple directories with `;`.
+`SyzygyProbeLimit` accepts 0–7 (default 5); 0 disables probing at runtime.
+`SyzygyProbeDepth` accepts 0–64 (default 1), measured in remaining search plies.
+An empty `SyzygyPath` or `<empty>` also disables probing. Path discovery reports
+the largest discovered material, not a guarantee of complete coverage. Missing
+files cause ordinary search fallback. Options apply between searches; the
+existing UCI loop is synchronous. Reconfiguration clears search caches while
+preserving the current position and game history. Enabled builds report `tbhits`.
+
+### Implementation and performance contract
+
+The pinned [Fathom source](third_party/fathom/README.kitty.md) is compiled directly
+into enabled builds. It reads Syzygy files through memory mappings. The compact
+`tablebase.*` module owns its lifecycle, translates bitboards and moves, and
+exposes optional results. There are no subprocesses, network probes, virtual
+calls, or per-probe heap allocations in the adapter. Initial file mapping and
+Fathom's lazy table preparation can allocate and perform I/O.
+
+When compiled out, there are no tablebase members, options, counters, probe
+checks, or linked Fathom objects. An enabled build with no usable path or with
+limit 0 selects the ordinary search specialization once, before iterative
+deepening. Active search uses cheap eligibility checks before converting a
+position. The neural evaluator is unchanged.
+
+DTZ ranks legal root moves once per `go`, then search considers only the best
+rank throughout iterative deepening. Search WDL probes require a zero halfmove
+clock, sufficient remaining depth, supported piece count, and no castling rights.
+Quiescence does not probe directly. The fifty-move rule is always respected:
+cursed wins and blessed losses count as draws. DTZ ranks at the rounding
+boundary do not claim an exact outcome. Proven tablebase wins use score 30000
+(adjusted by ply inside search); only an actual searched mate is reported as
+`score mate`.
+
+Draw checks precede probes and cached scores, with checkmate taking precedence
+at the fifty-move boundary. Repetition keys omit an en-passant square only when
+no legal en-passant capture exists; the evaluator's raw position hash stays
+unchanged. Cache keys include the halfmove clock when the fifty-move boundary
+is reachable within the hard 64-ply search limit, and results affected by a
+tablebase or repetition are not stored as history-independent cache scores.
+These draw/cache corrections also apply to disabled builds and are separate
+from the zero tablebase-overhead guarantee. This is not a general solution to
+graph-history interaction in heuristic transposition caches.
+
+Probe latency depends on installed material, storage and the OS file cache.
+The existing engine checks its time budget between completed iterations, so a
+cold root probe is included in elapsed time but cannot be interrupted. This
+change does not add asynchronous search or claim hard time deadlines.
+
+### Verification
+
+The small optional fixture set is downloaded only by an explicit test setup step:
+
+```powershell
+.\tools\fetch-syzygy-fixtures.ps1
+$env:KITTY_SYZYGY_TEST_PATH = "$PWD\DiagnosticsScratch\syzygy"
+.\x64\Release\syzygy\KittyEngineTest.exe
+```
+
+The script pins the python-chess fixture revision and checks all 70 files with
+SHA-256. This is a 4.15 MiB test subset, not the recommended production set.
+Real-file tests explicitly skip when the environment variable is absent.
+Run both build variants and the enabled Debug/AddressSanitizer configuration.
+GoogleTest must use compatible runtime and sanitizer settings in Debug.
+
+For an independent decoder comparison and reproducible performance samples:
+
+```powershell
+.\tools\build-benchmark.ps1 -Name plain
+.\tools\build-benchmark.ps1 -EnableSyzygy -Name syzygy
+python -m pip install python-chess==1.999
+python tools\check-syzygy.py DiagnosticsScratch\bench\syzygy\bench.exe DiagnosticsScratch\syzygy
+python tools\compare-benchmarks.py --plain DiagnosticsScratch\bench\plain\bench.exe --enabled DiagnosticsScratch\bench\syzygy\bench.exe --tables DiagnosticsScratch\syzygy
+```
+
+The comparison checks both side orientations, legal moves, WDL, DTZ ranks,
+en passant, promotions and nonzero clocks. Benchmarks use the handcrafted
+evaluator so they do not require private model weights; they do not establish
+neural-evaluator throughput or playing-strength gains. `build-benchmark.ps1`
+also accepts `-SourceDirectory` for a baseline checkout and `-Assembly` for
+compiler listings. Raw timing samples remain in `DiagnosticsScratch/bench/`.
+
+### Measured validation (2026-10-09)
+
+On Windows x64, Ryzen 9 3900XT, MSVC 19.50.35728, AVX2 and link-time
+optimization: Release passed 102 tests with the feature compiled out and 113
+with it enabled. The final search changes also passed 44 relevant Debug/ASan
+tests. Release Profiler builds successfully. The independent python-chess
+comparison passed 3,503 WDL/clock checks and 3,503 complete root rankings.
+
+The disabled benchmark's complete `.text` section is byte-identical to the
+draw/cache prerequisite commit `0e3f095`, with no Fathom symbols in its link
+map. Verify equivalent builds with
+`python tools/check-disabled-code.py BASELINE_EXE DISABLED_EXE`.
+This proves removal of the tablebase integration for this compiler/build; it
+does not erase the separately reviewed draw-rule corrections.
+
+The following are median milliseconds from 11 interleaved rounds, five repeats,
+excluding the first round and first repeat. Processes were pinned to logical
+CPU 23 (`--cpu 23`). These are warm OS-cache samples using the small fixture set.
+
+| Fixed-depth position | Compiled out | Enabled, inactive | Enabled, probing | Probing hits |
+| --- | ---: | ---: | ---: | ---: |
+| Start, depth 5 | 6.135 | 6.414 | 6.400 | 0 |
+| Kiwipete, depth 4 | 77.775 | 78.664 | 78.763 | 0 |
+| Middlegame, depth 5 | 28.832 | 29.631 | 29.793 | 0 |
+| KRvK, depth 6 | 1.195 | 1.148 | 1.383 | 20 |
+| KPvK, depth 7 | 0.538 | 0.542 | 1.012 | 517 |
+
+Outside coverage, active probing added at most 0.6% against the same enabled
+binary with probing inactive. The enabled build was 1.3–4.3% slower than the
+compiled-out build in those three cases; a universal sub-1% target is **not
+established**. Endgame searches can take longer because their scores, root move
+sets and search trees change. These samples establish neither an Elo gain nor
+production NNUE performance, and do not measure a genuinely cold disk cache.
+
 ## Authorship
 The core engine, including bitboards, search, and evaluation, was coded manually.  
 The UCI protocol implementation and terminal UI were done with the assistance from AI.

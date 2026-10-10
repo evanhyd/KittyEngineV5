@@ -1,4 +1,5 @@
 #pragma once
+#include "build_config.h"
 #include <cstdint>
 #include <functional>
 #include <span>
@@ -12,6 +13,9 @@ namespace bb::uci {
     using GoCallback = std::function<void(std::span<const std::string_view>)>;
     using PlayCallback = std::function<void(std::string_view)>;
     using PerftCallback = std::function<void(uint32_t, bool)>;
+#if KITTY_ENABLE_SYZYGY
+    using OptionCallback = std::function<void(std::string_view, std::string_view)>;
+#endif
 
     explicit UciProtocol(
       SimpleCallback onUci, 
@@ -21,7 +25,11 @@ namespace bb::uci {
       GoCallback onGo, 
       SimpleCallback onQuit,
       PlayCallback onPlay = {},
-      PerftCallback onPerft = {});
+      PerftCallback onPerft = {}
+#if KITTY_ENABLE_SYZYGY
+      , OptionCallback onOption = {}
+#endif
+    );
 
     void send(std::string_view line);
 
@@ -34,5 +42,8 @@ namespace bb::uci {
     SimpleCallback onQuit_;
     PlayCallback onPlay_;
     PerftCallback onPerft_;
+#if KITTY_ENABLE_SYZYGY
+    OptionCallback onOption_;
+#endif
   };
 }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <EnableSyzygy Condition="'$(EnableSyzygy)' == ''">false</EnableSyzygy>
+    <SyzygyDefine Condition="'$(EnableSyzygy)' == 'true'">1</SyzygyDefine>
+    <SyzygyDefine Condition="'$(EnableSyzygy)' != 'true'">0</SyzygyDefine>
+    <KittyBuildVariant Condition="'$(EnableSyzygy)' == 'true'">syzygy</KittyBuildVariant>
+    <KittyBuildVariant Condition="'$(EnableSyzygy)' != 'true'">plain</KittyBuildVariant>
+    <IntDir>$(ProjectDir)$(Platform)\$(Configuration)\$(KittyBuildVariant)\</IntDir>
+    <OutDir>$(MSBuildThisFileDirectory)$(Platform)\$(Configuration)\$(KittyBuildVariant)\</OutDir>
+    <EngineObjectDirectory>$(MSBuildThisFileDirectory)KittyEngineV5\$(Platform)\$(Configuration)\$(KittyBuildVariant)\</EngineObjectDirectory>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions>KITTY_ENABLE_SYZYGY=$(SyzygyDefine);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Target Name="ValidateSyzygySetting" BeforeTargets="PrepareForBuild"
+          Condition="'$(EnableSyzygy)' != 'true' and '$(EnableSyzygy)' != 'false'">
+    <Error Text="EnableSyzygy must be true or false." />
+  </Target>
+</Project>
