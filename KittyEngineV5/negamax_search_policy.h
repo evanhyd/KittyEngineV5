@@ -221,7 +221,9 @@ namespace bb::searching {
         if (context.state.template isInCheck<meta.ally>()) {
           MoveList evasions;
           context.state.template generateMoves<meta.ally>(evasions);
-          if (evasions.empty()) return Eval(evaluation::kCheckmateScore + frame->depth, false);
+          if (evasions.empty()) {
+            return Eval(evaluation::kCheckmateScore + frame->depth, false);
+          }
         }
         return Eval(0, true);
       }
@@ -236,19 +238,28 @@ namespace bb::searching {
             ++context.tablebaseHits;
             tbProven = true;
             const int outcome = tablebase::outcome(*wdl);
-            if (outcome == 0) return Eval(0, true);
-            if (outcome > 0) tbFloor = tablebase::kWinScore - frame->depth;
-            else {
+            if (outcome == 0) {
+              return Eval(0, true);
+            }
+            if (outcome > 0) {
+              tbFloor = tablebase::kWinScore - frame->depth;
+            } else {
               // A WDL loss does not supply mate distance. Detect an actual mate.
               if (context.state.template isInCheck<meta.ally>()) {
                 MoveList evasions;
                 context.state.template generateMoves<meta.ally>(evasions);
-                if (evasions.empty()) return Eval(evaluation::kCheckmateScore + frame->depth, false);
+                if (evasions.empty()) {
+                  return Eval(evaluation::kCheckmateScore + frame->depth, false);
+                }
               }
               tbCeiling = -tablebase::kWinScore + frame->depth;
             }
-            if (tbFloor >= beta) return Eval(tbFloor, true);
-            if (tbCeiling <= alpha) return Eval(tbCeiling, true);
+            if (tbFloor >= beta) {
+              return Eval(tbFloor, true);
+            }
+            if (tbCeiling <= alpha) {
+              return Eval(tbCeiling, true);
+            }
           }
         }
       }
@@ -390,7 +401,9 @@ namespace bb::searching {
       // Update TT and PV.
 #if KITTY_ENABLE_SYZYGY
       if constexpr (UseTablebases && meta.isInternal()) {
-        if (bestEval.score < tbFloor) frame->pvLine.clear();
+        if (bestEval.score < tbFloor) {
+          frame->pvLine.clear();
+        }
         bestEval.score = std::clamp(bestEval.score, tbFloor, tbCeiling);
         bestEval.historyDependent |= tbProven;
       }
@@ -426,9 +439,15 @@ namespace bb::searching {
       return tablebases_ && tablebases_->canProbeDuringSearch(state, maxDepth);
     }
     bool hasTablebaseService() const noexcept { return tablebases_ != nullptr; }
-    void beginTablebaseSearch() { rootProbed_ = false; rootTablebase_.reset(); }
+    void beginTablebaseSearch() {
+      rootProbed_ = false;
+      rootTablebase_.reset();
+    }
+
     std::string setTablebaseOption(std::string_view name, std::string_view value) {
-      if (!tablebases_) throw std::logic_error("No Syzygy service attached");
+      if (!tablebases_) {
+        throw std::logic_error("No Syzygy service attached");
+      }
       ttTable_.clear();
       beginTablebaseSearch();
       return tablebases_->setOption(name, value);
@@ -483,9 +502,13 @@ namespace bb::searching {
         if constexpr (UseTablebases) {
           if (rootTablebase_ && rootTablebase_->outcome) {
             const int outcome = *rootTablebase_->outcome;
-            if (outcome == 0) score = 0;
-            else if (outcome > 0) score = std::max(score, tablebase::kWinScore);
-            else score = std::min(score, -tablebase::kWinScore);
+            if (outcome == 0) {
+              score = 0;
+            } else if (outcome > 0) {
+              score = std::max(score, tablebase::kWinScore);
+            } else {
+              score = std::min(score, -tablebase::kWinScore);
+            }
           }
         }
 #endif
@@ -521,9 +544,13 @@ namespace bb::searching {
         if (!rootProbed_) {
           rootProbed_ = true;
           rootTablebase_ = tablebases_->rankRoot(state, moves, draws::hasRepeated(param.positionHistory, state.getHalfmoveClock()));
-          if (rootTablebase_) ++context.tablebaseHits;
+          if (rootTablebase_) {
+            ++context.tablebaseHits;
+          }
         }
-        if (rootTablebase_) moves = rootTablebase_->bestMoves;
+        if (rootTablebase_) {
+          moves = rootTablebase_->bestMoves;
+        }
       }
 #endif
 

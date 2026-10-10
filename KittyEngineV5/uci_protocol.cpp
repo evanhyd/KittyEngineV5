@@ -107,9 +107,13 @@ namespace bb::uci {
       onPosition_(fen, args.subspan(next));
 #if KITTY_ENABLE_SYZYGY
     } else if (command == "setoption") {
-      if (args.size() < 2 || args[0] != "name") throw std::invalid_argument("setoption needs name");
+      if (args.size() < 2 || args[0] != "name") {
+        throw std::invalid_argument("setoption needs name");
+      }
       size_t separator = 2;
-      while (separator < args.size() && args[separator] != "value") ++separator;
+      while (separator < args.size() && args[separator] != "value") {
+        ++separator;
+      }
       const auto first = args[1];
       const auto last = args[separator - 1];
       const std::string_view name(first.data(), last.data() + last.size() - first.data());
@@ -119,7 +123,9 @@ namespace bb::uci {
         const auto end = args.back();
         value = {begin.data(), static_cast<size_t>(end.data() + end.size() - begin.data())};
       }
-      if (onOption_) onOption_(name, value);
+      if (onOption_) {
+        onOption_(name, value);
+      }
 #endif
     } else if (command == "go") {
       onGo_(args);

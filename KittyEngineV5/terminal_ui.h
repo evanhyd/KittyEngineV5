@@ -241,7 +241,9 @@ namespace bb::user_interface {
 #if KITTY_ENABLE_SYZYGY
         , [this](std::string_view name, std::string_view value) {
           const auto status = board_.setTablebaseOption(name, value);
-          if (!status.empty()) uciOutput_ << "info string " << status << '\n';
+          if (!status.empty()) {
+            uciOutput_ << "info string " << status << '\n';
+          }
         }
 #endif
       };

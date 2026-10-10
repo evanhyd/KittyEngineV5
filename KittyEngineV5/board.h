@@ -54,15 +54,20 @@ namespace bb {
 
 #if KITTY_ENABLE_SYZYGY
     bool hasTablebaseService() const noexcept {
-      if constexpr (requires { searchingPolicy_.hasTablebaseService(); })
+      if constexpr (requires { searchingPolicy_.hasTablebaseService(); }) {
         return searchingPolicy_.hasTablebaseService();
-      else return false;
+      } else {
+        return false;
+      }
     }
+
     std::string setTablebaseOption(std::string_view name, std::string_view value) {
       if constexpr (requires { searchingPolicy_.setTablebaseOption(name, value); }) {
         pvLine_.clear();
         return searchingPolicy_.setTablebaseOption(name, value);
-      } else throw std::invalid_argument("Search policy does not support Syzygy");
+      } else {
+        throw std::invalid_argument("Search policy does not support Syzygy");
+      }
     }
 #endif
 
@@ -179,15 +184,20 @@ namespace bb {
           if constexpr (UseTablebases) {
             // Timed searches request the hard depth limit, but often finish
             // before coverage is reachable. Dispatch once per iteration.
+            // MSVC needs this guard for policies without Syzygy support.
             if constexpr (requires { searchingPolicy_.canProbeTablebases(state_, depth); }) {
-              if (searchingPolicy_.canProbeTablebases(state_, depth))
+              if (searchingPolicy_.canProbeTablebases(state_, depth)) {
                 result = searchingPolicy_.template search<ally, true>(state_, param);
-              else result = searchingPolicy_.template search<ally>(state_, param);
+              } else {
+                result = searchingPolicy_.template search<ally>(state_, param);
+              }
             }
           }
           else
 #endif
-          result = searchingPolicy_.template search<ally>(state_, param);
+          {
+            result = searchingPolicy_.template search<ally>(state_, param);
+          }
           resultCallback(result);
 
           if (!timeControlPolicy_.shouldContinue(ally)) {
@@ -204,7 +214,9 @@ namespace bb {
       if constexpr (requires { searchingPolicy_.canProbeTablebases(state_, maxDepth); searchingPolicy_.beginTablebaseSearch(); }) {
         if (searchingPolicy_.canProbeTablebases(state_, maxDepth)) {
           searchingPolicy_.beginTablebaseSearch();
-          if (state_.getSideToMove() == White) return iterativeDeepening.template operator()<White, true>();
+          if (state_.getSideToMove() == White) {
+            return iterativeDeepening.template operator()<White, true>();
+          }
           return iterativeDeepening.template operator()<Black, true>();
         }
       }

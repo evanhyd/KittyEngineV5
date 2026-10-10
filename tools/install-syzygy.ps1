@@ -35,35 +35,35 @@ function Test-TableFile($Path, $File) {
 }
 
 $totalBytes = ($manifest.files | Measure-Object -Property bytes -Sum).Sum
-Write-Host ("Installing 290 Syzygy files ({0:N1} MiB) in {1}" -f ($totalBytes / 1MB), $directory)
+$fileCount = $manifest.files.Count
+Write-Host ("Installing $fileCount Syzygy files ({0:N1} MiB) in {1}" -f ($totalBytes / 1MB), $directory)
 $verified = 0
 $downloaded = 0
 foreach ($file in $manifest.files) {
-  $target = Join-Path $directory $file.name
-  if (!(Test-TableFile $target $file)) {
-    $kind = if ($file.name.EndsWith('.rtbw')) { 'wdl' } else { 'dtz' }
-    $uri = "$($manifest.base_url)/3-4-5-$kind/$($file.name)"
-    $partial = "$target.part"
-    Write-Host "[$($verified + 1)/290] Downloading $($file.name)"
-    for ($attempt = 1; $attempt -le 3; ++$attempt) {
-      try {
-        # A rerun restarts an unfinished file and skips every verified file.
-        # Only a complete, verified download may replace the final filename.
-        Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $partial -TimeoutSec 180
-        if (!(Test-TableFile $partial $file)) { throw "Checksum or size mismatch for $($file.name)" }
-        break
-      } catch {
-        if ($attempt -eq 3) {
-          throw "Could not install $($file.name): $($_.Exception.Message). Rerun the same command to continue."
-        }
-        Write-Warning "Attempt $attempt failed for $($file.name): $($_.Exception.Message). Retrying."
-        Start-Sleep -Seconds 2
-      }
-    }
-    Move-Item -LiteralPath $partial -Destination $target -Force
-    ++$downloaded
-  }
   ++$verified
+  $target = Join-Path $directory $file.name
+  if (Test-TableFile $target $file) { continue }
+  $kind = if ($file.name.EndsWith('.rtbw')) { 'wdl' } else { 'dtz' }
+  $uri = "$($manifest.base_url)/3-4-5-$kind/$($file.name)"
+  $partial = "$target.part"
+  Write-Host "[$verified/$fileCount] Downloading $($file.name)"
+  for ($attempt = 1; $attempt -le 3; ++$attempt) {
+    try {
+      # A rerun restarts an unfinished file and skips every verified file.
+      # Only a complete, verified download may replace the final filename.
+      Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $partial -TimeoutSec 180
+      if (!(Test-TableFile $partial $file)) { throw "Checksum or size mismatch for $($file.name)" }
+      break
+    } catch {
+      if ($attempt -eq 3) {
+        throw "Could not install $($file.name): $($_.Exception.Message). Rerun the same command to continue."
+      }
+      Write-Warning "Attempt $attempt failed for $($file.name): $($_.Exception.Message). Retrying."
+      Start-Sleep -Seconds 2
+    }
+  }
+  Move-Item -LiteralPath $partial -Destination $target -Force
+  ++$downloaded
 }
 
 Write-Host "Verified $verified files; downloaded $downloaded, reused $($verified - $downloaded)."
