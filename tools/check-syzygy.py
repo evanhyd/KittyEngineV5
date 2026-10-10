@@ -12,11 +12,11 @@ import chess
 import chess.syzygy
 
 
-def cases(directory):
+def cases(directory, samples_per_material=50):
     rng = random.Random(1977)
     for material in sorted(directory.glob("*.rtbw")):
         white, black = material.stem.split("v")
-        for _ in range(50):
+        for _ in range(samples_per_material):
             while True:
                 board = chess.Board(None)
                 squares = rng.sample(range(64), len(white) + len(black))

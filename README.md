@@ -175,6 +175,49 @@ and search trees change (KPvK searched 8,464 nodes instead of 4,558). These
 samples establish neither an Elo gain nor production NNUE performance, and
 do not measure a cold disk cache.
 
+### Tablebase lookup throughput
+
+To time successful queries through the actual adapter, independently of search
+and evaluation:
+
+```powershell
+.\tools\build-benchmark.ps1 -EnableSyzygy -Benchmark tablebase -Name lookup-rate
+python tools\benchmark-tablebases.py --binary DiagnosticsScratch\bench\lookup-rate\bench.exe --tables DiagnosticsScratch\syzygy --cpu 23
+```
+
+The runner uses python-chess to generate deterministic, shuffled legal positions
+with zero halfmove clocks. FEN parsing and console output are excluded from the
+timing. Each query goes through Kitty's eligibility checks and bitboard
+conversion. Root queries additionally include legal move generation, Fathom DTZ
+ranking of all moves, and matching the results to engine moves. A root query
+can perform many internal probes; its count is not a count of individual table
+reads. Failed probes make the benchmark fail rather than inflate throughput.
+
+On the same Ryzen 9 3900XT/MSVC machine, pinned to logical CPU 23, the medians
+of seven warm rounds (at least one second each) were:
+
+| Corpus | Positions | WDL queries/second | Full root DTZ queries/second |
+| --- | ---: | ---: | ---: |
+| 3 pieces | 2,502 | 5,465,160 | 23,364 |
+| 4 pieces | 15,001 | 2,161,540 | 12,021 |
+| Mixed | 17,503 | 2,323,070 | 12,690 |
+
+For the mixed corpus this is about 0.430 microseconds per WDL query and 78.8
+microseconds per full root query, averaged over a timed batch. Mixed-corpus
+rounds ranged from 2.081–2.400 million WDL queries/second and 11,333–13,494
+root queries/second. Every query succeeded and per-pass checksums were stable.
+
+The first mixed-corpus pass in a fresh process measured 1.452 million WDL
+queries/second and 13,339 root queries/second. Table discovery took about
+74–78 ms and was measured separately. These first passes include lazy mapping
+and preparation, but the OS file cache was **not flushed**; they are not cold
+disk measurements. The 70 fixture files total 4.15 MiB. These results do not
+predict throughput for larger 5–7-piece collections or parallel probing.
+
+Exact position corpora, initialization logs and all timing samples are saved
+locally under `DiagnosticsScratch/bench/probe-rate/`. The runner supports
+`--samples-per-material`, `--rounds`, `--seconds`, and `--output` for reruns.
+
 ## Authorship
 The core engine, including bitboards, search, and evaluation, was coded manually.  
 The UCI protocol implementation and terminal UI were done with the assistance from AI.
