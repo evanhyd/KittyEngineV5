@@ -249,6 +249,7 @@
     <ClInclude Include="position_fens.h" />
     <ClInclude Include="small_vec.h" />
     <ClInclude Include="searching_policy.h" />
+    <ClInclude Include="search_draw.h" />
     <ClInclude Include="terminal_ui.h" />
     <ClInclude Include="time_control_policy.h" />
     <ClInclude Include="transposition_table.h" />

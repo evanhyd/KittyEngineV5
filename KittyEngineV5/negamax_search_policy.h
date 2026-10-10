@@ -2,6 +2,7 @@
 #include "boardstate.h"
 #include "evaluation_policy.h"
 #include "searching_policy.h"
+#include "search_draw.h"
 #include "transposition_table.h"
 #include <algorithm>
 #include <array>
@@ -42,6 +43,15 @@ namespace bb::searching {
       PVLine& pvLine;
       int maxDepth; // main search max depth
       uint64_t searchedNodes = 1;
+
+      uint64_t transpositionKey() const noexcept {
+        // No search, including quiescence, goes beyond the hard ply limit.
+        // Below this threshold the fifty-move boundary cannot be reached;
+        // retain normal transpositions there instead of splitting by clock.
+        const auto clock = state.getHalfmoveClock();
+        return state.getHash() ^ (clock < 100 - kMaxDepthHardCutoff ? 0ull :
+          static_cast<uint64_t>(clock) * 0x9e3779b97f4a7c15ull);
+      }
     };
 
     struct SearchStack {
@@ -190,28 +200,21 @@ namespace bb::searching {
         }
       }
 
-      
-      {
-        // Threefold repetition.
-        // Search position up to the half-move.
-        const auto hBegin = context.positionHistory.rbegin();
-        const auto hEnd = hBegin + std::min(context.positionHistory.size(), static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
-        const auto it = std::find(hBegin + 1, hEnd, context.state.getHash());
-        if (it != hEnd) {
-          if (int dist = int(std::distance(hBegin, it)); dist >= frame->depth) {
-            return Eval(0, false); // Position played in the actual board, insert to TT.
-          }
-          return Eval(0, true); // Position played in the search tree only, don't insert to TT.
+      if (draws::isRepetition(context.positionHistory, context.state.getHalfmoveClock(), frame->depth) ||
+          context.state.getHalfmoveClock() >= 100) {
+        // Checkmate takes precedence over a claim on the final reversible move.
+        if (context.state.template isInCheck<meta.ally>()) {
+          MoveList evasions;
+          context.state.template generateMoves<meta.ally>(evasions);
+          if (evasions.empty()) return Eval(evaluation::kCheckmateScore + frame->depth, false);
         }
-        if (context.state.getHalfmoveClock() >= 100) {
-          return Eval(0, true);
-        }
+        return Eval(0, true);
       }
       
 
       if constexpr (meta.isInternal()) {
         // Lookup transposition table.
-        if (auto ttEntry = ttTable_.get(context.state.getHash()); ttEntry) {
+        if (auto ttEntry = ttTable_.get(context.transpositionKey()); ttEntry) {
           if (ttEntry->depth >= context.maxDepth - frame->depth) {
             ttEntry->score = denormalizeCheckmateScore(ttEntry->score, frame->depth);
             if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact ||
@@ -272,7 +275,6 @@ namespace bb::searching {
           filterViolentMoves(moves);
         } else {
           // In-check extension. Continue the search with limited branches.
-          // TODO: implement 3-fold repetition check.
         }
       }
 
@@ -285,9 +287,10 @@ namespace bb::searching {
       }
 
       // Explore moves.
+      bool historyDependent = false;
       for (const Move& move : moves) {
         MoveUndo undo = context.state.template makeMove<meta.ally>(move, evalPolicy_);
-        context.positionHistory.push(context.state.getHash());
+        context.positionHistory.push(context.state.getRepetitionHash());
         (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
         Eval eval = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
         eval.score = -eval.score;
@@ -297,7 +300,7 @@ namespace bb::searching {
         if (eval.score >= beta) {
           if (meta.isInternal() && !eval.historyDependent) {
             ttTable_.put(TranspositionTable::Entry{
-              .key = context.state.getHash(),
+              .key = context.transpositionKey(),
               .depth = context.maxDepth - frame->depth,
               .score = normalizeCheckmateScore(eval.score, frame->depth),
               .scoreType = TranspositionTable::ScoreType::LowerBound,
@@ -306,6 +309,7 @@ namespace bb::searching {
           }
           return eval;
         }
+        historyDependent |= eval.historyDependent;
         if (eval.score > bestEval.score) {
           bestEval = eval;
           bestMove = move;
@@ -316,9 +320,10 @@ namespace bb::searching {
       }
 
       // Update TT and PV.
+      bestEval.historyDependent |= historyDependent;
       if (meta.isInternal() && !bestEval.historyDependent) {
         ttTable_.put(TranspositionTable::Entry{
-          .key = context.state.getHash(),
+          .key = context.transpositionKey(),
           .depth = context.maxDepth - frame->depth,
           .score = normalizeCheckmateScore(bestEval.score, frame->depth),
           .scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact),
@@ -384,9 +389,23 @@ namespace bb::searching {
       }
       searchStack_[0].pvLine.clear();
 
+      // Terminal and claimable draw checks precede cached scores at the root.
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+      if (moves.empty()) {
+        context.pvLine.clear();
+        const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateScore : evaluation::kStalemateScore;
+        return makeResult(score, std::nullopt);
+      }
+      if (state.getHalfmoveClock() >= 100 || draws::isRepetition(param.positionHistory, state.getHalfmoveClock(), 0)) {
+        context.pvLine.resize(1);
+        context.pvLine.front() = moves.front();
+        return makeResult(0, moves.front());
+      }
+
       // Lookup transposition table.
       Move ttMove{};
-      if (auto ttEntry = ttTable_.get(state.getHash())) {
+      if (auto ttEntry = ttTable_.get(context.transpositionKey())) {
         if (ttEntry->depth >= context.maxDepth && ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
           // Truncate if the root TT move diverges from the PV.
           if (ttEntry->bestMove != pvMove) {
@@ -398,14 +417,6 @@ namespace bb::searching {
         ttMove = ttEntry->bestMove;
       }
 
-      // Generate legal moves and check for checkmate or stalemate.
-      MoveList moves;
-      state.generateMoves<ally>(moves);
-      if (moves.empty()) {
-        context.pvLine.clear();
-        const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateScore : evaluation::kStalemateScore;
-        return makeResult(score, std::nullopt);
-      }
       sortMoves<meta>(state, moves, ttMove, pvMove);
 
       // Set up aspiration window.
@@ -433,16 +444,18 @@ namespace bb::searching {
       // Search for the best move.
       for (;;) {
         Eval bestEval(alpha, false);
+        bool historyDependent = false;
         Move bestMove = moves[0];
 
         for (const Move& move : moves) {
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
-          param.positionHistory.push(state.getHash());
+          param.positionHistory.push(state.getRepetitionHash());
           searchStack_[1].isFollowingPV = move == pvMove;
           Eval eval = searchInternal<meta.flip().toInternal()>(context, searchStack_.data() + 1, -beta, -bestEval.score);
           eval.score = -eval.score;
           param.positionHistory.pop();
           state.unmakeMove<ally>(move, undo, evalPolicy_);
+          historyDependent |= eval.historyDependent;
           if (eval.score > bestEval.score) {
             bestEval = eval;
             bestMove = move;
@@ -466,9 +479,9 @@ namespace bb::searching {
         }
 
         // Update TT and PV.
-        if (!bestEval.historyDependent) {
+        if (!historyDependent) {
           ttTable_.put(TranspositionTable::Entry{
-          .key = state.getHash(),
+          .key = context.transpositionKey(),
           .depth = context.maxDepth,
           .score = bestEval.score,
           .scoreType = TranspositionTable::ScoreType::Exact,

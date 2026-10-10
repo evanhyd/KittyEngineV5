@@ -6,8 +6,8 @@
 
 namespace bb {
 
-  // Known bug: Two boards have the same pieces set up, one has enpassant square, one does not.
-  // They have different hashes, however, they count toward the same 3-fold repetition states.
+  // Raw position identity (including EP) used by the evaluator and search.
+  // BoardState::getRepetitionHash separately normalizes non-capturable EP.
   class ZobristHash {
   public:
     using Hash = uint64_t;

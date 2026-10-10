@@ -79,6 +79,24 @@ namespace bb {
     constexpr auto getFullmoveNumber() const noexcept { return fullmove_; }
     constexpr ZobristHash::Hash getHash() const noexcept { return zobrist_.hash(); }
 
+    // The network observes the raw EP field, but repetition only observes a
+    // legal EP capture. Keep these identities separate without enlarging state.
+    ZobristHash::Hash getRepetitionHash() const noexcept {
+      if (enpassant_ == NoSquare) return getHash();
+      const Bitboard candidates = side_ == White
+        ? getAttack<Pawn, Black>(enpassant_) & bitboards_[White][Pawn]
+        : getAttack<Pawn, White>(enpassant_) & bitboards_[Black][Pawn];
+      if (candidates) {
+        MoveList moves;
+        if (side_ == White) generateMoves<White>(moves);
+        else generateMoves<Black>(moves);
+        for (const auto& move : moves) if (move.isEnpassant()) return getHash();
+      }
+      auto normalized = zobrist_;
+      normalized.markEnpassant(enpassant_);
+      return normalized.hash();
+    }
+
     constexpr Bitboard getOccupancy(Side side) const noexcept {
       return bitboards_[side][Pawn] | bitboards_[side][Knight] |
         bitboards_[side][Bishop] | bitboards_[side][Rook] |

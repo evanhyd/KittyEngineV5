@@ -55,7 +55,7 @@ namespace bb {
     void reset() {
       searchingPolicy_.reset();
       positionHistory_.clear();
-      positionHistory_.push(state_.getHash());
+      positionHistory_.push(state_.getRepetitionHash());
       moveHistory_.clear();
       pvLine_.clear();
     }
@@ -64,7 +64,7 @@ namespace bb {
       state_.setPosition(fen);
       searchingPolicy_.invalidateEvaluation();
       positionHistory_.clear();
-      positionHistory_.push(state_.getHash());
+      positionHistory_.push(state_.getRepetitionHash());
       moveHistory_.clear();
       pvLine_.clear();
     }
@@ -124,7 +124,7 @@ namespace bb {
         for (const Move& move : moves) {
           if (notation::moveToString(move) == moveText) {
             state_.makeMove<ally>(move, searchingPolicy_);
-            positionHistory_.push(state_.getHash());
+            positionHistory_.push(state_.getRepetitionHash());
             moveHistory_.push(move);
             advancePV(move);
             return;

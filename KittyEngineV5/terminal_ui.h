@@ -172,9 +172,8 @@ namespace bb::user_interface {
             totalNodes += result.nodesSearched;
             const auto elapsed = std::chrono::steady_clock::now() - searchStart;
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-            const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
-            const uint64_t nps = elapsedSeconds <= 0 ? 0
-              : static_cast<uint64_t>(totalNodes / elapsedSeconds);
+            const double elapsedSeconds = std::max(1e-9, std::chrono::duration<double>(elapsed).count());
+            const uint64_t nps = static_cast<uint64_t>(totalNodes / elapsedSeconds);
 
             constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);
             constexpr int64_t mateWindow = 100;
