@@ -7,7 +7,8 @@
     <KittyBuildVariant Condition="'$(EnableSyzygy)' == 'true'">syzygy</KittyBuildVariant>
     <KittyBuildVariant Condition="'$(EnableSyzygy)' != 'true'">plain</KittyBuildVariant>
     <IntDir>$(ProjectDir)$(Platform)\$(Configuration)\$(KittyBuildVariant)\</IntDir>
-    <OutDir>$(MSBuildThisFileDirectory)$(Platform)\$(Configuration)\$(KittyBuildVariant)\</OutDir>
+    <OutDir Condition="'$(EnableSyzygy)' != 'true'">$(MSBuildThisFileDirectory)$(Platform)\$(Configuration)\</OutDir>
+    <OutDir Condition="'$(EnableSyzygy)' == 'true'">$(MSBuildThisFileDirectory)$(Platform)\$(Configuration)\syzygy\</OutDir>
     <EngineObjectDirectory>$(MSBuildThisFileDirectory)KittyEngineV5\$(Platform)\$(Configuration)\$(KittyBuildVariant)\</EngineObjectDirectory>
   </PropertyGroup>
   <ItemDefinitionGroup>

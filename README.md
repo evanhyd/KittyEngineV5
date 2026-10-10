@@ -11,8 +11,10 @@ msbuild KittyEngineV5.sln /p:Configuration=Release /p:Platform=x64 /p:EnableSyzy
 
 Use `/p:EnableSyzygy=false` to compile it out completely. The shared
 `KittyEngine.Build.props` controls both projects, including their object dependencies.
-Enabled and disabled outputs are isolated in `x64/Release/syzygy/` and
-`x64/Release/plain/`; switching does not require deleting intermediate files.
+Default builds retain the original executable location, `x64/Release/` for
+Release. Enabled builds write to `x64/Release/syzygy/`. Each project keeps its
+intermediate files in separate `plain/` and `syzygy/` directories, so switching
+does not require deleting intermediate files.
 Debug and Release Profiler use the same switch. The supported build target for
 this integration is x64. Install the project's v145 C++ tools and Windows SDK;
 `/p:WindowsTargetPlatformVersion=...` can select another installed SDK. Tests
