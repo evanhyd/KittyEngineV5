@@ -1,5 +1,6 @@
 #include "board.h"
 #include "tablebase.h"
+#include "tablebase_uci.h"
 #include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
 #include "equal_percentage_time_control_policy.h"
@@ -12,12 +13,16 @@
 #include <gtest/gtest.h>
 
 using namespace bb;
+using testing_support::syzygyTestPath;
 
 namespace {
   MoveList legalMoves(const BoardState& state) {
     MoveList moves;
-    if (state.getSideToMove() == White) state.generateMoves<White>(moves);
-    else state.generateMoves<Black>(moves);
+    if (state.getSideToMove() == White) {
+      state.generateMoves<White>(moves);
+    } else {
+      state.generateMoves<Black>(moves);
+    }
     return moves;
   }
   using Search = searching::NegamaxSearchPolicy<evaluation::HandCraftEvaluationPolicy>;
@@ -27,7 +32,9 @@ namespace {
     tablebase::Service service;
     void SetUp() override {
       const auto path = syzygyTestPath();
-      if (path.empty()) GTEST_SKIP() << "Set KITTY_SYZYGY_TEST_PATH to verified 3-4 piece WDL+DTZ fixtures";
+      if (path.empty()) {
+        GTEST_SKIP() << "Set KITTY_SYZYGY_TEST_PATH to verified 3-4 piece WDL+DTZ fixtures";
+      }
       service.setOption("SyzygyPath", path);
       ASSERT_GE(service.largest(), 4u);
     }
@@ -59,7 +66,10 @@ TEST(Syzygy, FiftyMoveOutcomeMappingKeepsCursedWinsAndBlessedLossesDrawn) {
 }
 
 TEST_F(SyzygyFiles, ProbesBothColorsAndPawnDirection) {
-  struct Case { const char* fen; tablebase::Wdl wdl; };
+  struct Case {
+    const char* fen;
+    tablebase::Wdl wdl;
+  };
   for (const Case& c : {
     Case{"7k/8/5K2/8/8/8/8/R7 w - - 0 1", tablebase::Wdl::Win},
     Case{"7k/8/5K2/8/8/8/8/R7 b - - 0 1", tablebase::Wdl::Loss},
@@ -94,7 +104,10 @@ TEST_F(SyzygyFiles, MissingDtzFallsBackAndChangingPathsReleasesOldCoverage) {
     ("kitty_syzygy_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   struct Cleanup {
     std::filesystem::path path;
-    ~Cleanup() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }
+    ~Cleanup() {
+      std::error_code ignored;
+      std::filesystem::remove_all(path, ignored);
+    }
   } cleanup{directory};
   std::filesystem::create_directory(directory);
   std::filesystem::copy_file(std::filesystem::path(syzygyTestPath()) / "KRvK.rtbw", directory / "KRvK.rtbw");
@@ -123,10 +136,10 @@ TEST_F(SyzygyFiles, CaptureReachesCoverageAtInclusiveSearchDepthBoundary) {
   const auto& state = engine.getState();
   EXPECT_FALSE(service.canProbeDuringSearch(state, 1));
   EXPECT_TRUE(service.canProbeDuringSearch(state, 2));
-  const auto shallow = engine.search(1, std::nullopt, [](const auto&) {});
-  EXPECT_EQ(shallow.tablebaseHits, 0u);
+  engine.search(1, std::nullopt, [](const auto&) {});
+  EXPECT_EQ(engine.tablebaseHits(), 0u);
   const auto deeper = engine.search(2, std::nullopt, [](const auto&) {});
-  EXPECT_GT(deeper.tablebaseHits, 0u);
+  EXPECT_GT(engine.tablebaseHits(), 0u);
   ASSERT_TRUE(deeper.bestMove);
   EXPECT_EQ(notation::moveToString(*deeper.bestMove), "a1a2");
   EXPECT_GE(deeper.score, tablebase::kWinScore - 1);
@@ -134,7 +147,7 @@ TEST_F(SyzygyFiles, CaptureReachesCoverageAtInclusiveSearchDepthBoundary) {
   engine.setTablebaseOption("SyzygyProbeDepth", "0");
   EXPECT_TRUE(service.canProbeDuringSearch(state, 1));
   const auto horizon = engine.search(1, std::nullopt, [](const auto&) {});
-  EXPECT_GT(horizon.tablebaseHits, 0u);
+  EXPECT_GT(engine.tablebaseHits(), 0u);
   ASSERT_TRUE(horizon.bestMove);
   EXPECT_EQ(notation::moveToString(*horizon.bestMove), "a1a2");
   EXPECT_GE(horizon.score, tablebase::kWinScore - 1);
@@ -143,7 +156,8 @@ TEST_F(SyzygyFiles, CaptureReachesCoverageAtInclusiveSearchDepthBoundary) {
   engine.setTablebaseOption("SyzygyProbeDepth", "64");
   engine.setPosition("4k3/8/8/8/8/8/8/R3K3 w - - 17 1");
   EXPECT_TRUE(service.canProbeDuringSearch(engine.getState(), 1));
-  EXPECT_EQ(engine.search(1, std::nullopt, [](const auto&) {}).tablebaseHits, 1u);
+  engine.search(1, std::nullopt, [](const auto&) {});
+  EXPECT_EQ(engine.tablebaseHits(), 1u);
   engine.setTablebaseOption("SyzygyProbeLimit", "0");
   EXPECT_FALSE(service.canProbeDuringSearch(engine.getState(), 64));
 }
@@ -162,8 +176,11 @@ TEST_F(SyzygyFiles, RootConversionMatchesLegalPromotionsAndEnPassant) {
     for (const auto& move : ranking->bestMoves) {
       EXPECT_NE(std::find(moves.begin(), moves.end(), move), moves.end());
       BoardState next = state;
-      if (state.getSideToMove() == White) next.makeMove<White>(move, testing_support::NoOpMoveCallback{});
-      else next.makeMove<Black>(move, testing_support::NoOpMoveCallback{});
+      if (state.getSideToMove() == White) {
+        next.makeMove<White>(move, testing_support::NoOpMoveCallback{});
+      } else {
+        next.makeMove<Black>(move, testing_support::NoOpMoveCallback{});
+      }
       EXPECT_EQ(next.getSideToMove(), getOtherSide(state.getSideToMove()));
     }
   }
@@ -177,7 +194,7 @@ TEST_F(SyzygyFiles, RootRankIsPreservedAndProbedOncePerGo) {
   ASSERT_TRUE(ranking);
   service.setOption("SyzygyProbeDepth", "64"); // Isolate the single root probe.
   uint64_t hits = 0;
-  auto result = engine.search(4, std::nullopt, [&](const auto& r) { hits += r.tablebaseHits; });
+  auto result = engine.search(4, std::nullopt, [&](const auto&) { hits += engine.tablebaseHits(); });
   ASSERT_TRUE(result.bestMove);
   EXPECT_NE(std::find(ranking->bestMoves.begin(), ranking->bestMoves.end(), *result.bestMove), ranking->bestMoves.end());
   EXPECT_EQ(hits, 1u);
@@ -186,7 +203,7 @@ TEST_F(SyzygyFiles, RootRankIsPreservedAndProbedOncePerGo) {
   EXPECT_EQ(engine.getState().getHash(), before.getHash());
   EXPECT_EQ(engine.getState().getHalfmoveClock(), before.getHalfmoveClock());
   hits = 0;
-  engine.search(2, std::nullopt, [&](const auto& r) { hits += r.tablebaseHits; });
+  engine.search(2, std::nullopt, [&](const auto&) { hits += engine.tablebaseHits(); });
   EXPECT_EQ(hits, 1u);
 }
 
@@ -203,8 +220,11 @@ TEST_F(SyzygyFiles, RespectsClockBoundaryAndMatePrecedence) {
 TEST_F(SyzygyFiles, UciOptionsAndReconfigurationPreserveGameHistory) {
   auto engine = board();
   engine.setPosition("7k/8/5K2/8/8/8/8/R7 w - - 0 1");
-  for (int cycle = 0; cycle < 2; ++cycle)
-    for (auto move : {"a1b1", "h8h7", "b1a1", "h7h8"}) engine.playMove(move);
+  for (int cycle = 0; cycle < 2; ++cycle) {
+    for (auto move : {"a1b1", "h8h7", "b1a1", "h7h8"}) {
+      engine.playMove(move);
+    }
+  }
   const auto previous = engine.getState().getHash();
   engine.setTablebaseOption("SyzygyProbeDepth", "2");
   EXPECT_EQ(engine.getState().getHash(), previous);
@@ -222,8 +242,9 @@ TEST_F(SyzygyFiles, UciOptionsAndReconfigurationPreserveGameHistory) {
 TEST_F(SyzygyFiles, RootLossDoesNotOverrideARepetitionDrawInGameHistory) {
   auto engine = board();
   engine.setPosition("7k/8/5K2/8/8/8/8/R7 w - - 0 1");
-  for (const auto move : {"a1b1", "h8h7", "b1a1", "h7h8", "a1b1", "h8h7", "b1a1"})
+  for (const auto move : {"a1b1", "h8h7", "b1a1", "h7h8", "a1b1", "h8h7", "b1a1"}) {
     engine.playMove(move);
+  }
   EXPECT_FALSE(service.rankRoot(engine.getState(), legalMoves(engine.getState()), true));
   const auto result = engine.search(3, std::nullopt, [](const auto&) {});
   EXPECT_EQ(result.score, 0);
@@ -233,11 +254,40 @@ TEST_F(SyzygyFiles, RootLossDoesNotOverrideARepetitionDrawInGameHistory) {
 
 TEST(Syzygy, OptionParserPreservesInternalSpaces) {
   std::string parsedName, parsedValue;
-  uci::UciProtocol protocol{[] {}, [] {}, [] {}, [](auto, auto) {}, [](auto) {}, [] {}, {}, {},
-    [&](auto name, auto value) { parsedName = name; parsedValue = value; }};
+  uci::TablebaseProtocol protocol{
+    [&](auto name, auto value) {
+      parsedName = name;
+      parsedValue = value;
+    },
+    [] {}, [] {}, [] {}, [](auto, auto) {}, [](auto) {}, [] {}};
   protocol.send("setoption name SyzygyPath value D:\\Chess  Tables;E:\\Other Tables  ");
   EXPECT_EQ(parsedName, "SyzygyPath");
   EXPECT_EQ(parsedValue, "D:\\Chess  Tables;E:\\Other Tables");
   protocol.send("setoption name SyzygyPath value");
   EXPECT_TRUE(parsedValue.empty());
+}
+
+TEST(Syzygy, OptionParserHandlesWhitespaceAndDelegatesExistingCommands) {
+  std::string parsedName, parsedValue;
+  int options = 0, ready = 0;
+  uci::TablebaseProtocol protocol{
+    [&](auto name, auto value) {
+      parsedName = name;
+      parsedValue = value;
+      ++options;
+    },
+    [] {}, [&] { ++ready; }, [] {}, [](auto, auto) {}, [](auto) {}, [] {}};
+  protocol.send("  \tsetoption\tname Example  Option value  path with  spaces \t");
+  EXPECT_EQ(parsedName, "Example  Option");
+  EXPECT_EQ(parsedValue, "path with  spaces");
+  protocol.send("setoption name Example Option");
+  EXPECT_EQ(parsedName, "Example Option");
+  EXPECT_TRUE(parsedValue.empty());
+  protocol.send("isready");
+  EXPECT_EQ(ready, 1);
+  EXPECT_EQ(options, 2);
+  EXPECT_THROW(protocol.send("setoption"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("setoption value 3"), std::invalid_argument);
+  EXPECT_THROW(protocol.send("setoption name"), std::invalid_argument);
+  EXPECT_EQ(options, 2);
 }

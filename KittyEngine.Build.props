@@ -2,8 +2,6 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <EnableSyzygy Condition="'$(EnableSyzygy)' == ''">false</EnableSyzygy>
-    <SyzygyDefine Condition="'$(EnableSyzygy)' == 'true'">1</SyzygyDefine>
-    <SyzygyDefine Condition="'$(EnableSyzygy)' != 'true'">0</SyzygyDefine>
     <KittyBuildVariant Condition="'$(EnableSyzygy)' == 'true'">syzygy</KittyBuildVariant>
     <KittyBuildVariant Condition="'$(EnableSyzygy)' != 'true'">plain</KittyBuildVariant>
     <IntDir>$(ProjectDir)$(Platform)\$(Configuration)\$(KittyBuildVariant)\</IntDir>
@@ -13,7 +11,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>KITTY_ENABLE_SYZYGY=$(SyzygyDefine);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)KittyEngineV5\config\$(KittyBuildVariant);$(MSBuildThisFileDirectory)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <Target Name="ValidateSyzygySetting" BeforeTargets="PrepareForBuild"

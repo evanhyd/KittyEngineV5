@@ -43,6 +43,15 @@
     <ClCompile Include="notation.cpp">
       <Filter>Cores</Filter>
     </ClCompile>
+    <ClCompile Include="tablebase.cpp">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClCompile>
+    <ClCompile Include="tablebase_uci.cpp">
+      <Filter>Cores\User Interface</Filter>
+    </ClCompile>
+    <ClCompile Include="..\third_party\fathom\tbprobe.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bitboard.h">
@@ -117,17 +126,28 @@
     <ClInclude Include="mlp_evaluation_policy.h">
       <Filter>Cores\Evaluation Policies</Filter>
     </ClInclude>
+    <ClInclude Include="tablebase.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
+    <ClInclude Include="tablebase_search_state.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
+    <ClInclude Include="tablebase_uci.h">
+      <Filter>Cores\User Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="config\syzygy\build_config.h">
+      <Filter>Cores</Filter>
+    </ClInclude>
+    <ClInclude Include="build_config.h">
+      <Filter>Cores</Filter>
+    </ClInclude>
+    <ClInclude Include="search_draw.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="weights.bin">
       <Filter>Resources</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="tablebase.cpp" />
-    <ClCompile Include="..\third_party\fathom\tbprobe.c" />
-    <ClInclude Include="tablebase.h" />
-    <ClInclude Include="build_config.h" />
-    <ClInclude Include="search_draw.h" />
   </ItemGroup>
 </Project>

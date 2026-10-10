@@ -235,8 +235,12 @@ namespace {
     }
     if (stream >> extra) {
       if (extra == "tbhits") {
-        if (!(stream >> parsed.tablebaseHits)) return std::nullopt;
-        if (!(stream >> extra)) return parsed;
+        if (!(stream >> parsed.tablebaseHits)) {
+          return std::nullopt;
+        }
+        if (!(stream >> extra)) {
+          return parsed;
+        }
       }
       if (extra != "pv") {
         return std::nullopt;
@@ -953,4 +957,14 @@ TEST(UciIntegration, ReplaysPromotionCastlingAndEnPassant) {
     EXPECT_EQ(notation::boardToFen(board.getState()), example.expected);
     EXPECT_TRUE(uciOutput.str().empty());
   }
+}
+
+TEST(UciProtocol, SearchResultRetainsOriginalFiveFieldInterface) {
+  const searching::SearchResult result{42, std::nullopt, 7, std::chrono::nanoseconds{9}, nullptr};
+  const auto& [score, bestMove, nodes, time, pv] = result;
+  EXPECT_EQ(score, 42);
+  EXPECT_FALSE(bestMove);
+  EXPECT_EQ(nodes, 7u);
+  EXPECT_EQ(time.count(), 9);
+  EXPECT_EQ(pv, nullptr);
 }

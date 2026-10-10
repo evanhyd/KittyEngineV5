@@ -5,7 +5,8 @@
 #include "perft_driver.h"
 #include "position_fens.h"
 #include "time_control_policy.h"
-#include "uci_protocol.h"
+#include "tablebase_uci.h"
+#include <build_config.h>
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -89,16 +90,22 @@ namespace bb::user_interface {
       humanOutput_ << std::format("Welcome to KittyEngineV5.\nBuild Version: {}_{}\n", __DATE__, __TIME__);
       render();
 
-      uci::UciProtocol protocol{
+      auto protocol = uci::makeProtocol<tablebase::kEnabled>(
+        [this](std::string_view name, std::string_view value) {
+          const auto status = board_.setTablebaseOption(name, value);
+          if (!status.empty()) {
+            uciOutput_ << "info string " << status << '\n';
+          }
+        },
         [this] {
           uciOutput_ << "id name KittyEngineV5\nid author UnboxTheCat\n";
-#if KITTY_ENABLE_SYZYGY
-          if (board_.hasTablebaseService()) {
-            uciOutput_ << "option name SyzygyPath type string default <empty>\n"
-              "option name SyzygyProbeLimit type spin default 5 min 0 max 7\n"
-              "option name SyzygyProbeDepth type spin default 1 min 0 max 64\n";
+          if constexpr (tablebase::kEnabled) {
+            if (board_.hasTablebaseService()) {
+              uciOutput_ << "option name SyzygyPath type string default <empty>\n"
+                "option name SyzygyProbeLimit type spin default 5 min 0 max 7\n"
+                "option name SyzygyProbeDepth type spin default 1 min 0 max 64\n";
+            }
           }
-#endif
           uciOutput_ << "uciok\n";
         },
         [this] {
@@ -173,16 +180,10 @@ namespace bb::user_interface {
 
           int completedDepth = 0;
           uint64_t totalNodes = 0;
-#if KITTY_ENABLE_SYZYGY
           uint64_t totalHits = 0;
-#endif
           const auto searchStart = std::chrono::steady_clock::now();
           const int searchDepth = std::min(depth.value_or(searching::kMaxDepthHardCutoff), searching::kMaxDepthHardCutoff);
-          const auto result = board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, searchStart
-#if KITTY_ENABLE_SYZYGY
-            , &totalHits
-#endif
-          ](const auto& result) {
+          const auto result = board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, searchStart, &totalHits](const auto& result) {
             ++completedDepth;
             totalNodes += result.nodesSearched;
             const auto elapsed = std::chrono::steady_clock::now() - searchStart;
@@ -204,10 +205,10 @@ namespace bb::user_interface {
             }
             std::string infoLine = std::format("info depth {} score {} time {} nodes {} nps {}",
                                                completedDepth, scoreText, elapsedMs, totalNodes, nps);
-#if KITTY_ENABLE_SYZYGY
-            totalHits += result.tablebaseHits;
-            std::format_to(std::back_inserter(infoLine), " tbhits {}", totalHits);
-#endif
+            if constexpr (tablebase::kEnabled) {
+              totalHits += board_.tablebaseHits();
+              std::format_to(std::back_inserter(infoLine), " tbhits {}", totalHits);
+            }
             const auto& pv = *result.pvLine;
             if (!pv.empty()) {
               infoLine += " pv";
@@ -238,15 +239,7 @@ namespace bb::user_interface {
             perft::runPerft<config>(board_.getState(), depth, uciOutput_);
           }
         }
-#if KITTY_ENABLE_SYZYGY
-        , [this](std::string_view name, std::string_view value) {
-          const auto status = board_.setTablebaseOption(name, value);
-          if (!status.empty()) {
-            uciOutput_ << "info string " << status << '\n';
-          }
-        }
-#endif
-      };
+      );
 
       running_ = true;
       for (std::string line; running_ && std::getline(uciInput_, line); ) {

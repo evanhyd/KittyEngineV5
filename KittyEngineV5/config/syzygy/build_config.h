@@ -1,5 +1,5 @@
 #pragma once
 
 namespace bb::tablebase {
-  inline constexpr bool kEnabled = false;
+  inline constexpr bool kEnabled = true;
 }

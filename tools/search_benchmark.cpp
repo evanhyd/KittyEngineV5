@@ -9,55 +9,69 @@
 
 int main(int argc, char** argv) {
   using namespace bb;
-#if KITTY_ENABLE_SYZYGY
-  tablebase::Service tables;
-  if (argc > 1 && std::string_view(argv[1]) != "-") tables.setOption("SyzygyPath", argv[1]);
-  // Machine-readable adapter probes for the independent Python oracle.
-  if (argc > 2 && std::string_view(argv[2]) == "probe") {
-    for (std::string fen; std::getline(std::cin, fen);) {
-      BoardState state(fen);
-      const auto wdl = tables.probeWdl(state);
-      MoveList legal;
-      if (state.getSideToMove() == White) state.generateMoves<White>(legal);
-      else state.generateMoves<Black>(legal);
-      const auto root = tables.rankRoot(state, legal, false);
-      std::cout << (wdl ? static_cast<int>(*wdl) : 9) << ' ';
-      std::cout << (root && root->outcome ? *root->outcome : 9);
-      if (root) for (auto move : root->bestMoves) std::cout << ' ' << notation::moveToString(move);
-      std::cout << '\n';
+  tablebase::Session<tablebase::kEnabled> tables;
+  if constexpr (tablebase::kEnabled) {
+    if (argc > 1 && std::string_view(argv[1]) != "-") {
+      tables.get()->setOption("SyzygyPath", argv[1]);
     }
-    return 0;
-  }
-#endif
-  Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 20
-#if KITTY_ENABLE_SYZYGY
-      , &tables
-#endif
-    }, time_control::EqualPercentageTimeControlPolicy{0.05f}};
-#if KITTY_ENABLE_SYZYGY
-  // Exercise the whole search with a shared TT, for the independent oracle.
-  if (argc > 2 && std::string_view(argv[2]) == "search") {
-    const int depth = argc > 3 ? std::stoi(argv[3]) : 3;
-    if (argc > 4) tables.setOption("SyzygyProbeDepth", argv[4]);
-    for (std::string fen; std::getline(std::cin, fen);) {
-      board.setPosition(fen);
-      const BoardState before = board.getState();
-      const auto result = board.search(depth, std::nullopt, [](const auto&) {});
-      if (before.getHash() != board.getState().getHash() ||
-          before.getRepetitionHash() != board.getState().getRepetitionHash() ||
-          before.getHalfmoveClock() != board.getState().getHalfmoveClock()) {
-        std::cerr << "Search did not restore the position: " << fen << '\n';
-        return 1;
+    // Machine-readable adapter probes for the independent Python oracle.
+    if (argc > 2 && std::string_view(argv[2]) == "probe") {
+      for (std::string fen; std::getline(std::cin, fen);) {
+        BoardState state(fen);
+        const auto wdl = tables.get()->probeWdl(state);
+        MoveList legal;
+        if (state.getSideToMove() == White) {
+          state.generateMoves<White>(legal);
+        } else {
+          state.generateMoves<Black>(legal);
+        }
+        const auto root = tables.get()->rankRoot(state, legal, false);
+        std::cout << (wdl ? static_cast<int>(*wdl) : 9) << ' ';
+        std::cout << (root && root->outcome ? *root->outcome : 9);
+        if (root) {
+          for (auto move : root->bestMoves) {
+            std::cout << ' ' << notation::moveToString(move);
+          }
+        }
+        std::cout << '\n';
       }
-      std::cout << result.score << ' '
-        << (result.bestMove ? notation::moveToString(*result.bestMove) : "0000");
-      for (const auto move : *result.pvLine) std::cout << ' ' << notation::moveToString(move);
-      std::cout << '\n';
+      return 0;
     }
-    return 0;
   }
-#endif
-  struct Case { const char* name; const char* fen; int depth; };
+  Board board{searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 20, tables.get()},
+    time_control::EqualPercentageTimeControlPolicy{0.05f}};
+  if constexpr (tablebase::kEnabled) {
+    // Exercise the whole search with a shared TT, for the independent oracle.
+    if (argc > 2 && std::string_view(argv[2]) == "search") {
+      const int depth = argc > 3 ? std::stoi(argv[3]) : 3;
+      if (argc > 4) {
+        tables.get()->setOption("SyzygyProbeDepth", argv[4]);
+      }
+      for (std::string fen; std::getline(std::cin, fen);) {
+        board.setPosition(fen);
+        const BoardState before = board.getState();
+        const auto result = board.search(depth, std::nullopt, [](const auto&) {});
+        if (before.getHash() != board.getState().getHash() ||
+            before.getRepetitionHash() != board.getState().getRepetitionHash() ||
+            before.getHalfmoveClock() != board.getState().getHalfmoveClock()) {
+          std::cerr << "Search did not restore the position: " << fen << '\n';
+          return 1;
+        }
+        std::cout << result.score << ' '
+          << (result.bestMove ? notation::moveToString(*result.bestMove) : "0000");
+        for (const auto move : *result.pvLine) {
+          std::cout << ' ' << notation::moveToString(move);
+        }
+        std::cout << '\n';
+      }
+      return 0;
+    }
+  }
+  struct Case {
+    const char* name;
+    const char* fen;
+    int depth;
+  };
   const Case positions[] = {
     {"start", fen::kStartPosition.data(), 5},
     {"kiwipete", fen::kKiwipete.data(), 4},
@@ -71,13 +85,12 @@ int main(int argc, char** argv) {
     for (const auto& p : positions) {
       board.reset();
       board.setPosition(p.fen);
-      uint64_t nodes = 0, hits = 0;
+      uint64_t nodes = 0;
+      uint64_t hits = 0;
       const auto start = std::chrono::steady_clock::now();
       const auto result = board.search(p.depth, std::nullopt, [&](const auto& r) {
         nodes += r.nodesSearched;
-#if KITTY_ENABLE_SYZYGY
-        hits += r.tablebaseHits;
-#endif
+        hits += board.tablebaseHits();
       });
       const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
       std::cout << p.name << ',' << repeat << ',' << nodes << ',' << ms << ',' << result.score << ','

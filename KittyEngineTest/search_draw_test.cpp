@@ -9,10 +9,14 @@ using namespace bb;
 
 TEST(SearchDraw, RequiresThreeOccurrencesInGameButStopsSearchCycles) {
   searching::PositionHistory history;
-  for (uint64_t key : {1, 2, 3, 4, 1}) history.push(key);
+  for (uint64_t key : {1, 2, 3, 4, 1}) {
+    history.push(key);
+  }
   EXPECT_FALSE(searching::draws::isRepetition(history, 4, 0));
   EXPECT_TRUE(searching::draws::isRepetition(history, 4, 4));
-  for (uint64_t key : {2, 3, 4, 1}) history.push(key);
+  for (uint64_t key : {2, 3, 4, 1}) {
+    history.push(key);
+  }
   EXPECT_TRUE(searching::draws::isRepetition(history, 8, 0));
   EXPECT_FALSE(searching::draws::isRepetition(history, 0, 0));
 }

@@ -52,7 +52,6 @@ namespace bb {
       return state_;
     }
 
-#if KITTY_ENABLE_SYZYGY
     bool hasTablebaseService() const noexcept {
       if constexpr (requires { searchingPolicy_.hasTablebaseService(); }) {
         return searchingPolicy_.hasTablebaseService();
@@ -69,7 +68,14 @@ namespace bb {
         throw std::invalid_argument("Search policy does not support Syzygy");
       }
     }
-#endif
+
+    uint64_t tablebaseHits() const noexcept {
+      if constexpr (requires { searchingPolicy_.tablebaseHits(); }) {
+        return searchingPolicy_.tablebaseHits();
+      } else {
+        return 0;
+      }
+    }
 
     void reset() {
       searchingPolicy_.reset();
@@ -163,11 +169,7 @@ namespace bb {
       timeControlPolicy_.set(timeControl);
       maxDepth = std::min(maxDepth, searching::kMaxDepthHardCutoff);
 
-      const auto iterativeDeepening = [&]<Side ally
-#if KITTY_ENABLE_SYZYGY
-        , bool UseTablebases = false
-#endif
-      >() {
+      const auto iterativeDeepening = [&]<Side ally, bool UseTablebases = false>() {
         searching::SearchResult result{
           .score = 0,
           .pvLine = &pvLine_,
@@ -180,7 +182,6 @@ namespace bb {
             .positionHistory = positionHistory_,
             .pvLine = pvLine_,
           };
-#if KITTY_ENABLE_SYZYGY
           if constexpr (UseTablebases) {
             // Timed searches request the hard depth limit, but often finish
             // before coverage is reachable. Dispatch once per iteration.
@@ -192,10 +193,7 @@ namespace bb {
                 result = searchingPolicy_.template search<ally>(state_, param);
               }
             }
-          }
-          else
-#endif
-          {
+          } else {
             result = searchingPolicy_.template search<ally>(state_, param);
           }
           resultCallback(result);
@@ -208,7 +206,6 @@ namespace bb {
         return result;
       };
 
-#if KITTY_ENABLE_SYZYGY
       // Entirely unreachable searches use the ordinary loop. Otherwise choose
       // the specialization at each iteration, never with a per-node toggle.
       if constexpr (requires { searchingPolicy_.canProbeTablebases(state_, maxDepth); searchingPolicy_.beginTablebaseSearch(); }) {
@@ -220,7 +217,6 @@ namespace bb {
           return iterativeDeepening.template operator()<Black, true>();
         }
       }
-#endif
       if (state_.getSideToMove() == White) {
         return iterativeDeepening.template operator()<White>();
       } else {

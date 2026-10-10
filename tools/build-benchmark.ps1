@@ -17,13 +17,13 @@ if (!$vs) { throw 'Visual Studio C++ tools are required' }
 if (!(Get-Command cl -ErrorAction SilentlyContinue)) {
   & "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
 }
-$define = if ($EnableSyzygy) { '1' } else { '0' }
+$config = if ($EnableSyzygy) { "$source\config\syzygy" } else { $source }
 $driver = Join-Path $PSScriptRoot ($Benchmark + '_benchmark.cpp')
 $files = @($driver, "$source\boardstate.cpp", "$source\notation.cpp")
 if ($EnableSyzygy) { $files += @("$source\tablebase.cpp", "$repo\third_party\fathom\tbprobe.c") }
 $flags = @('/nologo','/std:c++20','/Zc:__cplusplus','/EHsc','/O2','/Ob2','/MD','/arch:AVX2','/fp:fast','/DNDEBUG',
   '/D_CRT_SECURE_NO_WARNINGS','/D_SILENCE_CXX20_ATOMIC_INIT_DEPRECATION_WARNING',
-  "/DKITTY_ENABLE_SYZYGY=$define",'/DTB_NO_HELPER_API',"/I$source","/I$repo\third_party\fathom",'/TP',"/Fo$out\")
+  '/DTB_NO_HELPER_API',"/I$config","/I$source","/I$repo\third_party\fathom",'/TP',"/Fo$out\")
 if ($Assembly) {
   & cl @flags /c /FAs "/Fa$out\$Benchmark.asm" $driver
 } else {

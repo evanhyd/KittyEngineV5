@@ -40,18 +40,14 @@ int main() {
   constexpr float timePercentage = 0.05f;
 
   try {
-#if KITTY_ENABLE_SYZYGY
-    tablebase::Service tablebases;
-#endif
+    tablebase::Session<tablebase::kEnabled> tablebases;
     Board board{
     searching::NegamaxSearchPolicy{
       evaluation::MLPEvaluationPolicy{"weights.bin"},
       // evaluation::HandCraftEvaluationPolicy{},
       aspirationWindow,
-      ttTableSize
-#if KITTY_ENABLE_SYZYGY
-      , &tablebases
-#endif
+      ttTableSize,
+      tablebases.get()
     },
     time_control::EqualPercentageTimeControlPolicy{
       timePercentage

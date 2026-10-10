@@ -11,6 +11,10 @@ msbuild KittyEngineV5.sln /p:Configuration=Release /p:Platform=x64 /p:EnableSyzy
 
 Use `/p:EnableSyzygy=false` to compile it out completely. The shared
 `KittyEngine.Build.props` controls both projects, including their object dependencies.
+It selects a C++20 `constexpr` configuration header and the enabled-only source
+files; there are no feature macros in the integration. The configuration uses
+`<build_config.h>` so the enabled include directory can override the default
+header. Fathom retains its upstream preprocessor code.
 Default builds retain the original executable location, `x64/Release/` for
 Release. Enabled builds write to `x64/Release/syzygy/`. Each project keeps its
 intermediate files in separate `plain/` and `syzygy/` directories, so switching
@@ -90,15 +94,19 @@ exposes optional results. There are no subprocesses, network probes, virtual
 calls, or per-probe heap allocations in the adapter. Initial file mapping and
 Fathom's lazy table preparation can allocate and perform I/O.
 
-When compiled out, there are no tablebase members, options, counters, probe
-checks, or linked Fathom objects. An enabled build with no usable path or with
+`if constexpr` selects the search path, and empty template specializations
+remove disabled service and search state. When compiled out, there are no
+tablebase members, options, counters, probe checks, or linked Fathom objects. An enabled build with no usable path or with
 limit 0 selects the ordinary search specialization once, before iterative
 deepening. Active search uses cheap eligibility checks before converting a
 position. Each iteration selects ordinary search when even capturing one piece
 every ply cannot reach the configured piece limit before the WDL depth cutoff;
 this also avoids checks in early iterations of timed searches.
 Root DTZ probing remains eligible regardless of that depth cutoff. The neural
-evaluator is unchanged.
+evaluator is unchanged. The original `SearchResult` fields and `UciProtocol`
+interface are preserved. Enabled UCI option handling lives in `tablebase_uci.*`;
+`Board::tablebaseHits()` exposes the last completed search iteration's hit count
+without adding a field to `SearchResult`.
 
 DTZ ranks legal root moves once per `go`, then search considers only the best
 rank throughout iterative deepening. Search WDL probes require a zero halfmove
@@ -170,25 +178,30 @@ restoration of the board, with the transposition cache reused between positions.
 Benchmarks use the handcrafted evaluator so they do not require private model
 weights; they do not establish
 neural-evaluator throughput or playing-strength gains. `build-benchmark.ps1`
-also accepts `-SourceDirectory` for a baseline checkout and `-Assembly` for
-compiler listings. Raw timing samples remain in `DiagnosticsScratch/bench/`.
+also accepts `-SourceDirectory` for another compatible source checkout and
+`-Assembly` for compiler listings. Raw timing samples remain in `DiagnosticsScratch/bench/`.
 
-### Measured validation (2026-10-09)
+### Measured validation (2026-10-10)
 
 On Windows x64, Ryzen 9 3900XT, MSVC 19.50.35728, AVX2 and link-time
-optimization: Release passed 102 tests with the feature compiled out and 115
-with it enabled. All 115 enabled tests also passed in Debug/AddressSanitizer.
+optimization: Release passed 103 tests with the feature compiled out and 117
+with it enabled. All 117 enabled tests also passed in Debug/AddressSanitizer.
 The independent python-chess comparison passed 3,503 WDL/clock checks, 3,503
 complete root rankings, and 7,006 depth-3 searches (probe depths 0 and 1).
 Regression tests cover the inclusive capture/depth boundary and a game-history
-repetition draw that must override a static tablebase loss.
+repetition draw that must override a static tablebase loss. A second comparison
+sampled all 145 installed 3-5-piece materials: 583 WDL/clock and root-ranking
+checks, plus 1,166 depth-3 searches.
 
-The disabled benchmark's complete `.text` section is byte-identical to the
-draw/cache prerequisite commit `0e3f095`, with no Fathom symbols in its link
-map. Verify equivalent builds with
-`python tools/check-disabled-code.py BASELINE_EXE DISABLED_EXE`.
-This proves removal of the tablebase integration for this compiler/build; it
-does not erase the separately reviewed draw-rule corrections.
+The disabled benchmark has no Fathom symbols in its link map and retains the
+50,176-byte `.text` section size of the draw/cache prerequisite (`0e3f095`).
+Disassembly shows no added instructions in the recursive search functions;
+there are data-address and instruction-order differences. The C++20 refactor
+is **not byte-identical** to the earlier implementation, so the earlier exact
+binary-identity result no longer applies. `tools/check-disabled-code.py` is a
+strict byte comparison, not a general performance test. The disabled search,
+board, search-result and original protocol object sizes also match that
+prerequisite. The separate draw-rule corrections remain part of both builds.
 
 The following are median milliseconds from 15 interleaved rounds, five repeats,
 excluding the first round and first repeat. Processes were pinned to logical
@@ -196,23 +209,23 @@ CPU 23 (`--cpu 23`). These are warm OS-cache samples using the small fixture set
 
 | Fixed-depth position | Compiled out | Enabled, inactive | Enabled, probing | Probing hits |
 | --- | ---: | ---: | ---: | ---: |
-| Start, depth 5 | 5.996 | 5.956 | 5.947 | 0 |
-| Kiwipete, depth 4 | 77.537 | 76.928 | 77.025 | 0 |
-| Middlegame, depth 5 | 28.435 | 28.237 | 28.302 | 0 |
-| KRvK, depth 6 | 1.185 | 1.145 | 1.347 | 20 |
-| KPvK, depth 7 | 0.536 | 0.513 | 0.970 | 517 |
+| Start, depth 5 | 6.523 | 6.650 | 6.654 | 0 |
+| Kiwipete, depth 4 | 79.615 | 80.103 | 80.187 | 0 |
+| Middlegame, depth 5 | 30.342 | 30.918 | 30.966 | 0 |
+| KRvK, depth 6 | 1.284 | 1.293 | 1.578 | 20 |
+| KPvK, depth 7 | 0.591 | 0.595 | 1.083 | 517 |
 
-Outside coverage, the revised enabled build was within 1% of the compiled-out
-build in these samples. Compared with the previous implementation (`79c105e`),
-active runs took 3.8%, 1.3%, and 3.2% less time in the first three positions;
-the endgame samples took about 2% less time. All before/after node counts,
-scores, best moves and hit counts were identical. Compiler code placement and
-timing noise also affect these small differences; a universal sub-1% overhead
-target is **not established**.
+The compiled-out build was within 1% of the draw/cache prerequisite in these
+samples. Outside coverage, the enabled build took about 0.7-2.1% more time than
+the compiled-out build. Against the previous macro-based enabled binary, the
+active rook and pawn samples took 8.8% and 4.0% more time, respectively. The
+C++20 refactor changes compiler layout; these small handcrafted-evaluator
+benchmarks do not establish a universal enabled-overhead bound.
 
-The previous enabled binary was included with `--previous-enabled` in the same
-interleaved run, using the same benchmark source and compiler flags. Raw data:
-`DiagnosticsScratch/bench/review-comparison.csv`. Endgame searches can take
+The prerequisite and previous enabled binaries were included with `--corrected`
+and `--previous-enabled` in the same interleaved run. All corresponding
+before/after node counts, scores, best moves and hit counts matched. Raw data:
+`DiagnosticsScratch/bench/cpp20-comparison.csv`. Endgame searches can take
 longer than searches without tablebases because their scores, root move sets
 and search trees change (KPvK searched 8,464 nodes instead of 4,558). These
 samples establish neither an Elo gain nor production NNUE performance, and

@@ -1,6 +1,5 @@
 #pragma once
-#include "build_config.h"
-#if KITTY_ENABLE_SYZYGY
+#include <build_config.h>
 #include "boardstate.h"
 #include <algorithm>
 #include <optional>
@@ -9,6 +8,7 @@
 
 namespace bb::tablebase {
   inline constexpr int kWinScore = 30'000;
+
   enum class Wdl {
     Loss = -2,
     BlessedLoss = -1,
@@ -16,6 +16,7 @@ namespace bb::tablebase {
     CursedWin = 1,
     Win = 2,
   };
+
   constexpr int outcome(Wdl wdl) noexcept {
     return wdl == Wdl::Win ? 1 : wdl == Wdl::Loss ? -1 : 0;
   }
@@ -73,5 +74,18 @@ namespace bb::tablebase {
     std::optional<Wdl> probeWdl(const BoardState& state) const;
     std::optional<RootResult> rankRoot(const BoardState& state, const MoveList& legalMoves, bool hasRepeated) const;
   };
+
+  template <bool Enabled>
+  class Session {
+  public:
+    constexpr Service* get() const noexcept { return nullptr; }
+  };
+
+  template <>
+  class Session<true> {
+    Service service_;
+
+  public:
+    Service* get() noexcept { return &service_; }
+  };
 }
-#endif

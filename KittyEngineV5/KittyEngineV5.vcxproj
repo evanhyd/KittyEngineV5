@@ -225,6 +225,7 @@
   </ItemDefinitionGroup>
   <Import Project="..\KittyEngine.Build.props" />
   <ItemGroup Condition="'$(EnableSyzygy)' == 'true'">
+    <ClCompile Include="tablebase_uci.cpp" />
     <ClCompile Include="tablebase.cpp">
       <AdditionalIncludeDirectories>$(ProjectDir)..\third_party\fathom;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>TB_NO_HELPER_API;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -249,6 +250,9 @@
     <ClInclude Include="build_config.h" />
     <ClInclude Include="search_draw.h" />
     <ClInclude Include="tablebase.h" />
+    <ClInclude Include="tablebase_search_state.h" />
+    <ClInclude Include="tablebase_uci.h" />
+    <ClInclude Include="config\syzygy\build_config.h" />
     <ClInclude Include="board.h" />
     <ClInclude Include="boardstate.h" />
     <ClInclude Include="equal_percentage_time_control_policy.h" />

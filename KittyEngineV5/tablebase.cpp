@@ -1,5 +1,4 @@
 #include "tablebase.h"
-#if KITTY_ENABLE_SYZYGY
 #include "../third_party/fathom/tbprobe.h"
 #include <atomic>
 #include <charconv>
@@ -9,34 +8,46 @@
 
 namespace bb::tablebase {
   namespace {
-    std::atomic_flag owned = ATOMIC_FLAG_INIT;
+    constexpr unsigned kRankFlipMask = 56;
+    constexpr int kDtzOutcomeBoundary = 900;
+    std::atomic_flag owned{};
 
     // Fathom numbers a1=0, Kitty numbers a8=0. Reverse rank bytes only.
     uint64_t flip(uint64_t bits) noexcept { return _byteswap_uint64(bits); }
 
     struct Position {
-      uint64_t white, black, kings, queens, rooks, bishops, knights, pawns;
-      unsigned clock, ep;
+      uint64_t white;
+      uint64_t black;
+      uint64_t kings;
+      uint64_t queens;
+      uint64_t rooks;
+      uint64_t bishops;
+      uint64_t knights;
+      uint64_t pawns;
+      unsigned clock;
+      unsigned ep;
       bool whiteToMove;
-      explicit Position(const BoardState& s) noexcept
-        : white(flip(s.getOccupancy(White))), black(flip(s.getOccupancy(Black))),
-          kings(pieces(s, King)), queens(pieces(s, Queen)), rooks(pieces(s, Rook)),
-          bishops(pieces(s, Bishop)), knights(pieces(s, Knight)), pawns(pieces(s, Pawn)),
-          clock(static_cast<unsigned>(s.getHalfmoveClock())),
-          ep(s.getEnpassantSquare() == NoSquare ? 0 : s.getEnpassantSquare() ^ 56),
-          whiteToMove(s.getSideToMove() == White) {}
-      static uint64_t pieces(const BoardState& s, Piece p) noexcept {
-        return flip(s.getPieces(White, p) | s.getPieces(Black, p));
+
+      explicit Position(const BoardState& state) noexcept
+        : white(flip(state.getOccupancy(White))), black(flip(state.getOccupancy(Black))),
+          kings(pieces(state, King)), queens(pieces(state, Queen)), rooks(pieces(state, Rook)),
+          bishops(pieces(state, Bishop)), knights(pieces(state, Knight)), pawns(pieces(state, Pawn)),
+          clock(static_cast<unsigned>(state.getHalfmoveClock())),
+          ep(state.getEnpassantSquare() == NoSquare ? 0 : state.getEnpassantSquare() ^ kRankFlipMask),
+          whiteToMove(state.getSideToMove() == White) {}
+
+      static uint64_t pieces(const BoardState& state, Piece piece) noexcept {
+        return flip(state.getPieces(White, piece) | state.getPieces(Black, piece));
       }
     };
 
     int parseNumber(std::string_view value, int maximum) {
-      int n = 0;
-      auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), n);
-      if (error != std::errc{} || end != value.data() + value.size() || n < 0 || n > maximum) {
+      int number = 0;
+      auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+      if (error != std::errc{} || end != value.data() + value.size() || number < 0 || number > maximum) {
         throw std::invalid_argument("Syzygy option is outside its supported range");
       }
-      return n;
+      return number;
     }
   }
 
@@ -82,10 +93,10 @@ namespace bb::tablebase {
     if (!enabled() || state.getHalfmoveClock() != 0 || !covers(state)) {
       return std::nullopt;
     }
-    const Position p(state);
-    const unsigned result = tb_probe_wdl(p.white, p.black, p.kings, p.queens, p.rooks,
-      p.bishops, p.knights, p.pawns, 0, 0, p.ep, p.whiteToMove);
-    if (result == TB_RESULT_FAILED) {
+    const Position position(state);
+    const unsigned result = tb_probe_wdl(position.white, position.black, position.kings, position.queens, position.rooks,
+      position.bishops, position.knights, position.pawns, 0, 0, position.ep, position.whiteToMove);
+    if (result == std::numeric_limits<unsigned>::max()) {
       return std::nullopt;
     }
     return static_cast<Wdl>(static_cast<int>(result) - 2);
@@ -98,30 +109,31 @@ namespace bb::tablebase {
     if (repeated || !enabled() || !covers(state) || state.getHalfmoveClock() >= 100 || legalMoves.empty()) {
       return std::nullopt;
     }
-    const Position p(state);
+    const Position position(state);
     TbRootMoves ranks;
-    if (!tb_probe_root_dtz(p.white, p.black, p.kings, p.queens, p.rooks,
-        p.bishops, p.knights, p.pawns, p.clock, 0, p.ep, p.whiteToMove, repeated, true, &ranks) ||
+    if (!tb_probe_root_dtz(position.white, position.black, position.kings, position.queens, position.rooks,
+        position.bishops, position.knights, position.pawns, position.clock, 0, position.ep, position.whiteToMove, repeated, true, &ranks) ||
         ranks.size != legalMoves.size()) {
       return std::nullopt;
     }
 
-    constexpr Piece promotions[] = {NoPiece, Queen, Rook, Bishop, Knight};
+    constexpr Piece kPromotions[] = {NoPiece, Queen, Rook, Bishop, Knight};
     int bestRank = std::numeric_limits<int>::min();
     RootResult result;
     std::array<bool, 218> matched{};
     for (unsigned i = 0; i < ranks.size; ++i) {
       const auto& entry = ranks.moves[i];
-      const unsigned promotion = TB_MOVE_PROMOTES(entry.move);
-      if (promotion >= std::size(promotions)) {
+      // Fathom packs destination, source and promotion into bits 0:5, 6:11 and 12:14.
+      const unsigned promotion = (entry.move >> 12) & 7u;
+      if (promotion >= std::size(kPromotions)) {
         return std::nullopt;
       }
       size_t found = legalMoves.size();
       for (size_t j = 0; j < legalMoves.size(); ++j) {
         const auto& move = legalMoves[j];
-        if (move.getSource() == (static_cast<unsigned>(TB_MOVE_FROM(entry.move)) ^ 56u) &&
-            move.getDest() == (static_cast<unsigned>(TB_MOVE_TO(entry.move)) ^ 56u) &&
-            move.getPromotedPieceType() == promotions[promotion]) {
+        if (move.getSource() == (((entry.move >> 6) & 63u) ^ kRankFlipMask) &&
+            move.getDest() == ((entry.move & 63u) ^ kRankFlipMask) &&
+            move.getPromotedPieceType() == kPromotions[promotion]) {
           found = j;
           break;
         }
@@ -138,14 +150,13 @@ namespace bb::tablebase {
         result.bestMoves.push(legalMoves[found]);
       }
     }
-    if (bestRank > 900) {
+    if (bestRank > kDtzOutcomeBoundary) {
       result.outcome = 1;
-    } else if (bestRank < -900) {
+    } else if (bestRank < -kDtzOutcomeBoundary) {
       result.outcome = -1;
-    } else if (bestRank > -900 && bestRank < 900) {
+    } else if (bestRank > -kDtzOutcomeBoundary && bestRank < kDtzOutcomeBoundary) {
       result.outcome = 0;
     }
     return result;
   }
 }
-#endif

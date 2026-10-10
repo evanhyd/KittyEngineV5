@@ -195,11 +195,12 @@
   <Import Project="..\KittyEngine.Build.props" />
   <ItemDefinitionGroup Condition="'$(EnableSyzygy)' == 'true'">
     <Link>
-      <AdditionalDependencies>$(EngineObjectDirectory)tablebase.obj;$(EngineObjectDirectory)tbprobe.obj;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(EngineObjectDirectory)tablebase.obj;$(EngineObjectDirectory)tablebase_uci.obj;$(EngineObjectDirectory)tbprobe.obj;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup Condition="'$(EnableSyzygy)' == 'true'">
     <ClCompile Include="tablebase_test.cpp" />
+    <ClCompile Include="tablebase_nnue_test.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="evaluation_test.cpp" />
@@ -217,6 +218,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="syzygy_test_path.h" />
+    <ClInclude Include="nnue_test_model.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyAddressSanitizerRuntime" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
