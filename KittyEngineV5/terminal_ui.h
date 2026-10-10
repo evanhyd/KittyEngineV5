@@ -97,7 +97,7 @@ namespace bb::user_interface {
           uciOutput_ << "readyok\n";
         },
         [this] {
-          board_.setPosition(fen::kStartPosition);
+          board_.reset();
           render();
         },
         [this](std::string_view fen, std::span<const std::string_view> moves) {
@@ -174,7 +174,6 @@ namespace bb::user_interface {
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
             const uint64_t nps = elapsedSeconds <= 0 ? 0
-              : elapsedSeconds < 1 ? totalNodes
               : static_cast<uint64_t>(totalNodes / elapsedSeconds);
 
             constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);

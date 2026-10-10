@@ -6,6 +6,7 @@
 #include "notation.h"
 #include "position_fens.h"
 #include "terminal_ui.h"
+#include "test_move_callback.h"
 #include <cstddef>
 #include <sstream>
 #include <stdexcept>
@@ -19,6 +20,39 @@ namespace {
   using TestBoard = Board<TestSearch, TestTimePolicy>;
   constexpr size_t kTestTranspositionEntries = 1024;
   constexpr float kTestTimePercentage = 0.05f;
+
+  struct StatefulEvaluator {
+    int* calls;
+    int* copies;
+    const void** firstAddress;
+    bool* stableAddress;
+
+    StatefulEvaluator(int& calls, int& copies, const void*& firstAddress, bool& stableAddress)
+      : calls(&calls), copies(&copies), firstAddress(&firstAddress),
+        stableAddress(&stableAddress) {}
+
+    StatefulEvaluator(const StatefulEvaluator& other)
+      : calls(other.calls), copies(other.copies), firstAddress(other.firstAddress),
+        stableAddress(other.stableAddress) {
+      ++*copies;
+    }
+
+    int32_t evaluate(const BoardState&) {
+      if (*firstAddress == nullptr) {
+        *firstAddress = this;
+      } else if (*firstAddress != this) {
+        *stableAddress = false;
+      }
+      return ++*calls;
+    }
+
+    void reset() {}
+    void prepare(const BoardState&) {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
+  };
 }
 
 TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
@@ -64,14 +98,14 @@ TEST(BoardState, GettersReportPiecesAndPositionState) {
 TEST(BoardState, GettersTrackMakeAndUnmake) {
   BoardState state{fen::kStartPosition};
   const Move move{E2, E4, Pawn, NoPiece, Move::kDoublePushFlag};
-  const MoveUndo undo = state.makeMove<White>(move);
+  const MoveUndo undo = state.makeMove<White>(move, testing_support::NoOpMoveCallback{});
   EXPECT_FALSE(state.getPieceAt(E2).has_value());
   EXPECT_EQ(*state.getPieceAt(E4), (std::tuple<Side, Piece>{White, Pawn}));
   EXPECT_EQ(state.getSideToMove(), Black);
   EXPECT_EQ(state.getEnpassantSquare(), E3);
   EXPECT_EQ(state.getHalfmoveClock(), 0);
   EXPECT_EQ(state.getFullmoveNumber(), 1);
-  state.unmakeMove<White>(move, undo);
+  state.unmakeMove<White>(move, undo, testing_support::NoOpMoveCallback{});
   EXPECT_EQ(*state.getPieceAt(E2), (std::tuple<Side, Piece>{White, Pawn}));
   EXPECT_FALSE(state.getPieceAt(E4).has_value());
   EXPECT_EQ(state.getSideToMove(), White);
@@ -88,32 +122,6 @@ TEST(Board, StartsAtInitialPosition) {
 }
 
 TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
-  struct StatefulEvaluator {
-    int* calls;
-    int* copies;
-    const void** firstAddress;
-    bool* stableAddress;
-
-    StatefulEvaluator(int& calls, int& copies, const void*& firstAddress, bool& stableAddress)
-      : calls(&calls), copies(&copies), firstAddress(&firstAddress),
-        stableAddress(&stableAddress) {}
-
-    StatefulEvaluator(const StatefulEvaluator& other)
-      : calls(other.calls), copies(other.copies), firstAddress(other.firstAddress),
-        stableAddress(other.stableAddress) {
-      ++*copies;
-    }
-
-    int32_t evaluate(const BoardState&) {
-      if (*firstAddress == nullptr) {
-        *firstAddress = this;
-      } else if (*firstAddress != this) {
-        *stableAddress = false;
-      }
-      return ++*calls;
-    }
-  };
-
   int calls = 0;
   int copies = 0;
   const void* firstAddress = nullptr;

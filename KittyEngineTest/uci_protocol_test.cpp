@@ -5,6 +5,7 @@
 #include "notation.h"
 #include "position_fens.h"
 #include "terminal_ui.h"
+#include "test_move_callback.h"
 #include "uci_protocol.h"
 #include <array>
 #include <sstream>
@@ -35,10 +36,31 @@ namespace {
     int* requestedDepth;
     std::vector<searching::SearchResult>* results;
     std::vector<std::vector<Move>>* pvSnapshots = nullptr;
+    int* resetCalls = nullptr;
+    std::vector<size_t>* historySizes = nullptr;
+    std::vector<size_t>* incomingPVSizes = nullptr;
+
+    void reset() {
+      if (resetCalls) {
+        ++*resetCalls;
+      }
+    }
+
+    void invalidateEvaluation() {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
       *requestedDepth = param.maxDepth;
+      if (historySizes) {
+        historySizes->push_back(param.positionHistory.size());
+      }
+      if (incomingPVSizes) {
+        incomingPVSizes->push_back(param.pvLine.size());
+      }
       MoveList moves;
       state.generateMoves<ally>(moves);
       searching::PVLine& pvLine = param.pvLine;
@@ -47,7 +69,7 @@ namespace {
         pvLine.push(moves[0]);
         if (param.maxDepth > 1) {
           BoardState nextState = state;
-          nextState.makeMove<ally>(moves[0]);
+          nextState.makeMove<ally>(moves[0], testing_support::NoOpMoveCallback{});
           MoveList replies;
           nextState.generateMoves<getOtherSide(ally)>(replies);
           if (!replies.empty()) {
@@ -69,6 +91,13 @@ namespace {
   };
 
   struct ZeroTimeSearchPolicy {
+    void reset() {}
+    void invalidateEvaluation() {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
+
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam& param) {
       param.pvLine.clear();
@@ -79,6 +108,13 @@ namespace {
   struct SlowSearchPolicy {
     int* requestedDepth;
     std::chrono::milliseconds pause;
+
+    void reset() {}
+    void invalidateEvaluation() {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
@@ -95,6 +131,13 @@ namespace {
     static constexpr uint64_t kNodes = 100;
     static constexpr auto kDuration = std::chrono::microseconds{250};
 
+    void reset() {}
+    void invalidateEvaluation() {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
+
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam& param) {
       param.pvLine.clear();
@@ -106,6 +149,13 @@ namespace {
     static constexpr uint64_t kNodesPerDepth = 1;
     static constexpr auto kSearchDuration = std::chrono::milliseconds{1};
     const std::vector<int32_t>* scores;
+
+    void reset() {}
+    void invalidateEvaluation() {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
@@ -122,6 +172,13 @@ namespace {
     bool seeded = false;
     size_t seedLength = 2;
 
+    void reset() { seeded = false; }
+    void invalidateEvaluation() {}
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+    void markCastle(CastlePermission) {}
+    void markEnpassant(Square) {}
+
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
       incomingLines->emplace_back(param.pvLine.begin(), param.pvLine.end());
@@ -135,10 +192,15 @@ namespace {
           MoveList legalMoves;
           if (side == White) nextState.generateMoves<White>(legalMoves);
           else nextState.generateMoves<Black>(legalMoves);
-          if (legalMoves.empty()) break;
+          if (legalMoves.empty()) {
+            break;
+          }
           pvLine.push(legalMoves[0]);
-          if (side == White) nextState.makeMove<White>(legalMoves[0]);
-          else nextState.makeMove<Black>(legalMoves[0]);
+          if (side == White) {
+            nextState.makeMove<White>(legalMoves[0], testing_support::NoOpMoveCallback{});
+          } else {
+            nextState.makeMove<Black>(legalMoves[0], testing_support::NoOpMoveCallback{});
+          }
           side = getOtherSide(side);
         }
         seeded = true;
@@ -362,7 +424,9 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
     totalNodes += results[i].nodesSearched;
     EXPECT_EQ(info->nodes, totalNodes);
     EXPECT_GE(info->timeMs, previousTimeMs);
-    EXPECT_LE(info->nps, info->nodes);
+    if (info->timeMs > 0 && info->timeMs < 1000) {
+      EXPECT_GT(info->nps, info->nodes);
+    }
     previousTimeMs = info->timeMs;
     EXPECT_EQ(info->scoreKind, i + 1 == results.size() ? "mate" : "cp");
     if (info->scoreKind == "cp") {
@@ -523,7 +587,7 @@ TEST(BoardPV, FenOnlySuccessorAndFailedPositionUpdateKeepCorrectPV) {
   EXPECT_EQ(incomingLines.back()[0], firstPV[0]);
 
   BoardState successor = board.getState();
-  successor.makeMove<White>(firstPV[0]);
+  successor.makeMove<White>(firstPV[0], testing_support::NoOpMoveCallback{});
   board.setPosition(notation::boardToFen(successor), {});
   board.search(1, std::nullopt, [](const searching::SearchResult&) {});
   ASSERT_EQ(incomingLines.back().size(), 1u);
@@ -633,7 +697,6 @@ TEST(UciIntegration, FormatsMateScoresWithinOneHundredPoints) {
     totalNodes += ScoreSequenceSearchPolicy::kNodesPerDepth;
     EXPECT_GE(info->timeMs, previousTimeMs);
     EXPECT_EQ(info->nodes, totalNodes);
-    EXPECT_LE(info->nps, info->nodes);
     previousTimeMs = info->timeMs;
   }
   MoveList moves;
@@ -658,7 +721,7 @@ TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {
   EXPECT_NE(humanOutput.str().find("FEN: " + std::string(fen::kStartPosition)), std::string::npos);
 }
 
-TEST(UciIntegration, NewGameResetsBoardWithoutAnotherPositionCommand) {
+TEST(UciIntegration, NewGameKeepsBoardUntilNextPositionCommand) {
   std::istringstream input{"position startpos moves e2e4\nucinewgame\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
@@ -666,8 +729,55 @@ TEST(UciIntegration, NewGameResetsBoardWithoutAnotherPositionCommand) {
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
-  EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
+  EXPECT_EQ(notation::boardToFen(board.getState()),
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
   EXPECT_TRUE(uciOutput.str().empty());
+}
+
+TEST(UciIntegration, NewGameResetsSearchPolicyAndBoardHistory) {
+  std::istringstream input{
+    "position startpos moves e2e4\nucinewgame\ngo depth 1\nposition startpos\ngo depth 1\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  int requestedDepth = 0;
+  int resetCalls = 0;
+  std::vector<size_t> historySizes;
+  std::vector<searching::SearchResult> results;
+  Board board{RecordingSearchPolicy{&requestedDepth, &results, nullptr, &resetCalls, &historySizes},
+              TestTimePolicy{kTestTimePercentage}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+
+  EXPECT_EQ(resetCalls, 1);
+  EXPECT_EQ(historySizes, (std::vector<size_t>{1, 1}));
+  EXPECT_EQ(requestedDepth, 1);
+  EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
+  EXPECT_NE(uciOutput.str().find("bestmove "), std::string::npos);
+}
+
+TEST(BoardReset, ClearsSearchHistoryAndPVButKeepsPosition) {
+  int requestedDepth = 0;
+  int resetCalls = 0;
+  std::vector<searching::SearchResult> results;
+  std::vector<size_t> historySizes;
+  std::vector<size_t> incomingPVSizes;
+  Board board{RecordingSearchPolicy{
+    &requestedDepth, &results, nullptr, &resetCalls, &historySizes, &incomingPVSizes},
+    TestTimePolicy{kTestTimePercentage}};
+
+  board.playMove("e2e4");
+  const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_FALSE(first.pvLine->empty());
+  const std::string position = notation::boardToFen(board.getState());
+
+  board.reset();
+  board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+
+  EXPECT_EQ(resetCalls, 1);
+  EXPECT_EQ(notation::boardToFen(board.getState()), position);
+  EXPECT_EQ(historySizes, (std::vector<size_t>{2, 1}));
+  EXPECT_EQ(incomingPVSizes, (std::vector<size_t>{0, 0}));
 }
 
 TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
@@ -761,7 +871,7 @@ TEST(UciIntegration, ReportsCheckmateWithoutLegalMove) {
   EXPECT_EQ(line, "bestmove 0000");
 }
 
-TEST(UciIntegration, ReportsZeroNpsWhenElapsedTimeIsZero) {
+TEST(UciIntegration, ReportsNpsForFastSearch) {
   std::istringstream input{"go depth 1\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
@@ -775,12 +885,12 @@ TEST(UciIntegration, ReportsZeroNpsWhenElapsedTimeIsZero) {
   const auto info = parseInfoLine(line);
   ASSERT_TRUE(info.has_value());
   EXPECT_GE(info->timeMs, 0);
-  EXPECT_LE(info->nps, info->nodes);
+  EXPECT_GT(info->nps, info->nodes);
   ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
   EXPECT_EQ(line, "bestmove 0000");
 }
 
-TEST(UciIntegration, ReportsElapsedTimeAndCapsNpsAtNodes) {
+TEST(UciIntegration, ReportsElapsedTimeAndNps) {
   std::istringstream input{"go depth 1\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
@@ -796,7 +906,7 @@ TEST(UciIntegration, ReportsElapsedTimeAndCapsNpsAtNodes) {
   EXPECT_EQ(info->depth, 1);
   EXPECT_GE(info->timeMs, 0);
   EXPECT_EQ(info->nodes, SubMillisecondSearchPolicy::kNodes);
-  EXPECT_LE(info->nps, info->nodes);
+  EXPECT_GT(info->nps, info->nodes);
   ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
   EXPECT_EQ(line, "bestmove 0000");
   EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));

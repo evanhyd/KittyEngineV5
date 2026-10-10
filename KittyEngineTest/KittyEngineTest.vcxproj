@@ -47,6 +47,11 @@
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnableManifest>true</VcpkgEnableManifest>
   </PropertyGroup>
+  <PropertyGroup>
+    <GTestInstalledRoot Condition="Exists('$(ProjectDir)vcpkg_installed\$(Platform)-windows\$(Platform)-windows\include\gtest\gtest.h')">$(ProjectDir)vcpkg_installed\$(Platform)-windows\$(Platform)-windows\</GTestInstalledRoot>
+    <GTestInstalledRoot Condition="'$(GTestInstalledRoot)' == '' and Exists('$(ProjectDir)vcpkg_installed\$(Platform)-windows\include\gtest\gtest.h')">$(ProjectDir)vcpkg_installed\$(Platform)-windows\</GTestInstalledRoot>
+    <GTestLibrarySubdir Condition="'$(Configuration)' == 'Debug'">debug\</GTestLibrarySubdir>
+  </PropertyGroup>
   <ItemDefinitionGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -65,6 +70,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
@@ -107,7 +113,7 @@
       <PreprocessorDefinitions>X64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level4</WarningLevel>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -138,7 +144,7 @@
       <PreprocessorDefinitions>X64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level4</WarningLevel>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -164,25 +170,26 @@
   <ItemDefinitionGroup>
     <Link>
       <AdditionalDependencies>gtest.lib;gtest_main.lib;$(EngineObjectDirectory)boardstate.obj;$(EngineObjectDirectory)notation.obj;$(EngineObjectDirectory)uci_protocol.obj;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(GTestInstalledRoot)$(GTestLibrarySubdir)lib;$(GTestInstalledRoot)$(GTestLibrarySubdir)lib\manual-link;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)KittyEngineV5;$(GTestInstalledRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpp20</LanguageStandard>
       <LanguageStandard_C Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdc17</LanguageStandard_C>
     </ClCompile>
     <ClCompile>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(SolutionDir)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(SolutionDir)KittyEngineV5;$(GTestInstalledRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpp20</LanguageStandard>
       <LanguageStandard_C Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdc17</LanguageStandard_C>
     </ClCompile>
     <ClCompile>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)KittyEngineV5;$(GTestInstalledRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)KittyEngineV5;$(GTestInstalledRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release Profiler|x64'">$(SolutionDir)KittyEngineV5;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release Profiler|x64'">$(SolutionDir)KittyEngineV5;$(GTestInstalledRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -201,5 +208,12 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyAddressSanitizerRuntime" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Copy SourceFiles="$(VCToolsInstallDir)bin\Hostx64\x64\clang_rt.asan_dynamic-x86_64.dll" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyGTestRuntime" AfterTargets="Build" Condition="'$(GTestInstalledRoot)' != ''">
+    <ItemGroup>
+      <GTestRuntime Include="$(GTestInstalledRoot)$(GTestLibrarySubdir)bin\gtest.dll" Condition="Exists('$(GTestInstalledRoot)$(GTestLibrarySubdir)bin\gtest.dll')" />
+      <GTestRuntime Include="$(GTestInstalledRoot)$(GTestLibrarySubdir)bin\gtest_main.dll" Condition="Exists('$(GTestInstalledRoot)$(GTestLibrarySubdir)bin\gtest_main.dll')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GTestRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="'@(GTestRuntime)' != ''" />
   </Target>
 </Project>

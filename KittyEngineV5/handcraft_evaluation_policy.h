@@ -359,6 +359,18 @@ namespace bb::evaluation {
     }
 
   public:
+    void reset() {
+      // noop.
+    }
+
+    void prepare(const BoardState&) noexcept {}
+
+    template <bool Add>
+    void markPiece(Side, Piece, Square) noexcept {}
+
+    void markCastle(CastlePermission) noexcept {}
+    void markEnpassant(Square) noexcept {}
+
     int32_t evaluate(const BoardState& state) const noexcept {
       // Game phase: weight remaining minor and major pieces on a 24-point scale.
       const int32_t phase = std::min(kMaxPhase,

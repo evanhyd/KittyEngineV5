@@ -128,6 +128,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -144,6 +145,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <WarningLevel>Level4</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -209,7 +211,7 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <Optimization>MaxSpeed</Optimization>
       <StringPooling>true</StringPooling>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -234,6 +236,12 @@
     <ClInclude Include="equal_percentage_time_control_policy.h" />
     <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
+    <ClInclude Include="layer.h" />
+    <ClInclude Include="mlp_math.h" />
+    <ClInclude Include="matrix.h" />
+    <ClInclude Include="mlp_serializer.h" />
+    <ClInclude Include="nnue.h" />
+    <ClInclude Include="mlp_evaluation_policy.h" />
     <ClInclude Include="perft_driver.h" />
     <ClInclude Include="negamax_search_policy.h" />
     <ClInclude Include="move.h" />
@@ -246,6 +254,9 @@
     <ClInclude Include="transposition_table.h" />
     <ClInclude Include="uci_protocol.h" />
     <ClInclude Include="zobrist_hash.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="weights.bin" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -40,6 +40,12 @@ namespace bb {
       return entry;
     }
 
+    void clear() noexcept {
+      for (size_t i = 0; i < capacity_; ++i) {
+        entries_[i] = std::nullopt;
+      }
+    }
+
   private:
     std::unique_ptr<std::optional<Entry>[]> entries_;
     size_t capacity_;

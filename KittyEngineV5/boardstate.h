@@ -336,8 +336,8 @@ namespace bb {
 
 
     // Save only the irreversible state; piece moves can be reversed from Move.
-    template <Side ally>
-    constexpr MoveUndo makeMove(Move move) noexcept {
+    template <Side ally, typename MoveCallback>
+    constexpr MoveUndo makeMove(Move move, MoveCallback&& moveCallback) noexcept {
       assert(side_ == ally);
       constexpr Side enemy = getOtherSide(ally);
       const Square srce = move.getSource();
@@ -359,6 +359,7 @@ namespace bb {
         bitboards_[enemy][Pawn] = unsetSquare(bitboards_[enemy][Pawn], capturedSq);
         undo.capturedPiece = Pawn;
         zobrist_.markPiece(enemy, Pawn, capturedSq);
+        moveCallback.template markPiece<false>(enemy, Pawn, capturedSq);
 
       } else if (move.isCapture()) {
         // Perform capturing.
@@ -367,6 +368,7 @@ namespace bb {
             bitboards_[enemy][piece] = unsetSquare(bitboards_[enemy][piece], dest);
             undo.capturedPiece = piece;
             zobrist_.markPiece(enemy, piece, dest);
+            moveCallback.template markPiece<false>(enemy, piece, dest);
             break;
           }
         }
@@ -376,6 +378,10 @@ namespace bb {
       bitboards_[ally][movedPiece] = moveSquare(bitboards_[ally][movedPiece], srce, dest);
       zobrist_.markPiece(ally, movedPiece, srce);
       zobrist_.markPiece(ally, movedPiece, dest);
+      moveCallback.template markPiece<false>(ally, movedPiece, srce);
+      if (promotion == NoPiece) {
+        moveCallback.template markPiece<true>(ally, movedPiece, dest);
+      }
 
       if (promotion != NoPiece) {
         // Perform promotion.
@@ -383,6 +389,7 @@ namespace bb {
         bitboards_[ally][promotion] = setSquare(bitboards_[ally][promotion], dest);
         zobrist_.markPiece(ally, movedPiece, dest);
         zobrist_.markPiece(ally, promotion, dest);
+        moveCallback.template markPiece<true>(ally, promotion, dest);
       }
       if (move.isCastling()) {
         // Perform castling.
@@ -391,17 +398,23 @@ namespace bb {
         bitboards_[ally][Rook] = moveSquare(bitboards_[ally][Rook], rookFrom, rookTo);
         zobrist_.markPiece(ally, Rook, rookFrom);
         zobrist_.markPiece(ally, Rook, rookTo);
+        moveCallback.template markPiece<false>(ally, Rook, rookFrom);
+        moveCallback.template markPiece<true>(ally, Rook, rookTo);
       }
 
       // Update castle permission.
       zobrist_.markCastle(castlePermission_);
+      CastlePermission oldPerm = castlePermission_;
       castlePermission_ &= kCastlePermissionMask[srce] & kCastlePermissionMask[dest];
       zobrist_.markCastle(castlePermission_);
+      moveCallback.markCastle(oldPerm ^ castlePermission_);
 
       // Update enpassant square.
       zobrist_.markEnpassant(enpassant_);
+      moveCallback.markEnpassant(enpassant_);
       enpassant_ = move.isDoublePush() ? (ally == White ? squareUp(srce) : squareDown(srce)) : NoSquare;
       zobrist_.markEnpassant(enpassant_);
+      moveCallback.markEnpassant(enpassant_);
 
       // Update half move and full move..
       halfmove_ = (movedPiece == Pawn || undo.capturedPiece != NoPiece) ? 0 : halfmove_ + 1;
@@ -416,28 +429,39 @@ namespace bb {
       return undo;
     }
 
-    template <Side ally>
-    constexpr void unmakeMove(Move move, const MoveUndo& undo) noexcept {
+    template <Side ally, typename MoveCallback>
+    constexpr void unmakeMove(Move move, const MoveUndo& undo, MoveCallback&& moveCallback) noexcept {
       assert(side_ == getOtherSide(ally));
       static constexpr Side enemy = getOtherSide(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
 
+      moveCallback.markCastle(castlePermission_ ^ undo.castlePermission);
+      moveCallback.markEnpassant(enpassant_);
+      moveCallback.markEnpassant(undo.enpassant);
+
       if (move.isCastling()) {
         const Square rookFrom = dest > srce ? (ally == White ? H1 : H8) : (ally == White ? A1 : A8);
         const Square rookTo = dest > srce ? dest - 1 : dest + 1;
         bitboards_[ally][Rook] = moveSquare(bitboards_[ally][Rook], rookTo, rookFrom);
+        moveCallback.template markPiece<false>(ally, Rook, rookTo);
+        moveCallback.template markPiece<true>(ally, Rook, rookFrom);
       }
       if (const Piece promotion = move.getPromotedPieceType(); promotion != NoPiece) {
         bitboards_[ally][promotion] = unsetSquare(bitboards_[ally][promotion], dest);
         bitboards_[ally][Pawn] = setSquare(bitboards_[ally][Pawn], srce);
+        moveCallback.template markPiece<false>(ally, promotion, dest);
+        moveCallback.template markPiece<true>(ally, Pawn, srce);
       } else {
         const Piece movedPiece = move.getMovedPiece();
         bitboards_[ally][movedPiece] = moveSquare(bitboards_[ally][movedPiece], dest, srce);
+        moveCallback.template markPiece<false>(ally, movedPiece, dest);
+        moveCallback.template markPiece<true>(ally, movedPiece, srce);
       }
       if (undo.capturedPiece != NoPiece) {
         const Square capturedSq = move.isEnpassant() ? (ally == White ? squareDown(dest) : squareUp(dest)) : dest;
         bitboards_[enemy][undo.capturedPiece] = setSquare(bitboards_[enemy][undo.capturedPiece], capturedSq);
+        moveCallback.template markPiece<true>(enemy, undo.capturedPiece, capturedSq);
       }
       castlePermission_ = undo.castlePermission;
       enpassant_ = undo.enpassant;

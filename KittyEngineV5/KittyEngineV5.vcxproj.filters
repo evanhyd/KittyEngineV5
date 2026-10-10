@@ -23,6 +23,12 @@
     <Filter Include="Cores\TimeControl Policies">
       <UniqueIdentifier>{8420eac7-9598-4f04-964d-2c6fe7786bb8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="MLP">
+      <UniqueIdentifier>{e8489b59-46d5-44a0-b590-a5b438b57d01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{b14b1196-a9ff-4aee-aa02-ee8ad59a0e9a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -93,5 +99,28 @@
     <ClInclude Include="equal_percentage_time_control_policy.h">
       <Filter>Cores\TimeControl Policies</Filter>
     </ClInclude>
+    <ClInclude Include="mlp_serializer.h">
+      <Filter>MLP</Filter>
+    </ClInclude>
+    <ClInclude Include="matrix.h">
+      <Filter>MLP</Filter>
+    </ClInclude>
+    <ClInclude Include="layer.h">
+      <Filter>MLP</Filter>
+    </ClInclude>
+    <ClInclude Include="nnue.h">
+      <Filter>MLP</Filter>
+    </ClInclude>
+    <ClInclude Include="mlp_math.h">
+      <Filter>MLP</Filter>
+    </ClInclude>
+    <ClInclude Include="mlp_evaluation_policy.h">
+      <Filter>Cores\Evaluation Policies</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="weights.bin">
+      <Filter>Resources</Filter>
+    </None>
   </ItemGroup>
 </Project>

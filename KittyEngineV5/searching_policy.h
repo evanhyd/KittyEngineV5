@@ -34,6 +34,12 @@ namespace bb {
     concept SearchingPolicy = requires(SearchPolicy policy, BoardState& state, const SearchParam& param) {
       { policy.search<White>(state, param) } -> std::same_as<SearchResult>;
       { policy.search<Black>(state, param) } -> std::same_as<SearchResult>;
+      { policy.reset() } -> std::same_as<void>;
+      { policy.invalidateEvaluation() } -> std::same_as<void>;
+      { policy.template markPiece<true>(White, Pawn, A1) } -> std::same_as<void>;
+      { policy.template markPiece<false>(White, Pawn, A1) } -> std::same_as<void>;
+      { policy.markCastle(CastlePermission{}) } -> std::same_as<void>;
+      { policy.markEnpassant(A3) } -> std::same_as<void>;
     };
   }
 }

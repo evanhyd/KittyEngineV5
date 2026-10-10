@@ -74,7 +74,7 @@ namespace bb::searching {
     }
 
     EvalPolicy evalPolicy_;
-    int32_t aspirationWindow_;
+    const int32_t aspirationWindow_;
     TranspositionTable ttTable_;
     std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
 
@@ -286,13 +286,13 @@ namespace bb::searching {
 
       // Explore moves.
       for (const Move& move : moves) {
-        MoveUndo undo = context.state.template makeMove<meta.ally>(move);
+        MoveUndo undo = context.state.template makeMove<meta.ally>(move, evalPolicy_);
         context.positionHistory.push(context.state.getHash());
         (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
         Eval eval = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
         eval.score = -eval.score;
         context.positionHistory.pop();
-        context.state.template unmakeMove<meta.ally>(move, undo);
+        context.state.template unmakeMove<meta.ally>(move, undo, evalPolicy_);
 
         if (eval.score >= beta) {
           if (meta.isInternal() && !eval.historyDependent) {
@@ -334,9 +334,36 @@ namespace bb::searching {
         searchStack_(makeSearchStack(std::make_integer_sequence<int, kMaxDepthHardCutoff + 1>{})) {
     }
 
+    void reset() {
+      evalPolicy_.reset();
+      ttTable_.clear();
+      for (SearchStack& frame : searchStack_) {
+        frame.isFollowingPV = false;
+        frame.pvLine.clear();
+      }
+    }
+
+    void invalidateEvaluation() {
+      evalPolicy_.reset();
+    }
+
+    template <bool Add>
+    void markPiece(Side side, Piece piece, Square square) noexcept {
+      evalPolicy_.template markPiece<Add>(side, piece, square);
+    }
+
+    void markCastle(CastlePermission changedRights) noexcept {
+      evalPolicy_.markCastle(changedRights);
+    }
+
+    void markEnpassant(Square square) noexcept {
+      evalPolicy_.markEnpassant(square);
+    }
+
     template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
       static constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
+      evalPolicy_.prepare(state);
 
       // Result statistics.
       SearchContext context{state, param.positionHistory, param.pvLine,
@@ -409,13 +436,13 @@ namespace bb::searching {
         Move bestMove = moves[0];
 
         for (const Move& move : moves) {
-          const MoveUndo undo = state.makeMove<ally>(move);
+          const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
           searchStack_[1].isFollowingPV = move == pvMove;
           Eval eval = searchInternal<meta.flip().toInternal()>(context, searchStack_.data() + 1, -beta, -bestEval.score);
           eval.score = -eval.score;
           param.positionHistory.pop();
-          state.unmakeMove<ally>(move, undo);
+          state.unmakeMove<ally>(move, undo, evalPolicy_);
           if (eval.score > bestEval.score) {
             bestEval = eval;
             bestMove = move;

@@ -1,17 +1,16 @@
 #pragma once
 #include "boardstate.h"
-#include "searching_policy.h"
-#include "time_control_policy.h"
 #include "notation.h"
 #include "position_fens.h"
+#include "searching_policy.h"
+#include "time_control_policy.h"
 #include <algorithm>
-#include <stdexcept>
-#include <string_view>
-#include <utility>
 #include <format>
 #include <optional>
 #include <span>
-#include <vector>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
 
 namespace bb {
   template <searching::SearchingPolicy SearchPolicy, time_control::TimeControlPolicy TimePolicy>
@@ -22,6 +21,13 @@ namespace bb {
     searching::PositionHistory positionHistory_;
     searching::MoveHistory moveHistory_;
     searching::PVLine pvLine_;
+
+    struct PVReplayCallback {
+      template <bool Add>
+      void markPiece(Side, Piece, Square) const noexcept {}
+      void markCastle(CastlePermission) const noexcept {}
+      void markEnpassant(Square) const noexcept {}
+    };
 
     void advancePV(const Move& move) {
       if (pvLine_.empty() || pvLine_.front() != move) {
@@ -46,9 +52,17 @@ namespace bb {
       return state_;
     }
 
-    constexpr void setPosition(std::string_view fen) {
-      // TODO: reset search policy state if needed.
+    void reset() {
+      searchingPolicy_.reset();
+      positionHistory_.clear();
+      positionHistory_.push(state_.getHash());
+      moveHistory_.clear();
+      pvLine_.clear();
+    }
+
+    void setPosition(std::string_view fen) {
       state_.setPosition(fen);
+      searchingPolicy_.invalidateEvaluation();
       positionHistory_.clear();
       positionHistory_.push(state_.getHash());
       moveHistory_.clear();
@@ -83,9 +97,9 @@ namespace bb {
               break;
             }
             if (ally == White) {
-              pvState.makeMove<White>(previousPV[i]);
+              pvState.makeMove<White>(previousPV[i], PVReplayCallback{});
             } else {
-              pvState.makeMove<Black>(previousPV[i]);
+              pvState.makeMove<Black>(previousPV[i], PVReplayCallback{});
             }
             if (pvState.getHash() == state_.getHash()) {
               pvLine_.resize(previousPV.size() - i - 1);
@@ -103,13 +117,13 @@ namespace bb {
       }
     }
 
-    constexpr void playMove(std::string_view moveText) {
+    void playMove(std::string_view moveText) {
       const auto playMoveImpl = [&]<Side ally>() {
         MoveList moves;
         state_.generateMoves<ally>(moves);
         for (const Move& move : moves) {
           if (notation::moveToString(move) == moveText) {
-            state_.makeMove<ally>(move);
+            state_.makeMove<ally>(move, searchingPolicy_);
             positionHistory_.push(state_.getHash());
             moveHistory_.push(move);
             advancePV(move);
@@ -155,9 +169,9 @@ namespace bb {
       };
 
       if (state_.getSideToMove() == White) {
-        return iterativeDeepening.template operator() < White > ();
+        return iterativeDeepening.template operator()<White>();
       } else {
-        return iterativeDeepening.template operator() < Black > ();
+        return iterativeDeepening.template operator()<Black>();
       }
     }
   };
