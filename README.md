@@ -18,15 +18,43 @@ this integration is x64. Install the project's v145 C++ tools and Windows SDK;
 `/p:WindowsTargetPlatformVersion=...` can select another installed SDK. Tests
 require GoogleTest, as before.
 
-Install local **WDL (`.rtbw`) and DTZ (`.rtbz`)** files separately. A complete
-3–5 piece set is a practical starting point; every piece count includes the two
-kings. Use a [Syzygy download mirror](https://tablebase.lichess.ovh/tables/standard/)
-and verify its published checksums. Install all materials up to your chosen
-limit, including the smaller tables needed after captures and promotions. SSD
-storage helps cold probes. No tablebase files or trained `weights.bin` are
-included in this repository, and the engine never downloads data during play.
+### Install the five-piece tablebases
 
-Configure an enabled engine through UCI:
+From the repository root, run this once in Windows PowerShell 5.1 or PowerShell 7:
+
+```powershell
+.\tools\install-syzygy.ps1
+```
+
+This installs the complete standard **3–5-piece WDL (`.rtbw`) and DTZ (`.rtbz`)
+collection**: 290 files totaling **938.4 MiB**, including the smaller tables
+needed after captures and promotions. Piece counts include both kings. The
+default folder is `Tablebases\syzygy` inside the checkout; it is ignored by Git.
+To use another location, preferably on an SSD:
+
+```powershell
+.\tools\install-syzygy.ps1 -Destination 'D:\Chess Tables\syzygy'
+```
+
+The installer downloads from the [Lichess mirror](https://tablebase.lichess.ovh/tables/standard/)
+and checks every file against the sizes and SHA-256 hashes pinned in
+[`tools/syzygy-3-4-5.json`](tools/syzygy-3-4-5.json). The manifest records the
+published checksum sources and their hashes. Downloads are sequential, with
+up to three attempts per file. A file receives its final name only after
+verification succeeds.
+
+If installation is interrupted, rerun the same command. Verified files are
+reused, damaged files are replaced, and unfinished files restart from the
+beginning. A failed download leaves the previous destination file untouched.
+An already complete installation can be verified again without network access
+by rerunning the installer.
+
+### Configure the engine
+
+After installation, the script prints the UCI commands with the absolute path
+to the installed tables. Set **SyzygyPath** to that folder in your chess GUI's
+engine options, or send the printed commands directly to an enabled engine.
+For example, after installing to `D:\Chess Tables\syzygy`:
 
 ```text
 uci
@@ -41,6 +69,10 @@ go depth 6
 Windows paths can contain spaces; separate multiple directories with `;`.
 `SyzygyProbeLimit` accepts 0–7 (default 5); 0 disables probing at runtime.
 `SyzygyProbeDepth` accepts 0–64 (default 1), measured in remaining search plies.
+The engine does not save UCI options itself; configure the path in your GUI or
+send it each time the engine starts. Installation is an explicit setup step:
+cloning, building, and first use do not download tables. No tablebase files or
+trained `weights.bin` are bundled, and the engine never downloads data during play.
 An empty `SyzygyPath` or `<empty>` also disables probing. Path discovery reports
 the largest discovered material, not a guarantee of complete coverage. Missing
 files cause ordinary search fallback. Options apply between searches; the
@@ -95,6 +127,15 @@ cold root probe is included in elapsed time but cannot be interrupted. This
 change does not add asynchronous search or claim hard time deadlines.
 
 ### Verification
+
+The installer has a standalone offline regression test, with no extra packages:
+
+```powershell
+.\tools\test-install-syzygy.ps1
+```
+
+It covers complete installation, interrupted and corrupt downloads, retries,
+offline reruns, paths containing spaces and brackets, and manifest validation.
 
 The small optional fixture set is downloaded only by an explicit test setup step:
 

@@ -369,3 +369,6 @@ DiagnosticsScratch/
 # Tablebase data is installed separately, never committed with the engine.
 *.rtbw
 *.rtbz
+/Tablebases/
+*.rtbw.part
+*.rtbz.part
