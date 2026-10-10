@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--tables", required=True)
     parser.add_argument("--baseline")
     parser.add_argument("--corrected")
+    parser.add_argument("--previous-enabled", help="Earlier enabled build for an interleaved before/after comparison")
     parser.add_argument("--rounds", type=int, default=15)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--cpu", type=int, help="Windows logical CPU to pin this runner and its child processes to")
@@ -35,6 +36,9 @@ def main():
             raise ctypes.WinError(ctypes.get_last_error())
     variants = {"plain": (args.plain, "-"), "inactive": (args.enabled, "-"),
                 "active": (args.enabled, str(pathlib.Path(args.tables).resolve()))}
+    if args.previous_enabled:
+        variants["previous-inactive"] = (args.previous_enabled, "-")
+        variants["previous-active"] = (args.previous_enabled, str(pathlib.Path(args.tables).resolve()))
     for label in ("baseline", "corrected"):
         if binary := getattr(args, label):
             variants[label] = (binary, "-")

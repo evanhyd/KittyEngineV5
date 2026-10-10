@@ -1,4 +1,4 @@
-"""Compare Kitty's adapter with python-chess 1.999 (chess 1.11.2).
+"""Compare Kitty's adapter and search with python-chess 1.999 (chess 1.11.2).
 
 Usage: python tools/check-syzygy.py BENCH_EXE TABLE_DIRECTORY
 Install python-chess separately. No network or table downloads occur here.
@@ -63,7 +63,7 @@ def main():
                          text=True, capture_output=True, check=True)
     lines = run.stdout.splitlines()
     assert len(lines) == len(boards), (len(lines), len(boards), run.stderr)
-    roots = 0
+    expected = []
     with chess.syzygy.open_tablebase(directory) as tb:
         for board, line in zip(boards, lines):
             wdl, outcome, *moves = line.split()
@@ -75,8 +75,30 @@ def main():
             expected_outcome = 1 if best > 900 else -1 if best < -900 else 9 if abs(best) == 900 else 0
             assert set(moves) == expected_moves, (board.fen(), moves, expected_moves, ranks)
             assert int(outcome) == expected_outcome, (board.fen(), outcome, expected_outcome)
-            roots += 1
-    print(f"Passed {len(boards)} WDL/clock checks and {roots} complete root move rankings.")
+            expected.append((expected_moves, expected_outcome))
+    print(f"Passed {len(boards)} WDL/clock checks and complete root move rankings.", flush=True)
+
+    # Reuse the engine's TT across positions; clocks alternate for identical
+    # piece placement. Test WDL probes at the horizon and above it.
+    for probe_depth in (0, 1):
+        run = subprocess.run([str(binary), str(directory), "search", "3", str(probe_depth)],
+                             input="".join(b.fen(en_passant="fen") + "\n" for b in boards),
+                             text=True, capture_output=True, check=True)
+        lines = run.stdout.splitlines()
+        assert len(lines) == len(boards), (len(lines), len(boards), run.stderr)
+        for board, line, (best_moves, outcome) in zip(boards, lines, expected):
+            score, best_move, *pv = line.split()
+            score = int(score)
+            assert best_move in best_moves, (board.fen(), line, best_moves)
+            assert outcome == 9 or (score == 0 if outcome == 0 else score * outcome >= 30000), (board.fen(), line, outcome)
+            assert pv and pv[0] == best_move, (board.fen(), line)
+            replay = board.copy()
+            for uci in pv:
+                move = chess.Move.from_uci(uci)
+                assert move in replay.legal_moves, (board.fen(), line, replay.fen(), uci)
+                replay.push(move)
+        print(f"Passed {len(boards)} depth-3 searches with ProbeDepth={probe_depth}: "
+              "best move, score, legal PV and board restoration.", flush=True)
 
 
 if __name__ == "__main__":

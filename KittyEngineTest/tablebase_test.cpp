@@ -116,6 +116,38 @@ TEST_F(SyzygyFiles, MissingDtzFallsBackAndChangingPathsReleasesOldCoverage) {
   EXPECT_FALSE(service.enabled());
 }
 
+TEST_F(SyzygyFiles, CaptureReachesCoverageAtInclusiveSearchDepthBoundary) {
+  service.setOption("SyzygyProbeLimit", "3");
+  auto engine = board();
+  engine.setPosition("4k3/8/8/8/8/8/p7/R3K3 w - - 0 1");
+  const auto& state = engine.getState();
+  EXPECT_FALSE(service.canProbeDuringSearch(state, 1));
+  EXPECT_TRUE(service.canProbeDuringSearch(state, 2));
+  const auto shallow = engine.search(1, std::nullopt, [](const auto&) {});
+  EXPECT_EQ(shallow.tablebaseHits, 0u);
+  const auto deeper = engine.search(2, std::nullopt, [](const auto&) {});
+  EXPECT_GT(deeper.tablebaseHits, 0u);
+  ASSERT_TRUE(deeper.bestMove);
+  EXPECT_EQ(notation::moveToString(*deeper.bestMove), "a1a2");
+  EXPECT_GE(deeper.score, tablebase::kWinScore - 1);
+
+  engine.setTablebaseOption("SyzygyProbeDepth", "0");
+  EXPECT_TRUE(service.canProbeDuringSearch(state, 1));
+  const auto horizon = engine.search(1, std::nullopt, [](const auto&) {});
+  EXPECT_GT(horizon.tablebaseHits, 0u);
+  ASSERT_TRUE(horizon.bestMove);
+  EXPECT_EQ(notation::moveToString(*horizon.bestMove), "a1a2");
+  EXPECT_GE(horizon.score, tablebase::kWinScore - 1);
+
+  // Root DTZ still runs even when the WDL depth setting exceeds search depth.
+  engine.setTablebaseOption("SyzygyProbeDepth", "64");
+  engine.setPosition("4k3/8/8/8/8/8/8/R3K3 w - - 17 1");
+  EXPECT_TRUE(service.canProbeDuringSearch(engine.getState(), 1));
+  EXPECT_EQ(engine.search(1, std::nullopt, [](const auto&) {}).tablebaseHits, 1u);
+  engine.setTablebaseOption("SyzygyProbeLimit", "0");
+  EXPECT_FALSE(service.canProbeDuringSearch(engine.getState(), 64));
+}
+
 TEST_F(SyzygyFiles, RootConversionMatchesLegalPromotionsAndEnPassant) {
   for (const char* fen : {
     "8/4P3/4K3/8/8/8/k7/8 w - - 0 1",
@@ -185,6 +217,18 @@ TEST_F(SyzygyFiles, UciOptionsAndReconfigurationPreserveGameHistory) {
   EXPECT_NE(output.str().find("readyok"), std::string::npos);
   EXPECT_NE(output.str().find("tbhits 0"), std::string::npos);
   EXPECT_FALSE(service.enabled());
+}
+
+TEST_F(SyzygyFiles, RootLossDoesNotOverrideARepetitionDrawInGameHistory) {
+  auto engine = board();
+  engine.setPosition("7k/8/5K2/8/8/8/8/R7 w - - 0 1");
+  for (const auto move : {"a1b1", "h8h7", "b1a1", "h7h8", "a1b1", "h8h7", "b1a1"})
+    engine.playMove(move);
+  EXPECT_FALSE(service.rankRoot(engine.getState(), legalMoves(engine.getState()), true));
+  const auto result = engine.search(3, std::nullopt, [](const auto&) {});
+  EXPECT_EQ(result.score, 0);
+  ASSERT_TRUE(result.bestMove);
+  EXPECT_EQ(notation::moveToString(*result.bestMove), "h7h8");
 }
 
 TEST(Syzygy, OptionParserPreservesInternalSpaces) {

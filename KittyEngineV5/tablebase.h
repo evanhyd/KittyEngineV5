@@ -43,6 +43,15 @@ namespace bb::tablebase {
     int probeDepth() const noexcept { return probeDepth_; }
     const std::string& path() const noexcept { return path_; }
 
+    bool canProbeDuringSearch(const BoardState& state, int maxDepth) const noexcept {
+      if (!enabled()) return false;
+      const int excess = static_cast<int>(countPiece(state.getOccupancy(White) | state.getOccupancy(Black))) -
+        static_cast<int>(limit());
+      // Root DTZ ignores ProbeDepth. Otherwise at most one piece can disappear
+      // per ply, and quiescence never probes. Keep the inclusive depth boundary.
+      return excess <= 0 || excess <= maxDepth - probeDepth_;
+    }
+
     bool covers(const BoardState& state) const noexcept {
       return state.getCastlingRights() == 0 &&
         countPiece(state.getOccupancy(White) | state.getOccupancy(Black)) <= limit();

@@ -422,7 +422,9 @@ namespace bb::searching {
     }
 
 #if KITTY_ENABLE_SYZYGY
-    bool tablebasesEnabled() const noexcept { return tablebases_ && tablebases_->enabled(); }
+    bool canProbeTablebases(const BoardState& state, int maxDepth) const noexcept {
+      return tablebases_ && tablebases_->canProbeDuringSearch(state, maxDepth);
+    }
     bool hasTablebaseService() const noexcept { return tablebases_ != nullptr; }
     void beginTablebaseSearch() { rootProbed_ = false; rootTablebase_.reset(); }
     std::string setTablebaseOption(std::string_view name, std::string_view value) {

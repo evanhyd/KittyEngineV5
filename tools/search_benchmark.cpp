@@ -34,6 +34,29 @@ int main(int argc, char** argv) {
       , &tables
 #endif
     }, time_control::EqualPercentageTimeControlPolicy{0.05f}};
+#if KITTY_ENABLE_SYZYGY
+  // Exercise the whole search with a shared TT, for the independent oracle.
+  if (argc > 2 && std::string_view(argv[2]) == "search") {
+    const int depth = argc > 3 ? std::stoi(argv[3]) : 3;
+    if (argc > 4) tables.setOption("SyzygyProbeDepth", argv[4]);
+    for (std::string fen; std::getline(std::cin, fen);) {
+      board.setPosition(fen);
+      const BoardState before = board.getState();
+      const auto result = board.search(depth, std::nullopt, [](const auto&) {});
+      if (before.getHash() != board.getState().getHash() ||
+          before.getRepetitionHash() != board.getState().getRepetitionHash() ||
+          before.getHalfmoveClock() != board.getState().getHalfmoveClock()) {
+        std::cerr << "Search did not restore the position: " << fen << '\n';
+        return 1;
+      }
+      std::cout << result.score << ' '
+        << (result.bestMove ? notation::moveToString(*result.bestMove) : "0000");
+      for (const auto move : *result.pvLine) std::cout << ' ' << notation::moveToString(move);
+      std::cout << '\n';
+    }
+    return 0;
+  }
+#endif
   struct Case { const char* name; const char* fen; int depth; };
   const Case positions[] = {
     {"start", fen::kStartPosition.data(), 5},

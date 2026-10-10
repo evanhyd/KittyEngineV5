@@ -73,7 +73,10 @@ namespace bb::tablebase {
   }
 
   std::optional<RootResult> Service::rankRoot(const BoardState& state, const MoveList& legalMoves, bool repeated) const {
-    if (!enabled() || !covers(state) || state.getHalfmoveClock() >= 100 || legalMoves.empty()) return std::nullopt;
+    // DTZ cannot account for draws available from the actual game history.
+    // Fathom's hasRepeated flag encourages progress; it does not resolve these
+    // claims. Leave both move selection and scoring to search in this case.
+    if (repeated || !enabled() || !covers(state) || state.getHalfmoveClock() >= 100 || legalMoves.empty()) return std::nullopt;
     const Position p(state);
     TbRootMoves ranks;
     if (!tb_probe_root_dtz(p.white, p.black, p.kings, p.queens, p.rooks,

@@ -176,7 +176,15 @@ namespace bb {
             .pvLine = pvLine_,
           };
 #if KITTY_ENABLE_SYZYGY
-          if constexpr (UseTablebases) result = searchingPolicy_.template search<ally, true>(state_, param);
+          if constexpr (UseTablebases) {
+            // Timed searches request the hard depth limit, but often finish
+            // before coverage is reachable. Dispatch once per iteration.
+            if constexpr (requires { searchingPolicy_.canProbeTablebases(state_, depth); }) {
+              if (searchingPolicy_.canProbeTablebases(state_, depth))
+                result = searchingPolicy_.template search<ally, true>(state_, param);
+              else result = searchingPolicy_.template search<ally>(state_, param);
+            }
+          }
           else
 #endif
           result = searchingPolicy_.template search<ally>(state_, param);
@@ -191,9 +199,10 @@ namespace bb {
       };
 
 #if KITTY_ENABLE_SYZYGY
-      // Select once for the whole iterative-deepening search, never per node.
-      if constexpr (requires { searchingPolicy_.tablebasesEnabled(); searchingPolicy_.beginTablebaseSearch(); }) {
-        if (searchingPolicy_.tablebasesEnabled()) {
+      // Entirely unreachable searches use the ordinary loop. Otherwise choose
+      // the specialization at each iteration, never with a per-node toggle.
+      if constexpr (requires { searchingPolicy_.canProbeTablebases(state_, maxDepth); searchingPolicy_.beginTablebaseSearch(); }) {
+        if (searchingPolicy_.canProbeTablebases(state_, maxDepth)) {
           searchingPolicy_.beginTablebaseSearch();
           if (state_.getSideToMove() == White) return iterativeDeepening.template operator()<White, true>();
           return iterativeDeepening.template operator()<Black, true>();

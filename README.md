@@ -60,11 +60,19 @@ When compiled out, there are no tablebase members, options, counters, probe
 checks, or linked Fathom objects. An enabled build with no usable path or with
 limit 0 selects the ordinary search specialization once, before iterative
 deepening. Active search uses cheap eligibility checks before converting a
-position. The neural evaluator is unchanged.
+position. Each iteration selects ordinary search when even capturing one piece
+every ply cannot reach the configured piece limit before the WDL depth cutoff;
+this also avoids checks in early iterations of timed searches.
+Root DTZ probing remains eligible regardless of that depth cutoff. The neural
+evaluator is unchanged.
 
 DTZ ranks legal root moves once per `go`, then search considers only the best
 rank throughout iterative deepening. Search WDL probes require a zero halfmove
 clock, sufficient remaining depth, supported piece count, and no castling rights.
+Root DTZ ranking falls back to ordinary search when the reversible game history
+contains a repeated position: Syzygy does not encode that history, and its ranks
+must not exclude a repetition draw or overwrite its score. Interior WDL probing
+can resume after a capture or pawn move resets the clock and repetition window.
 Quiescence does not probe directly. The fifty-move rule is always respected:
 cursed wins and blessed losses count as draws. DTZ ranks at the rounding
 boundary do not claim an exact outcome. Proven tablebase wins use score 30000
@@ -113,8 +121,11 @@ python tools\compare-benchmarks.py --plain DiagnosticsScratch\bench\plain\bench.
 ```
 
 The comparison checks both side orientations, legal moves, WDL, DTZ ranks,
-en passant, promotions and nonzero clocks. Benchmarks use the handcrafted
-evaluator so they do not require private model weights; they do not establish
+en passant, promotions and nonzero clocks. It also exercises the full depth-3
+search at probe depths 0 and 1, checking chosen moves, scores, legal PVs and
+restoration of the board, with the transposition cache reused between positions.
+Benchmarks use the handcrafted evaluator so they do not require private model
+weights; they do not establish
 neural-evaluator throughput or playing-strength gains. `build-benchmark.ps1`
 also accepts `-SourceDirectory` for a baseline checkout and `-Assembly` for
 compiler listings. Raw timing samples remain in `DiagnosticsScratch/bench/`.
@@ -122,10 +133,12 @@ compiler listings. Raw timing samples remain in `DiagnosticsScratch/bench/`.
 ### Measured validation (2026-10-09)
 
 On Windows x64, Ryzen 9 3900XT, MSVC 19.50.35728, AVX2 and link-time
-optimization: Release passed 102 tests with the feature compiled out and 113
-with it enabled. The final search changes also passed 44 relevant Debug/ASan
-tests. Release Profiler builds successfully. The independent python-chess
-comparison passed 3,503 WDL/clock checks and 3,503 complete root rankings.
+optimization: Release passed 102 tests with the feature compiled out and 115
+with it enabled. All 115 enabled tests also passed in Debug/AddressSanitizer.
+The independent python-chess comparison passed 3,503 WDL/clock checks, 3,503
+complete root rankings, and 7,006 depth-3 searches (probe depths 0 and 1).
+Regression tests cover the inclusive capture/depth boundary and a game-history
+repetition draw that must override a static tablebase loss.
 
 The disabled benchmark's complete `.text` section is byte-identical to the
 draw/cache prerequisite commit `0e3f095`, with no Fathom symbols in its link
@@ -134,24 +147,33 @@ map. Verify equivalent builds with
 This proves removal of the tablebase integration for this compiler/build; it
 does not erase the separately reviewed draw-rule corrections.
 
-The following are median milliseconds from 11 interleaved rounds, five repeats,
+The following are median milliseconds from 15 interleaved rounds, five repeats,
 excluding the first round and first repeat. Processes were pinned to logical
 CPU 23 (`--cpu 23`). These are warm OS-cache samples using the small fixture set.
 
 | Fixed-depth position | Compiled out | Enabled, inactive | Enabled, probing | Probing hits |
 | --- | ---: | ---: | ---: | ---: |
-| Start, depth 5 | 6.135 | 6.414 | 6.400 | 0 |
-| Kiwipete, depth 4 | 77.775 | 78.664 | 78.763 | 0 |
-| Middlegame, depth 5 | 28.832 | 29.631 | 29.793 | 0 |
-| KRvK, depth 6 | 1.195 | 1.148 | 1.383 | 20 |
-| KPvK, depth 7 | 0.538 | 0.542 | 1.012 | 517 |
+| Start, depth 5 | 5.996 | 5.956 | 5.947 | 0 |
+| Kiwipete, depth 4 | 77.537 | 76.928 | 77.025 | 0 |
+| Middlegame, depth 5 | 28.435 | 28.237 | 28.302 | 0 |
+| KRvK, depth 6 | 1.185 | 1.145 | 1.347 | 20 |
+| KPvK, depth 7 | 0.536 | 0.513 | 0.970 | 517 |
 
-Outside coverage, active probing added at most 0.6% against the same enabled
-binary with probing inactive. The enabled build was 1.3–4.3% slower than the
-compiled-out build in those three cases; a universal sub-1% target is **not
-established**. Endgame searches can take longer because their scores, root move
-sets and search trees change. These samples establish neither an Elo gain nor
-production NNUE performance, and do not measure a genuinely cold disk cache.
+Outside coverage, the revised enabled build was within 1% of the compiled-out
+build in these samples. Compared with the previous implementation (`79c105e`),
+active runs took 3.8%, 1.3%, and 3.2% less time in the first three positions;
+the endgame samples took about 2% less time. All before/after node counts,
+scores, best moves and hit counts were identical. Compiler code placement and
+timing noise also affect these small differences; a universal sub-1% overhead
+target is **not established**.
+
+The previous enabled binary was included with `--previous-enabled` in the same
+interleaved run, using the same benchmark source and compiler flags. Raw data:
+`DiagnosticsScratch/bench/review-comparison.csv`. Endgame searches can take
+longer than searches without tablebases because their scores, root move sets
+and search trees change (KPvK searched 8,464 nodes instead of 4,558). These
+samples establish neither an Elo gain nor production NNUE performance, and
+do not measure a cold disk cache.
 
 ## Authorship
 The core engine, including bitboards, search, and evaluation, was coded manually.  
