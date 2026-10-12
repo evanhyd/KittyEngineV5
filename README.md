@@ -39,15 +39,13 @@ The handcrafted policy combines:
 
 Pawn and king placement scores are blended between opening and endgame values according to the remaining material.
 
-### MLP evaluation
+### NNUE evaluation
 
-- Architecture: 836 inputs, 256 and 32 hidden neurons, and one output; all values are floats.
-- Inputs: 768 piece-square features, four castling rights, and 64 en passant squares.
-- Perspective: inputs are encoded relative to each side, with one accumulator per perspective.
-- Activations: ReLU in the hidden layers and `sigmoid(x / 400)` at the output.
-- Score: the output is converted to centipawns.
-- Inference: move callbacks update first-layer sums; later layers run when a score is requested.
-- Weights: loaded from `weights.bin` in the current working directory, using the existing file format.
+- Architecture: 40,960 sparse inputs per perspective, two 256-neuron accumulators, 32 and 32 hidden neurons, and one output; all values are floats.
+- Inputs: non-king pieces indexed by side, piece type, king square, and piece square from each perspective.
+- Activations: leaky ReLU in the accumulators and hidden layers, and `sigmoid(x / 400)` at the output.
+- Score: WDL space to centipawn space.
+- Weights: loaded from `weights.bin` in the current working directory, using the `NNUESGD3` checkpoint format.
 
 ## UCI Command
 
@@ -63,8 +61,6 @@ Pawn and king placement scores are blended between opening and endgame values ac
 | `quit` | Exit the engine. |
 | `play <move>` | Play one UCI move on the current board; terminal extension. |
 | `perft depth <N> [detail]` | Count legal move sequences; `detail` also reports captures, en passant, castling, and promotions. Terminal extension. |
-
-Search progress is reported with `info` lines followed by `bestmove`. The `go` command runs synchronously; commands such as `stop` and `setoption` are not implemented.
 
 ## Perft benchmarks
 AMD Ryzen 7 4800H, 2.90 GHz  

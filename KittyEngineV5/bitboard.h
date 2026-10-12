@@ -71,7 +71,7 @@ namespace bb {
   inline constexpr Bitboard kRank3Mask = kRank8Mask << 40;
   inline constexpr Bitboard kRank2Mask = kRank8Mask << 48;
   inline constexpr Bitboard kRank1Mask = kRank8Mask << 56;
-
+  inline constexpr Bitboard kRankFlipMask = 56ull;
 
   /////////////////////////////////////////////////////////
   // HELPER FUNCTION                                     //

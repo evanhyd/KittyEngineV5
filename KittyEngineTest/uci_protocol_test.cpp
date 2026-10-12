@@ -49,8 +49,6 @@ namespace {
     void invalidateEvaluation() {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
@@ -95,8 +93,6 @@ namespace {
     void invalidateEvaluation() {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam& param) {
@@ -113,8 +109,6 @@ namespace {
     void invalidateEvaluation() {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
@@ -135,8 +129,6 @@ namespace {
     void invalidateEvaluation() {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam& param) {
@@ -154,8 +146,6 @@ namespace {
     void invalidateEvaluation() {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
@@ -176,8 +166,6 @@ namespace {
     void invalidateEvaluation() {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {

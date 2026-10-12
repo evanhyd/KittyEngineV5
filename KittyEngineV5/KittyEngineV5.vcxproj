@@ -223,6 +223,11 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="boardstate.cpp" />
     <ClCompile Include="main.cpp" />
@@ -236,11 +241,11 @@
     <ClInclude Include="equal_percentage_time_control_policy.h" />
     <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
-    <ClInclude Include="layer.h" />
-    <ClInclude Include="mlp_math.h" />
-    <ClInclude Include="matrix.h" />
-    <ClInclude Include="mlp_serializer.h" />
-    <ClInclude Include="nnue.h" />
+    <ClInclude Include="nnue_math.h" />
+    <ClInclude Include="nnue_matrix.h" />
+    <ClInclude Include="nnue_layer.h" />
+    <ClInclude Include="nnue_mlp.h" />
+    <ClInclude Include="nnue_serializer.h" />
     <ClInclude Include="mlp_evaluation_policy.h" />
     <ClInclude Include="perft_driver.h" />
     <ClInclude Include="negamax_search_policy.h" />

@@ -122,13 +122,6 @@ namespace bb::searching {
       std::copy((frame + 1)->pvLine.begin(), (frame + 1)->pvLine.end(), frame->pvLine.begin() + 1);
     }
 
-    void filterViolentMoves(MoveList& moves) const {
-      auto it = std::remove_if(moves.begin(), moves.end(), [](const Move& move) {
-        return !move.isViolentMove();
-      });
-      moves.resize(std::distance(moves.begin(), it));
-    }
-
     template <NodeMeta meta>
     void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove) const {
       struct PriorityMove {
@@ -239,40 +232,51 @@ namespace bb::searching {
         }
       }
 
+      // Quiescence search max depth.
       if (meta.isQuiescence() && frame->depth == kMaxDepthHardCutoff) {
         return Eval(evalPolicy_.evaluate(context.state), false);
       }
 
-      // Generate moves.
       MoveList moves;
-      context.state.template generateMoves<meta.ally>(moves);
-
-      // Check for checkmate or stalemate.
-      const bool inCheck = context.state.template isInCheck<meta.ally>();
-      if (moves.empty()) {
-        if (inCheck) {
-          return Eval(evaluation::kCheckmateScore + frame->depth, false);
-        } else {
-          return Eval(evaluation::kStalemateScore, false);
-        }
-      }
-
-      // Quiescence stand-pat and in-check extension.
       Eval bestEval(alpha, false);
       Move bestMove{};
 
+      if constexpr (meta.isInternal()) {
+        // Check for checkmate or stalemate.
+        context.state.template generateMoves<meta.ally>(moves);
+        if (moves.empty()) {
+          const bool inCheck = context.state.template isInCheck<meta.ally>();
+          if (inCheck) {
+            return Eval(evaluation::kCheckmateScore + frame->depth, false);
+          } else {
+            return Eval(evaluation::kStalemateScore, false);
+          }
+        }
+      }
+
       if constexpr (meta.isQuiescence()) {
-        if (!inCheck) {
+        // Quiescence search ignore stalemate, as it is too rare.
+        // No stand-pat when in-check.
+        const bool inCheck = context.state.template isInCheck<meta.ally>();
+        if (inCheck) {
+          context.state.template generateMoves<meta.ally>(moves);
+          if (moves.empty()) {
+            return Eval(evaluation::kCheckmateScore + frame->depth, false);
+          }
+        } else {
           // Can choose not to recapture if badtrade.
+          // Check standpat beta cut-off.
           int32_t standPat = evalPolicy_.evaluate(context.state);
           if (standPat >= beta) {
             return Eval(beta, false);
           }
           bestEval.score = std::max(alpha, standPat);
-          filterViolentMoves(moves);
-        } else {
-          // In-check extension. Continue the search with limited branches.
-          // TODO: implement 3-fold repetition check.
+
+          // Generate violent moves only.
+          context.state.template generateMoves<meta.ally, true>(moves);
+          if (moves.empty()) {
+            return bestEval;
+          }
         }
       }
 
@@ -352,17 +356,9 @@ namespace bb::searching {
       evalPolicy_.template markPiece<Add>(side, piece, square);
     }
 
-    void markCastle(CastlePermission changedRights) noexcept {
-      evalPolicy_.markCastle(changedRights);
-    }
-
-    void markEnpassant(Square square) noexcept {
-      evalPolicy_.markEnpassant(square);
-    }
-
     template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      static constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
+      constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
       evalPolicy_.prepare(state);
 
       // Result statistics.
@@ -409,7 +405,7 @@ namespace bb::searching {
       sortMoves<meta>(state, moves, ttMove, pvMove);
 
       // Set up aspiration window.
-      static constexpr auto expandWindow = [](int& failTime, int32_t window) {
+      constexpr auto expandWindow = [](int& failTime, int32_t window) {
         ++failTime;
         switch (failTime) {
         case 1:

@@ -6,7 +6,5 @@ namespace bb::testing_support {
     template <bool Add>
     constexpr void markPiece(Side, Piece, Square) const noexcept {}
 
-    constexpr void markCastle(CastlePermission) const noexcept {}
-    constexpr void markEnpassant(Square) const noexcept {}
   };
 }

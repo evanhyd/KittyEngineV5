@@ -25,8 +25,6 @@ namespace bb {
     struct PVReplayCallback {
       template <bool Add>
       void markPiece(Side, Piece, Square) const noexcept {}
-      void markCastle(CastlePermission) const noexcept {}
-      void markEnpassant(Square) const noexcept {}
     };
 
     void advancePV(const Move& move) {

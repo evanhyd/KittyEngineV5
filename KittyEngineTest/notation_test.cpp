@@ -50,8 +50,6 @@ namespace {
     void prepare(const BoardState&) {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
-    void markCastle(CastlePermission) {}
-    void markEnpassant(Square) {}
   };
 }
 

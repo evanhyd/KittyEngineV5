@@ -99,19 +99,19 @@
     <ClInclude Include="equal_percentage_time_control_policy.h">
       <Filter>Cores\TimeControl Policies</Filter>
     </ClInclude>
-    <ClInclude Include="mlp_serializer.h">
+    <ClInclude Include="nnue_serializer.h">
       <Filter>MLP</Filter>
     </ClInclude>
-    <ClInclude Include="matrix.h">
+    <ClInclude Include="nnue_matrix.h">
       <Filter>MLP</Filter>
     </ClInclude>
-    <ClInclude Include="layer.h">
+    <ClInclude Include="nnue_layer.h">
       <Filter>MLP</Filter>
     </ClInclude>
-    <ClInclude Include="nnue.h">
+    <ClInclude Include="nnue_mlp.h">
       <Filter>MLP</Filter>
     </ClInclude>
-    <ClInclude Include="mlp_math.h">
+    <ClInclude Include="nnue_math.h">
       <Filter>MLP</Filter>
     </ClInclude>
     <ClInclude Include="mlp_evaluation_policy.h">

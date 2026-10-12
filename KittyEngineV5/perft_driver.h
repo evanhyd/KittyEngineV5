@@ -8,8 +8,6 @@ namespace perft {
   struct NoOpMoveCallback {
     template <bool Add>
     constexpr void markPiece(bb::Side, bb::Piece, bb::Square) const noexcept {}
-    constexpr void markCastle(bb::CastlePermission) const noexcept {}
-    constexpr void markEnpassant(bb::Square) const noexcept {}
   };
 
   struct Config {

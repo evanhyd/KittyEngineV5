@@ -43,7 +43,7 @@ int main() {
     Board board{
     searching::NegamaxSearchPolicy{
       evaluation::MLPEvaluationPolicy{"weights.bin"},
-      // evaluation::HandCraftEvaluationPolicy{},
+       //evaluation::HandCraftEvaluationPolicy{},
       aspirationWindow,
       ttTableSize},
     time_control::EqualPercentageTimeControlPolicy{

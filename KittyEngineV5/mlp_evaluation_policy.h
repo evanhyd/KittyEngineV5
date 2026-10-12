@@ -1,134 +1,155 @@
 #pragma once
 #include "boardstate.h"
 #include "evaluation_policy.h"
-#include "mlp_math.h"
-#include "mlp_serializer.h"
-#include "nnue.h"
-#include <algorithm>
+#include "nnue_mlp.h"
+#include "nnue_serializer.h"
+#include "nnue_math.h"
+#include "searching_policy.h"
+#include "small_vec.h"
 #include <array>
-#include <cmath>
+#include <bit>
+#include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 
 namespace bb::evaluation {
-  class MLPEvaluationPolicy {
-    static constexpr bb::Square kRankFlipMask = 56;
-    static constexpr size_t kPieceInputSize = bb::kSideSize * bb::kPieceSize * bb::kSquareSize;
-    static constexpr size_t kCastlingInputIndex = kPieceInputSize;
-    static constexpr size_t kEnpassantInputIndex = kCastlingInputIndex + 4;
-    static constexpr size_t kInputSize = kEnpassantInputIndex + bb::kSquareSize;
-    static constexpr std::array<size_t, 4> kLayerSizes{kInputSize, 256, 32, 1};
-    static constexpr std::array<std::array<CastlePermission, 4>, 2> kCastlingRights{{
-      {WhiteKingCastle, WhiteQueenCastle, BlackKingCastle, BlackQueenCastle},
-      {BlackKingCastle, BlackQueenCastle, WhiteKingCastle, WhiteQueenCastle}
-    }};
-    mlp::NNUE model_;
-    std::optional<ZobristHash::Hash> rootHash_;
+  struct NnueLayout {
+    static constexpr uint32_t kPieceTypes = King; // 5 non-king piece types (Pawn, Knight, Bishop, Rook, Queen)
+    static constexpr uint32_t kKingPlaneStride = 2 * kPieceTypes * kSquareSize; // 640 inputs per king square
+    static constexpr uint32_t kPiecePlaneStride = kSquareSize;                  // 64 squares per piece plane
+    static constexpr uint32_t kInputSize = nnue::NnueModel::kInputSize;         // 40,960 total sparse inputs
+    using FeatureList = SmallVec<uint32_t, kSquareSize>;
 
-    static constexpr size_t pieceInputIndex(Side perspective, Side pieceSide, Piece piece, Square square) noexcept {
-      const Square relativeSquare = square ^ (perspective == Black ? kRankFlipMask : 0);
-      return ((pieceSide ^ perspective) * kPieceSize + piece) * kSquareSize + relativeSquare;
+    static constexpr Square orient(Side perspective, Square square) noexcept {
+      return Square(perspective == White ? square : square ^ kRankFlipMask);
     }
 
-  public:
-    template <bb::Side Mover>
-    static std::array<float, kInputSize> encodePosition(const BoardState& state) {
-      std::array<float, kInputSize> input{};
-      for (bb::Side relativeSide = 0; relativeSide < bb::kSideSize; ++relativeSide) {
-        const bb::Side pieceSide = Mover ^ relativeSide;
+    // Input Index: [own king square: 64] * 640 + [piece index: 10] * 64 + [piece square: 64]
+    static constexpr uint32_t pieceIndex(Side perspective, Side pieceSide, Piece piece, Square kingSquare, Square pieceSquare) noexcept {
+      const uint32_t relativeSide = pieceSide ^ perspective;
+      const uint32_t orientedKing = orient(perspective, kingSquare);
+      const uint32_t orientedPiece = orient(perspective, pieceSquare);
+      const uint32_t pieceIdx = relativeSide * kPieceTypes + piece;
+      return orientedKing * kKingPlaneStride + pieceIdx * kPiecePlaneStride + orientedPiece;
+    }
 
-        for (bb::Piece piece = bb::Pawn; piece < bb::kPieceSize; ++piece) {
-          for (bb::Bitboard pieces = state.getPieces(pieceSide, piece); 
-               pieces != 0; 
-               pieces = bb::popPiece(pieces)) {
-            const bb::Square square = bb::peekPiece(pieces);
-            input[pieceInputIndex(Mover, pieceSide, piece, square)] = 1.0f;
+    static Square kingSquare(const BoardState& state, Side perspective) {
+      return peekPiece(state.getPieces(perspective, King));
+    }
+
+    static FeatureList encode(const BoardState& state, Side perspective,
+                              Square kingSquare) {
+      FeatureList features;
+      for (Side relativeSide = White; relativeSide <= Black; ++relativeSide) {
+        const Side pieceSide = perspective ^ relativeSide;
+        for (Piece piece = Pawn; piece < King; ++piece) {
+          for (Bitboard pieces = state.getPieces(pieceSide, piece);
+               pieces != 0;
+               pieces = popPiece(pieces)) {
+            features.push(pieceIndex(perspective, pieceSide, piece, kingSquare,
+                                     peekPiece(pieces)));
           }
         }
       }
-
-      const bb::CastlePermission castling = state.getCastlingRights();
-      // Castling rights are ordered relative to this perspective.
-      for (size_t i = 0; i < kCastlingRights[Mover].size(); ++i) {
-        input[kCastlingInputIndex + i] = (castling & kCastlingRights[Mover][i]) != 0;
-      }
-
-      const bb::Square enPassant = state.getEnpassantSquare();
-      if (enPassant != bb::NoSquare) {
-        input[kEnpassantInputIndex + (enPassant ^ (Mover == Black ? kRankFlipMask : 0))] = 1.0f;
-      }
-      return input;
+      return features;
     }
+  };
 
-  private:
-    // Convert win-draw-lose space to centi-pawn space.
-    static int32_t wdlToCp(float wdl) {
-      wdl = std::clamp(wdl, 1e-6f, 1.0f - 1e-6f);
-      return static_cast<int32_t>(std::lround(400.0f * std::log(wdl / (1.0f - wdl))));
+
+  // NNUE MLP MODEL // 
+  class MLPEvaluationPolicy {
+    struct PieceChange {
+      Side side;
+      Piece piece;
+      Square square;
+      bool add;
+    };
+
+    std::unique_ptr<nnue::NnueModel> model_;
+    SmallVec<PieceChange, searching::kMaxDepthHardCutoff> pending_;
+    std::array<Square, 2> cachedKingSquares_{NoSquare, NoSquare};
+    std::optional<ZobristHash::Hash> preparedRootHash_;
+    bool fullRefreshNeeded_ = false;
+
+    void rebuild(const BoardState& state, Side perspective, Square kingSquare) {
+      const auto features = NnueLayout::encode(state, perspective, kingSquare);
+      model_->feedFull({features.begin(), features.size()}, perspective);
+      cachedKingSquares_[perspective] = kingSquare;
     }
 
   public:
     explicit MLPEvaluationPolicy(const std::filesystem::path& filename)
-      : model_(kLayerSizes, mlp::relu, mlp::scaledSigmoid) {
-      mlp::MLPSerializer(model_).load(filename);
-    }
+      : model_(nnue::NnueSerializer::load(filename)) {}
 
-    void reset() {
-      rootHash_.reset();
-      model_.clearAccumulators();
+    void reset() noexcept {
+      pending_.clear();
+      cachedKingSquares_.fill(NoSquare);
+      preparedRootHash_.reset();
+      fullRefreshNeeded_ = false;
+      model_->clearAccumulators();
     }
 
     void prepare(const BoardState& state) {
-      if (rootHash_ == state.getHash() && model_.hasAccumulator(White)) {
-        return;
+      if (preparedRootHash_.has_value() && *preparedRootHash_ != state.getHash() && pending_.empty()) {
+        reset();
       }
-      const auto whiteInput = encodePosition<White>(state);
-      const auto blackInput = encodePosition<Black>(state);
-      model_.initializeAccumulator(White, whiteInput);
-      model_.initializeAccumulator(Black, blackInput);
-      rootHash_ = state.getHash();
+      preparedRootHash_ = state.getHash();
     }
 
     template <bool Add>
     void markPiece(Side side, Piece piece, Square square) noexcept {
-      if (!model_.hasAccumulator(White)) {
+      if (piece == King || fullRefreshNeeded_ || !model_->hasAccumulator(White)) {
         return;
       }
-      for (Side perspective = White; perspective <= Black; ++perspective) {
-        model_.setInput(perspective, pieceInputIndex(perspective, side, piece, square), Add ? 1.0f : 0.0f);
-      }
-    }
 
-    void markCastle(CastlePermission changedRights) noexcept {
-      if (!model_.hasAccumulator(White) || changedRights == 0) {
-        return;
-      }
-      for (Side perspective = White; perspective <= Black; ++perspective) {
-        for (size_t i = 0; i < 4; ++i) {
-          if ((changedRights & kCastlingRights[perspective][i]) == 0) {
-            continue;
-          }
-          const size_t index = kCastlingInputIndex + i;
-          model_.setInput(perspective, index, 1.0f - model_.getInput(perspective, index));
+      // Keep only the net difference from the last evaluated position.
+      for (size_t i = 0; i < pending_.size(); ++i) {
+        const PieceChange& change = pending_[i];
+        if (change.side != side || change.piece != piece || change.square != square) {
+          continue;
         }
-      }
-    }
-
-    void markEnpassant(Square square) noexcept {
-      if (!model_.hasAccumulator(White) || square == NoSquare) {
+        pending_[i] = pending_.back();
+        pending_.pop();
         return;
       }
-      for (Side perspective = White; perspective <= Black; ++perspective) {
-        const size_t index = kEnpassantInputIndex + (square ^ (perspective == Black ? kRankFlipMask : 0));
-        model_.setInput(perspective, index, 1.0f - model_.getInput(perspective, index));
+
+      if (pending_.size() == searching::kMaxDepthHardCutoff) {
+        fullRefreshNeeded_ = true;
+        pending_.clear();
+        return;
       }
+      pending_.push({side, piece, square, Add});
     }
 
     int32_t evaluate(const BoardState& state) {
-      if (!model_.hasAccumulator(White)) {
-        prepare(state);
+      const std::array<Square, 2> currentKings{
+        NnueLayout::kingSquare(state, White),
+        NnueLayout::kingSquare(state, Black)
+      };
+
+      for (Side perspective = White; perspective <= Black; ++perspective) {
+        if (fullRefreshNeeded_ || !model_->hasAccumulator(perspective) || currentKings[perspective] != cachedKingSquares_[perspective]) {
+          rebuild(state, perspective, currentKings[perspective]);
+          continue;
+        }
+
+        // Change first-layer sums only for pieces that differ from the cached board.
+        for (const PieceChange& change : pending_) {
+          const uint32_t index = NnueLayout::pieceIndex(
+            perspective, change.side, change.piece,
+            currentKings[perspective], change.square);
+          if (change.add) {
+            model_->feedIncremental<true>(index, perspective);
+          } else {
+            model_->feedIncremental<false>(index, perspective);
+          }
+        }
       }
-      return wdlToCp(model_.inferPerspective(state.getSideToMove())[0]);
+
+      pending_.clear();
+      fullRefreshNeeded_ = false;
+      return nnue::scaledSigmoidToCentipawns(model_->evaluate(state.getSideToMove()));
     }
   };
 

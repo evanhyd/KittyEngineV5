@@ -44,7 +44,7 @@ namespace bb {
 
     template <Side ally, bool kingSide>
     constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const noexcept {
-      static constexpr Bitboard permission = []() {
+      constexpr Bitboard permission = []() {
         if constexpr (ally == White && kingSide) {
           return WhiteKingCastle;
         } else if constexpr (ally == White && !kingSide) {
@@ -55,13 +55,13 @@ namespace bb {
           return BlackQueenCastle;
         }
       }();
-      static constexpr Bitboard blockers = kingSide ? kKingCastleOccupancyMasks[ally] : kQueenCastleOccupancyMasks[ally];
-      static constexpr Bitboard safety = kingSide ? kKingCastleSafetyMasks[ally] : kQueenCastleSafetyMasks[ally];
+      constexpr Bitboard blockers = kingSide ? kKingCastleOccupancyMasks[ally] : kQueenCastleOccupancyMasks[ally];
+      constexpr Bitboard safety = kingSide ? kKingCastleSafetyMasks[ally] : kQueenCastleSafetyMasks[ally];
       if ((castlePermission_ & permission) == permission &&
           (bothOccupancy & blockers) == 0 &&
           (attackedMask & safety) == 0) {
-        static constexpr Square srce = ally == White ? E1 : E8;
-        static constexpr Square dest = ally == White ? (kingSide ? G1 : C1) : (kingSide ? G8 : C8);
+        constexpr Square srce = ally == White ? E1 : E8;
+        constexpr Square dest = ally == White ? (kingSide ? G1 : C1) : (kingSide ? G8 : C8);
         moves.push(Move(srce, dest, King, NoPiece, Move::kCastlingFlag));
       }
     }
@@ -99,7 +99,7 @@ namespace bb {
     // Return a bitboard containing squares attacked by enemy pieces.
     template <Side ally>
     constexpr Bitboard getAttackedMask(Bitboard bothOccupancy) const noexcept {
-      static constexpr Side enemy = getOtherSide(ally);
+      constexpr Side enemy = getOtherSide(ally);
 
       // If king blocks the attack ray, then it may incorrectly move backward illegally.
       // Consider the move: r...K... -> r....K..
@@ -131,7 +131,7 @@ namespace bb {
     // blocking or capturing squares for one checker, and no squares for double check.
     template <Side ally>
     constexpr Bitboard getCheckEvasionMask(Square kingSq, Bitboard bothOccupancy) const noexcept {
-      static constexpr Side enemy = getOtherSide(ally);
+      constexpr Side enemy = getOtherSide(ally);
 
       Bitboard evasionMask = ~Bitboard{};
       Bitboard checkers = (getAttack<Pawn, ally>(kingSq) & bitboards_[enemy][Pawn]) |
@@ -149,7 +149,7 @@ namespace bb {
     // Return a bitboard containing ally pieces that are pinned.
     template <Side ally>
     constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize> occupancy) const noexcept {
-      static constexpr Side enemy = getOtherSide(ally);
+      constexpr Side enemy = getOtherSide(ally);
 
       // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.
       Bitboard pinnedMask{};
@@ -173,7 +173,7 @@ namespace bb {
       const Bitboard evasionMask, 
       const Bitboard pinnedMask) const noexcept {
 
-      static constexpr Side enemy = getOtherSide(ally);
+      constexpr Side enemy = getOtherSide(ally);
       const Bitboard bothOccupancy = occupancy[White] | occupancy[Black];
       Bitboard sbb = bitboards_[ally][piece];
       if constexpr (piece == Knight) {
@@ -404,17 +404,13 @@ namespace bb {
 
       // Update castle permission.
       zobrist_.markCastle(castlePermission_);
-      CastlePermission oldPerm = castlePermission_;
       castlePermission_ &= kCastlePermissionMask[srce] & kCastlePermissionMask[dest];
       zobrist_.markCastle(castlePermission_);
-      moveCallback.markCastle(oldPerm ^ castlePermission_);
 
       // Update enpassant square.
       zobrist_.markEnpassant(enpassant_);
-      moveCallback.markEnpassant(enpassant_);
       enpassant_ = move.isDoublePush() ? (ally == White ? squareUp(srce) : squareDown(srce)) : NoSquare;
       zobrist_.markEnpassant(enpassant_);
-      moveCallback.markEnpassant(enpassant_);
 
       // Update half move and full move..
       halfmove_ = (movedPiece == Pawn || undo.capturedPiece != NoPiece) ? 0 : halfmove_ + 1;
@@ -432,13 +428,9 @@ namespace bb {
     template <Side ally, typename MoveCallback>
     constexpr void unmakeMove(Move move, const MoveUndo& undo, MoveCallback&& moveCallback) noexcept {
       assert(side_ == getOtherSide(ally));
-      static constexpr Side enemy = getOtherSide(ally);
+      constexpr Side enemy = getOtherSide(ally);
       const Square srce = move.getSource();
       const Square dest = move.getDest();
-
-      moveCallback.markCastle(castlePermission_ ^ undo.castlePermission);
-      moveCallback.markEnpassant(enpassant_);
-      moveCallback.markEnpassant(undo.enpassant);
 
       if (move.isCastling()) {
         const Square rookFrom = dest > srce ? (ally == White ? H1 : H8) : (ally == White ? A1 : A8);

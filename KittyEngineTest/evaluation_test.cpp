@@ -1,190 +1,196 @@
 #include "board.h"
 #include "equal_percentage_time_control_policy.h"
 #include "handcraft_evaluation_policy.h"
-#include "negamax_search_policy.h"
-#include "notation.h"
 #include "mlp_evaluation_policy.h"
-#include "nnue.h"
-#include "mlp_serializer.h"
+#include "negamax_search_policy.h"
+#include "nnue_serializer.h"
+#include "notation.h"
 #include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <optional>
+#include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <gtest/gtest.h>
 
 using namespace bb;
 
 namespace {
-  constexpr size_t kNnueInputSize = 836;
-  constexpr std::array<float, 4> kCastlingWeights{30.0f, 40.0f, 50.0f, 60.0f};
+  std::filesystem::path weightsPath() {
+    return std::filesystem::path(__FILE__).parent_path().parent_path()
+      / "KittyEngineV5" / "weights.bin";
+  }
 
-  // Generated test weights keep these checks independent of the trained model.
-  struct TestNnueModelFile {
+  struct TemporaryFile {
     std::filesystem::path path = std::filesystem::temp_directory_path() /
-      ("kitty_nnue_test_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".bin");
+      ("kitty_nnue_test_" + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count()) + ".bin");
 
-    TestNnueModelFile() {
-      mlp::NNUE model(
-        {{kNnueInputSize, 256, 32, 1}}, mlp::relu, mlp::scaledSigmoid);
-      for (size_t layerIndex = 0; layerIndex < model.countLayer(); ++layerIndex) {
-        auto& layer = model.getLayer(layerIndex);
-        for (size_t neuron = 0; neuron < layer.getNumNeurons(); ++neuron) {
-          layer.setBias(neuron, 0.0f);
-        }
-        const auto& weights = layer.getWeights();
-        for (size_t row = 0; row < weights.rows(); ++row) {
-          for (size_t col = 0; col < weights.cols(); ++col) {
-            layer.setWeight(row, col, 0.0f);
-          }
-        }
-      }
-      for (size_t index = 0; index < 768; ++index) {
-        model.getLayer(1).setWeight(0, index, 2.0f + static_cast<float>(index % 64) * 0.5f);
-      }
-      for (size_t i = 0; i < 4; ++i) {
-        model.getLayer(1).setWeight(0, 768 + i, kCastlingWeights[i]);
-      }
-      for (size_t i = 0; i < 64; ++i) {
-        model.getLayer(1).setWeight(0, 772 + i, 4.0f + static_cast<float>(i));
-      }
-      model.getLayer(2).setWeight(0, 0, 1.0f);
-      model.getLayer(3).setWeight(0, 0, 1.0f);
-      mlp::MLPSerializer(model).save(path);
-    }
-
-    ~TestNnueModelFile() {
+    ~TemporaryFile() {
       std::error_code ignored;
       std::filesystem::remove(path, ignored);
     }
   };
-}
 
-TEST(Nnue, SingleInputAndRepeatedFullInferenceAgree) {
-  mlp::NNUE model(
-    {{4, 2, 1}}, mlp::relu, mlp::scaledSigmoid);
-  for (size_t layerIndex = 1; layerIndex < model.countLayer(); ++layerIndex) {
-    auto& layer = model.getLayer(layerIndex);
-    const auto& weights = layer.getWeights();
-    for (size_t row = 0; row < weights.rows(); ++row) {
-      layer.setBias(row, 0.0f);
-      for (size_t col = 0; col < weights.cols(); ++col) {
-        layer.setWeight(row, col, 0.0f);
-      }
+  void writeHeader(std::ostream& output, uint64_t inputSize = nnue::NnueModel::kInputSize) {
+    constexpr std::array<char, 8> magic{'N', 'N', 'U', 'E', 'S', 'G', 'D', '4'};
+    constexpr std::array<uint64_t, 3> progress{};
+    output.write(magic.data(), magic.size());
+    for (uint64_t dimension : {inputSize, uint64_t{256}, uint64_t{32}, uint64_t{32}}) {
+      output.write(reinterpret_cast<const char*>(&dimension), sizeof(dimension));
     }
-  }
-  model.getLayer(1).setWeight(0, 3, 100.0f);
-  model.getLayer(2).setWeight(0, 0, 1.0f);
-
-  std::array<float, 4> input{};
-  const float baseline = model.infer(input)[0];
-  EXPECT_FLOAT_EQ(model.infer(input)[0], baseline);
-  model.initializeAccumulator(White, input);
-  model.setInput(White, 3, 1.0f);
-  const float incremental = model.inferPerspective(White)[0];
-  input[3] = 1.0f;
-  EXPECT_FLOAT_EQ(model.infer(3, 1.0f)[0], incremental);
-  EXPECT_FLOAT_EQ(model.infer(input)[0], incremental);
-}
-
-TEST(Nnue, ThirtyTwoNeuronLayerMatchesScalarForwardPass) {
-  mlp::Layer previous(40);
-  mlp::Layer layer(32);
-  layer.connect(previous);
-  for (size_t neuron = 0; neuron < 32; ++neuron) {
-    layer.setBias(neuron, static_cast<float>(neuron) * 0.1f - 1.5f);
-    for (size_t inputIndex = 0; inputIndex < 40; ++inputIndex) {
-      layer.setWeight(neuron, inputIndex,
-        static_cast<float>((neuron * 7 + inputIndex * 3) % 19) * 0.03f - 0.25f);
-    }
+    output.write(reinterpret_cast<const char*>(progress.data()), sizeof(progress));
   }
 
-  std::array<float, 40> input{};
-  for (size_t activeCount : {0u, 1u, 5u, 40u}) {
-    input.fill(0.0f);
-    for (size_t index = 0; index < activeCount; ++index) {
-      input[index] = index % 2 == 0 ? 0.75f : -1.25f;
-    }
-    previous.setOutput(input);
-    layer.propagateForward(previous, mlp::relu);
-
-    for (size_t neuron = 0; neuron < 32; ++neuron) {
-      float expected = layer.getBiases()[neuron];
-      for (size_t index = 0; index < activeCount; ++index) {
-        expected += input[index] * layer.getWeights()(neuron, index);
-      }
-      EXPECT_NEAR(layer.getOutput()[neuron], mlp::relu(expected), 1e-5f);
-    }
+  void expectFreshScore(evaluation::MLPEvaluationPolicy& incremental,
+                        evaluation::MLPEvaluationPolicy& fresh,
+                        const BoardState& state) {
+    fresh.reset();
+    EXPECT_NEAR(incremental.evaluate(state), fresh.evaluate(state), 1);
   }
 }
 
-TEST(Nnue, LoadsExistingVersionTwoWeightLayout) {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() /
-    ("kitty_nnue_format_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".bin");
-  const std::array<unsigned char, 84> fileBytes{
-    'M', 'L', 'P', 'W', 'T', '0', '0', '1',
-    2, 0, 0, 0, 3, 0, 0, 0,
-    2, 0, 0, 0, 0, 0, 0, 0,
-    2, 0, 0, 0, 0, 0, 0, 0,
-    1, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 128, 63, 0, 0, 0, 64,
-    0, 0, 64, 64, 0, 0, 128, 64,
-    0, 0, 0, 0,
-    0, 0, 160, 64, 0, 0, 192, 64
-  };
+TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {
+  const BoardState state{"4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"};
+  const auto white = evaluation::NnueLayout::encode(
+    state, White, evaluation::NnueLayout::kingSquare(state, White));
+  const auto black = evaluation::NnueLayout::encode(
+    state, Black, evaluation::NnueLayout::kingSquare(state, Black));
+
+  ASSERT_EQ(white.size(), 1u);
+  ASSERT_EQ(black.size(), 1u);
+  EXPECT_EQ(white.front(), 38'452u);
+  EXPECT_EQ(black.front(), 38'732u);
+  EXPECT_EQ(white.front(), evaluation::NnueLayout::pieceIndex(White, White, Pawn, E1, E2));
+  EXPECT_EQ(black.front(), evaluation::NnueLayout::pieceIndex(Black, White, Pawn, E8, E2));
+
+  const BoardState differentRights{"4k3/8/8/8/8/8/4P3/4K3 w Kq e3 0 1"};
+  const auto sameWhite = evaluation::NnueLayout::encode(
+    differentRights, White, evaluation::NnueLayout::kingSquare(differentRights, White));
+  EXPECT_EQ(sameWhite.front(), white.front());
+}
+
+TEST(Nnue, DenseInputPutsMoverBeforeOpponent) {
+  auto model = std::make_unique<nnue::NnueModel>();
+  auto accumulatorWeights = model->accumulator().weights();
+  accumulatorWeights[7 * nnue::NnueModel::kAccumulatorSize] = 100.0f;
+  accumulatorWeights[9 * nnue::NnueModel::kAccumulatorSize] = 200.0f;
+  auto firstWeights = model->firstHidden().weights();
+  firstWeights[0] = 1.0f;
+  firstWeights[nnue::NnueModel::kAccumulatorSize] = 2.0f;
+  model->secondHidden().weights()[0] = 1.0f;
+  model->outputLayer().weights()[0] = 1.0f;
+
+  const std::array<uint32_t, 1> whiteFeature{7};
+  const std::array<uint32_t, 1> blackFeature{9};
+  model->feedFull(whiteFeature, 0);
+  model->feedFull(blackFeature, 1);
+  EXPECT_NEAR(model->evaluate(0), nnue::scaledSigmoid(500.0f), 1e-6f);
+  EXPECT_NEAR(model->evaluate(1), nnue::scaledSigmoid(400.0f), 1e-6f);
+}
+
+TEST(Nnue, AccumulatorAndHiddenLayersUseLeakyRelu) {
+  auto model = std::make_unique<nnue::NnueModel>();
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = -100.0f;
+  model->firstHidden().weights()[0] = -1.0f;
+  model->secondHidden().weights()[0] = 1.0f;
+  model->outputLayer().weights()[0] = 1.0f;
+
+  const std::array<uint32_t, 1> active{7};
+  const std::array<uint32_t, 0> empty{};
+  model->feedFull(active, 0);
+  model->feedFull(empty, 1);
+  EXPECT_NEAR(model->evaluate(0), nnue::scaledSigmoid(1.0f), 1e-6f);
+
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 1.0f;
+  model->firstHidden().weights()[0] = -100.0f;
+  model->secondHidden().weights()[0] = -1.0f;
+  model->feedFull(active, 0);
+  EXPECT_NEAR(model->evaluate(0), nnue::scaledSigmoid(1.0f), 1e-6f);
+}
+
+TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
+  const auto trainedWeights = weightsPath();
+  ASSERT_TRUE(std::filesystem::exists(trainedWeights));
+  EXPECT_EQ(std::filesystem::file_size(trainedWeights), 42'014'148u);
+  EXPECT_NO_THROW((void)nnue::NnueSerializer::load(trainedWeights));
+
+  TemporaryFile malformed;
   {
-    std::ofstream stream(path, std::ios::binary);
-    ASSERT_TRUE(stream);
-    stream.write(reinterpret_cast<const char*>(fileBytes.data()), fileBytes.size());
-    ASSERT_TRUE(stream);
+    std::ofstream output(malformed.path, std::ios::binary);
+    writeHeader(output, nnue::NnueModel::kInputSize + 1);
+  }
+  try {
+    (void)nnue::NnueSerializer::load(malformed.path);
+    FAIL() << "Expected a dimension error";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find("dimension 0"), std::string::npos);
   }
 
-  mlp::NNUE model({{2, 2, 1}}, mlp::relu, mlp::scaledSigmoid);
-  const std::array<float, 2> input{1.0f, 1.0f};
-  model.initializeAccumulator(White, input);
-  ASSERT_TRUE(model.hasAccumulator(White));
+  {
+    std::fstream file(malformed.path, std::ios::binary | std::ios::in | std::ios::out);
+    file.seekp(0);
+    file.put('X');
+  }
+  try {
+    (void)nnue::NnueSerializer::load(malformed.path);
+    FAIL() << "Expected a signature error";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find("header magic"), std::string::npos);
+  }
 
-  mlp::MLPSerializer(model).load(path);
-  EXPECT_FALSE(model.hasAccumulator(White));
-  EXPECT_FLOAT_EQ(model.getLayer(1).getWeights()(0, 0), 1.0f);
-  EXPECT_FLOAT_EQ(model.getLayer(1).getWeights()(1, 1), 4.0f);
-  EXPECT_FLOAT_EQ(model.getLayer(2).getWeights()(0, 0), 5.0f);
-  EXPECT_FLOAT_EQ(model.getLayer(2).getWeights()(0, 1), 6.0f);
+  {
+    std::ofstream output(malformed.path, std::ios::binary | std::ios::trunc);
+    writeHeader(output);
+    output.put('x');
+  }
+  try {
+    (void)nnue::NnueSerializer::load(malformed.path);
+    FAIL() << "Expected truncated accumulator biases";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find("accumulator biases"), std::string::npos);
+    EXPECT_NE(std::string(error.what()).find("truncated"), std::string::npos);
+  }
 
-  const float full = model.infer(input)[0];
-  model.initializeAccumulator(White, input);
-  EXPECT_FLOAT_EQ(model.inferPerspective(White)[0], full);
+  std::filesystem::copy_file(trainedWeights, malformed.path,
+                             std::filesystem::copy_options::overwrite_existing);
+  {
+    std::fstream file(malformed.path, std::ios::binary | std::ios::in | std::ios::out);
+    file.seekp(64);
+    const float invalid = std::numeric_limits<float>::infinity();
+    file.write(reinterpret_cast<const char*>(&invalid), sizeof(invalid));
+  }
+  try {
+    (void)nnue::NnueSerializer::load(malformed.path);
+    FAIL() << "Expected a non-finite accumulator bias error";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find("accumulator biases"), std::string::npos);
+    EXPECT_NE(std::string(error.what()).find("non-finite"), std::string::npos);
+  }
 
-  std::error_code ignored;
-  std::filesystem::remove(path, ignored);
-}
-
-TEST(Nnue, CastlingInputsUseSideRelativeOrder) {
-  constexpr std::array<std::string_view, 4> rights{"K", "Q", "k", "q"};
-  constexpr std::array<std::array<size_t, 4>, 2> expectedIndex{{
-    {0, 1, 2, 3}, {2, 3, 0, 1}
-  }};
-  for (Side perspective = White; perspective <= Black; ++perspective) {
-    const std::string side = perspective == White ? "w" : "b";
-    for (size_t i = 0; i < rights.size(); ++i) {
-      const BoardState state{"r3k2r/8/8/8/8/8/8/R3K2R " + side + " " + std::string(rights[i]) + " - 0 1"};
-      const auto input = perspective == White
-        ? evaluation::MLPEvaluationPolicy::encodePosition<White>(state)
-        : evaluation::MLPEvaluationPolicy::encodePosition<Black>(state);
-      for (size_t index = 0; index < 4; ++index) {
-        EXPECT_FLOAT_EQ(input[768 + index], index == expectedIndex[perspective][i] ? 1.0f : 0.0f);
-      }
-    }
+  {
+    std::fstream file(malformed.path, std::ios::binary | std::ios::in | std::ios::out);
+    file.seekp(64);
+    const float valid = 0.0f;
+    file.write(reinterpret_cast<const char*>(&valid), sizeof(valid));
+  }
+  {
+    std::ofstream file(malformed.path, std::ios::binary | std::ios::app);
+    file.put('x');
+  }
+  try {
+    (void)nnue::NnueSerializer::load(malformed.path);
+    FAIL() << "Expected trailing data error";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find("trailing data"), std::string::npos);
   }
 }
 
-TEST(Nnue, IncrementalMovesAndUndosMatchFreshInference) {
-  const TestNnueModelFile weights;
+TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
+  evaluation::MLPEvaluationPolicy incremental{weightsPath()};
+  evaluation::MLPEvaluationPolicy fresh{weightsPath()};
   const struct Case { std::string_view fen; Move move; } cases[] = {
     {fen::kStartPosition, Move(E2, E4, Pawn, NoPiece, Move::kDoublePushFlag)},
     {"4k3/8/8/8/8/8/4p3/4K3 w - - 0 1", Move(E1, E2, King, NoPiece, Move::kCaptureFlag)},
@@ -199,22 +205,19 @@ TEST(Nnue, IncrementalMovesAndUndosMatchFreshInference) {
   for (const auto& testCase : cases) {
     SCOPED_TRACE(testCase.fen);
     BoardState state{testCase.fen};
-    evaluation::MLPEvaluationPolicy incremental{weights.path};
-    evaluation::MLPEvaluationPolicy fresh{weights.path};
+    incremental.reset();
+    fresh.reset();
     incremental.prepare(state);
     const int32_t rootScore = incremental.evaluate(state);
-    fresh.reset();
     EXPECT_NEAR(rootScore, fresh.evaluate(state), 1);
 
     if (state.getSideToMove() == White) {
       const MoveUndo undo = state.makeMove<White>(testCase.move, incremental);
-      fresh.reset();
-      EXPECT_NEAR(incremental.evaluate(state), fresh.evaluate(state), 1);
+      expectFreshScore(incremental, fresh, state);
       state.unmakeMove<White>(testCase.move, undo, incremental);
     } else {
       const MoveUndo undo = state.makeMove<Black>(testCase.move, incremental);
-      fresh.reset();
-      EXPECT_NEAR(incremental.evaluate(state), fresh.evaluate(state), 1);
+      expectFreshScore(incremental, fresh, state);
       state.unmakeMove<Black>(testCase.move, undo, incremental);
     }
     EXPECT_NEAR(incremental.evaluate(state), rootScore, 1);
@@ -231,20 +234,54 @@ TEST(Nnue, IncrementalMovesAndUndosMatchFreshInference) {
   }
 }
 
-TEST(Nnue, PreparingAnotherRootRebuildsBothPerspectives) {
-  const TestNnueModelFile weights;
-  evaluation::MLPEvaluationPolicy cached{weights.path};
-  evaluation::MLPEvaluationPolicy fresh{weights.path};
-  const BoardState first{fen::kStartPosition};
-  const BoardState second{"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1"};
+TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
+  evaluation::MLPEvaluationPolicy incremental{weightsPath()};
+  evaluation::MLPEvaluationPolicy fresh{weightsPath()};
+  BoardState state{fen::kStartPosition};
+  incremental.prepare(state);
+  expectFreshScore(incremental, fresh, state);
 
-  cached.prepare(first);
-  const int32_t firstScore = cached.evaluate(first);
-  cached.prepare(first);
-  EXPECT_EQ(cached.evaluate(first), firstScore);
+  const Move whitePawn(E2, E4, Pawn, NoPiece, Move::kDoublePushFlag);
+  const Move blackPawn(E7, E5, Pawn, NoPiece, Move::kDoublePushFlag);
+  const Move whiteKnight(G1, F3, Knight);
+  const MoveUndo whitePawnUndo = state.makeMove<White>(whitePawn, incremental);
+  const MoveUndo blackPawnUndo = state.makeMove<Black>(blackPawn, incremental);
+  const MoveUndo whiteKnightUndo = state.makeMove<White>(whiteKnight, incremental);
+  expectFreshScore(incremental, fresh, state);
 
-  cached.prepare(second);
-  EXPECT_NEAR(cached.evaluate(second), fresh.evaluate(second), 1);
+  state.unmakeMove<White>(whiteKnight, whiteKnightUndo, incremental);
+  state.unmakeMove<Black>(blackPawn, blackPawnUndo, incremental);
+  state.unmakeMove<White>(whitePawn, whitePawnUndo, incremental);
+  incremental.prepare(state);
+  expectFreshScore(incremental, fresh, state);
+  incremental.prepare(state);
+  expectFreshScore(incremental, fresh, state);
+
+  state.setPosition("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
+  incremental.reset();
+  incremental.prepare(state);
+  expectFreshScore(incremental, fresh, state);
+}
+
+TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
+  Board board{
+    searching::NegamaxSearchPolicy{
+      evaluation::MLPEvaluationPolicy{weightsPath()}, 80, 1u << 16
+    },
+    time_control::EqualPercentageTimeControlPolicy{0.05f}
+  };
+  const auto first = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
+  const auto repeated = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
+  EXPECT_EQ(repeated.score, first.score);
+  EXPECT_EQ(repeated.bestMove, first.bestMove);
+
+  board.reset();
+  const auto afterReset = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
+  EXPECT_EQ(afterReset.score, first.score);
+
+  board.setPosition("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
+  const auto changed = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  EXPECT_TRUE(changed.bestMove.has_value());
 }
 
 // Expected to fail: at depth 10 the current engine still chooses 26...Bxd3?
