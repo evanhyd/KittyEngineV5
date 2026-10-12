@@ -18,6 +18,10 @@ namespace nnue {
                          _mm256_mul_ps(slope, _mm256_min_ps(zero, value)));
   }
 
+  inline float linear(float value) noexcept {
+    return value;
+  }
+
   inline float scaledSigmoid(float x) {
     const float scaled = x / 400.0f;
     if (scaled >= 0.0f) {

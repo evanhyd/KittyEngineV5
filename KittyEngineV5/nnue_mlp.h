@@ -17,7 +17,7 @@ namespace nnue {
     AccumulatorLayer<kAccumulatorSize, kInputSize> accumulator_;
     DenseLayer<kHiddenSize, 2 * kAccumulatorSize> firstHidden_;
     DenseLayer<kHiddenSize, kHiddenSize> secondHidden_;
-    OutputLayer<kHiddenSize, scaledSigmoid> output_;
+    OutputLayer<kHiddenSize, linear> output_;
     alignas(__m256) std::array<float, 2 * kAccumulatorSize> combined_{};
 
   public:
@@ -33,7 +33,7 @@ namespace nnue {
       return secondHidden_;
     }
 
-    OutputLayer<kHiddenSize, scaledSigmoid>& outputLayer() noexcept {
+    OutputLayer<kHiddenSize, linear>& outputLayer() noexcept {
       return output_;
     }
 

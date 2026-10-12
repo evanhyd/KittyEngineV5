@@ -87,8 +87,8 @@ TEST(Nnue, DenseInputPutsMoverBeforeOpponent) {
   const std::array<uint32_t, 1> blackFeature{9};
   model->feedFull(whiteFeature, 0);
   model->feedFull(blackFeature, 1);
-  EXPECT_NEAR(model->evaluate(0), nnue::scaledSigmoid(500.0f), 1e-6f);
-  EXPECT_NEAR(model->evaluate(1), nnue::scaledSigmoid(400.0f), 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 500.0f, 1e-6f);
+  EXPECT_NEAR(model->evaluate(1), 400.0f, 1e-6f);
 }
 
 TEST(Nnue, AccumulatorAndHiddenLayersUseLeakyRelu) {
@@ -102,13 +102,13 @@ TEST(Nnue, AccumulatorAndHiddenLayersUseLeakyRelu) {
   const std::array<uint32_t, 0> empty{};
   model->feedFull(active, 0);
   model->feedFull(empty, 1);
-  EXPECT_NEAR(model->evaluate(0), nnue::scaledSigmoid(1.0f), 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 1.0f, 1e-6f);
 
   model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 1.0f;
   model->firstHidden().weights()[0] = -100.0f;
   model->secondHidden().weights()[0] = -1.0f;
   model->feedFull(active, 0);
-  EXPECT_NEAR(model->evaluate(0), nnue::scaledSigmoid(1.0f), 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 1.0f, 1e-6f);
 }
 
 TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {

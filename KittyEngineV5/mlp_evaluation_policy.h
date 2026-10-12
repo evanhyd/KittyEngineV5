@@ -149,7 +149,7 @@ namespace bb::evaluation {
 
       pending_.clear();
       fullRefreshNeeded_ = false;
-      return nnue::scaledSigmoidToCentipawns(model_->evaluate(state.getSideToMove()));
+      return static_cast<int32_t>(std::lround(model_->evaluate(state.getSideToMove())));
     }
   };
 
