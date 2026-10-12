@@ -3,7 +3,7 @@
 #include "board.h"
 #include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
-#include "mlp_evaluation_policy.h"
+#include "nnue_evaluation_policy.h"
 #include "equal_percentage_time_control_policy.h"
 #include "terminal_ui.h"
 #include <iostream>
@@ -42,8 +42,8 @@ int main() {
   try {
     Board board{
     searching::NegamaxSearchPolicy{
-      evaluation::MLPEvaluationPolicy{"weights.bin"},
-       //evaluation::HandCraftEvaluationPolicy{},
+      //evaluation::NNUEEvaluationPolicy{"weights.bin"},
+       evaluation::HandCraftEvaluationPolicy{},
       aspirationWindow,
       ttTableSize},
     time_control::EqualPercentageTimeControlPolicy{

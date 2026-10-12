@@ -241,12 +241,13 @@
     <ClInclude Include="equal_percentage_time_control_policy.h" />
     <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
+    <ClInclude Include="hybrid_evaluation_policy.h" />
     <ClInclude Include="nnue_math.h" />
     <ClInclude Include="nnue_matrix.h" />
     <ClInclude Include="nnue_layer.h" />
     <ClInclude Include="nnue_mlp.h" />
     <ClInclude Include="nnue_serializer.h" />
-    <ClInclude Include="mlp_evaluation_policy.h" />
+    <ClInclude Include="nnue_evaluation_policy.h" />
     <ClInclude Include="perft_driver.h" />
     <ClInclude Include="negamax_search_policy.h" />
     <ClInclude Include="move.h" />

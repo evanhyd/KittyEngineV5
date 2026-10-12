@@ -1,7 +1,7 @@
 #include "board.h"
 #include "equal_percentage_time_control_policy.h"
 #include "handcraft_evaluation_policy.h"
-#include "mlp_evaluation_policy.h"
+#include "nnue_evaluation_policy.h"
 #include "negamax_search_policy.h"
 #include "nnue_serializer.h"
 #include "notation.h"
@@ -44,8 +44,8 @@ namespace {
     output.write(reinterpret_cast<const char*>(progress.data()), sizeof(progress));
   }
 
-  void expectFreshScore(evaluation::MLPEvaluationPolicy& incremental,
-                        evaluation::MLPEvaluationPolicy& fresh,
+  void expectFreshScore(evaluation::NNUEEvaluationPolicy& incremental,
+                        evaluation::NNUEEvaluationPolicy& fresh,
                         const BoardState& state) {
     fresh.reset();
     EXPECT_NEAR(incremental.evaluate(state), fresh.evaluate(state), 1);
@@ -189,8 +189,8 @@ TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
 }
 
 TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
-  evaluation::MLPEvaluationPolicy incremental{weightsPath()};
-  evaluation::MLPEvaluationPolicy fresh{weightsPath()};
+  evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
   const struct Case { std::string_view fen; Move move; } cases[] = {
     {fen::kStartPosition, Move(E2, E4, Pawn, NoPiece, Move::kDoublePushFlag)},
     {"4k3/8/8/8/8/8/4p3/4K3 w - - 0 1", Move(E1, E2, King, NoPiece, Move::kCaptureFlag)},
@@ -235,8 +235,8 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
 }
 
 TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
-  evaluation::MLPEvaluationPolicy incremental{weightsPath()};
-  evaluation::MLPEvaluationPolicy fresh{weightsPath()};
+  evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
   BoardState state{fen::kStartPosition};
   incremental.prepare(state);
   expectFreshScore(incremental, fresh, state);
@@ -266,7 +266,7 @@ TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
 TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
   Board board{
     searching::NegamaxSearchPolicy{
-      evaluation::MLPEvaluationPolicy{weightsPath()}, 80, 1u << 16
+      evaluation::NNUEEvaluationPolicy{weightsPath()}, 80, 1u << 16
     },
     time_control::EqualPercentageTimeControlPolicy{0.05f}
   };
@@ -299,3 +299,53 @@ TEST(EvaluationDecision, AvoidsBishopCaptureBlunderAtDepth10) {
   EXPECT_NE(notation::moveToString(*result.bestMove), "g6d3");
 }
 #endif
+
+TEST(HandCraftEvaluation, BenchmarkSpeed) {
+  evaluation::HandCraftEvaluationPolicy hce;
+  std::vector<BoardState> positions = {
+    BoardState{fen::kStartPosition},
+    BoardState{fen::kKiwipete},
+    BoardState{fen::kRookEndgame},
+    BoardState{"r1bqk2r/pp2bppp/2n1pn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQK2R w KQkq - 0 7"},
+    BoardState{"3r2k1/5ppp/2p1p1b1/1p6/2Pq1P2/1P1PN2P/rP1Q1RP1/3R2K1 b - - 0 26"}
+  };
+
+  constexpr int iterationsPerPos = 200'000;
+  volatile int32_t sink = 0;
+
+  const auto start = std::chrono::high_resolution_clock::now();
+  for (int iter = 0; iter < iterationsPerPos; ++iter) {
+    for (const auto& pos : positions) {
+      sink += hce.evaluate(pos);
+    }
+  }
+  const auto end = std::chrono::high_resolution_clock::now();
+
+  const double elapsedSec = std::chrono::duration<double>(end - start).count();
+  const double totalEvals = static_cast<double>(iterationsPerPos * positions.size());
+  const double evalsPerSec = totalEvals / elapsedSec;
+
+  std::cout << "[ BENCHMARK ] HandCraftEvaluation: " << totalEvals << " evals in "
+            << elapsedSec << "s (" << (evalsPerSec / 1'000'000.0) << " M evals/sec)\n";
+  EXPECT_GT(evalsPerSec, 100'000.0);
+}
+
+TEST(HandCraftEvaluation, PositionScoresFidelity) {
+  evaluation::HandCraftEvaluationPolicy hce;
+  std::vector<std::pair<std::string_view, int32_t>> cases = {
+    {fen::kStartPosition, 0},
+    {fen::kKiwipete, 63},
+    {fen::kRookEndgame, -55},
+    {"r1bqk2r/pp2bppp/2n1pn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQK2R w KQkq - 0 7", 41},
+    {"3r2k1/5ppp/2p1p1b1/1p6/2Pq1P2/1P1PN2P/rP1Q1RP1/3R2K1 b - - 0 26", -39},
+    {"8/8/4k3/8/8/4K3/4P3/8 w - - 0 1", 89},
+    {"8/8/4k3/8/8/4K3/8/8 w - - 0 1", 0},
+    {"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", -66}
+  };
+
+  for (auto& [fen, expected] : cases) {
+    BoardState state{fen};
+    int32_t score = hce.evaluate(state);
+    EXPECT_EQ(score, expected) << "Mismatch on FEN: " << fen;
+  }
+}

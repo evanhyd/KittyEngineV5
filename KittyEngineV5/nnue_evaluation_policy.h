@@ -58,7 +58,7 @@ namespace bb::evaluation {
 
 
   // NNUE MLP MODEL // 
-  class MLPEvaluationPolicy {
+  class NNUEEvaluationPolicy {
     struct PieceChange {
       Side side;
       Piece piece;
@@ -79,7 +79,7 @@ namespace bb::evaluation {
     }
 
   public:
-    explicit MLPEvaluationPolicy(const std::filesystem::path& filename)
+    explicit NNUEEvaluationPolicy(const std::filesystem::path& filename)
       : model_(nnue::NnueSerializer::load(filename)) {}
 
     void reset() noexcept {
@@ -153,5 +153,5 @@ namespace bb::evaluation {
     }
   };
 
-  static_assert(EvaluationPolicy<MLPEvaluationPolicy>);
+  static_assert(EvaluationPolicy<NNUEEvaluationPolicy>);
 }
