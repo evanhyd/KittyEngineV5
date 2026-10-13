@@ -5,7 +5,7 @@
 #include <immintrin.h>
 
 namespace nnue {
-  inline constexpr float kLeakyReluSlope = 0.01f;
+  inline constexpr float kLeakyReluSlope = 0.04f;
 
   inline float leakyRelu(float value) noexcept {
     return value >= 0.0f ? value : kLeakyReluSlope * value;

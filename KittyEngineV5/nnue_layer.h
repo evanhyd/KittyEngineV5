@@ -223,8 +223,8 @@ namespace nnue {
   class OutputLayer {
     using Shape = internal::Shape<1, previousNeuronNum>;
 
-    float bias_{};
     alignas(__m256) std::array<float, Shape::kInputSize> weights_{};
+    float bias_{};
     float output_{};
 
   public:
