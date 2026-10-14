@@ -3,15 +3,14 @@
 #include "evaluation_policy.h"
 #include "nnue_mlp.h"
 #include "nnue_serializer.h"
-#include "nnue_math.h"
 #include "searching_policy.h"
 #include "small_vec.h"
 #include <array>
-#include <bit>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <optional>
 
 namespace bb::evaluation {
   struct NnueLayout {
@@ -22,16 +21,27 @@ namespace bb::evaluation {
     using FeatureList = SmallVec<uint32_t, kSquareSize>;
 
     static constexpr Square orient(Side perspective, Square square) noexcept {
-      return Square(perspective == White ? square : square ^ kRankFlipMask);
+      if (perspective == White) {
+        return square;
+      }
+      return Square(square ^ kRankFlipMask);
+    }
+
+    static constexpr uint32_t kingBase(Side perspective, Square kingSquare) noexcept {
+      const uint32_t orientedKing = orient(perspective, kingSquare);
+      return orientedKing * kKingPlaneStride;
+    }
+
+    static constexpr uint32_t pieceOffset(Side perspective, Side pieceSide, Piece piece, Square pieceSquare) noexcept {
+      const uint32_t relativeSide = pieceSide ^ perspective;
+      const uint32_t orientedPiece = orient(perspective, pieceSquare);
+      const uint32_t pieceIdx = relativeSide * kPieceTypes + piece;
+      return pieceIdx * kPiecePlaneStride + orientedPiece;
     }
 
     // Input Index: [own king square: 64] * 640 + [piece index: 10] * 64 + [piece square: 64]
     static constexpr uint32_t pieceIndex(Side perspective, Side pieceSide, Piece piece, Square kingSquare, Square pieceSquare) noexcept {
-      const uint32_t relativeSide = pieceSide ^ perspective;
-      const uint32_t orientedKing = orient(perspective, kingSquare);
-      const uint32_t orientedPiece = orient(perspective, pieceSquare);
-      const uint32_t pieceIdx = relativeSide * kPieceTypes + piece;
-      return orientedKing * kKingPlaneStride + pieceIdx * kPiecePlaneStride + orientedPiece;
+      return kingBase(perspective, kingSquare) + pieceOffset(perspective, pieceSide, piece, pieceSquare);
     }
 
     static Square kingSquare(const BoardState& state, Side perspective) {
@@ -57,8 +67,10 @@ namespace bb::evaluation {
   };
 
 
-  // NNUE MLP MODEL // 
   class NNUEEvaluationPolicy {
+    // A capture with promotion changes at most three non-king features per ply.
+    static constexpr size_t kHistoryCapacity = 3 * searching::kMaxDepthHardCutoff;
+
     struct PieceChange {
       Side side;
       Piece piece;
@@ -67,10 +79,16 @@ namespace bb::evaluation {
     };
 
     std::unique_ptr<nnue::NnueModel> model_;
-    SmallVec<PieceChange, searching::kMaxDepthHardCutoff> pending_;
+    SmallVec<PieceChange, kHistoryCapacity> history_;
+    size_t applied_ = 0;
     std::array<Square, 2> cachedKingSquares_{NoSquare, NoSquare};
-    std::optional<ZobristHash::Hash> preparedRootHash_;
-    bool fullRefreshNeeded_ = false;
+
+    template <bool Add>
+    void applyChange(Side perspective, Side side, Piece piece, Square square) noexcept {
+      const uint32_t index = NnueLayout::pieceIndex(
+        perspective, side, piece, cachedKingSquares_[perspective], square);
+      model_->feedIncremental<Add>(index, perspective);
+    }
 
     void rebuild(const BoardState& state, Side perspective, Square kingSquare) {
       const auto features = NnueLayout::encode(state, perspective, kingSquare);
@@ -83,62 +101,65 @@ namespace bb::evaluation {
       : model_(nnue::NnueSerializer::load(filename)) {}
 
     void reset() noexcept {
-      pending_.clear();
+      history_.clear();
+      applied_ = 0;
       cachedKingSquares_.fill(NoSquare);
-      preparedRootHash_.reset();
-      fullRefreshNeeded_ = false;
       model_->clearAccumulators();
     }
 
-    void prepare(const BoardState& state) {
-      if (preparedRootHash_.has_value() && *preparedRootHash_ != state.getHash() && pending_.empty()) {
-        reset();
-      }
-      preparedRootHash_ = state.getHash();
+    void prepare(const BoardState&) noexcept {
+      reset();
     }
 
     template <bool Add>
     void markPiece(Side side, Piece piece, Square square) noexcept {
-      if (piece == King || fullRefreshNeeded_ || !model_->hasAccumulator(White)) {
+      if (!model_->hasAccumulator(White)) {
         return;
       }
 
-      // Keep only the net difference from the last evaluated position.
-      for (size_t i = 0; i < pending_.size(); ++i) {
-        const PieceChange& change = pending_[i];
-        if (change.side != side || change.piece != piece || change.square != square) {
-          continue;
+      if (piece == King) {
+        cachedKingSquares_[side] = NoSquare;
+        return;
+      }
+
+      if (!history_.empty()) {
+        const PieceChange& top = history_.back();
+        if (top.side == side && top.piece == piece && top.square == square && top.add != Add) {
+          if (history_.size() <= applied_) {
+            for (Side perspective = White; perspective <= Black; ++perspective) {
+              if (cachedKingSquares_[perspective] != NoSquare) {
+                applyChange<Add>(perspective, side, piece, square);
+              }
+            }
+            --applied_;
+          }
+          history_.pop();
+          return;
         }
-        pending_[i] = pending_.back();
-        pending_.pop();
+      }
+
+      if (history_.size() == kHistoryCapacity) {
+        reset();
         return;
       }
 
-      if (pending_.size() == searching::kMaxDepthHardCutoff) {
-        fullRefreshNeeded_ = true;
-        pending_.clear();
-        return;
-      }
-      pending_.push({side, piece, square, Add});
+      history_.push({side, piece, square, Add});
     }
 
     int32_t evaluate(const BoardState& state) {
-      const std::array<Square, 2> currentKings{
-        NnueLayout::kingSquare(state, White),
-        NnueLayout::kingSquare(state, Black)
-      };
-
+      const size_t firstPending = applied_;
       for (Side perspective = White; perspective <= Black; ++perspective) {
-        if (fullRefreshNeeded_ || !model_->hasAccumulator(perspective) || currentKings[perspective] != cachedKingSquares_[perspective]) {
-          rebuild(state, perspective, currentKings[perspective]);
+        const Square king = NnueLayout::kingSquare(state, perspective);
+        if (!model_->hasAccumulator(perspective) || king != cachedKingSquares_[perspective]) {
+          rebuild(state, perspective, king);
           continue;
         }
 
-        // Change first-layer sums only for pieces that differ from the cached board.
-        for (const PieceChange& change : pending_) {
-          const uint32_t index = NnueLayout::pieceIndex(
-            perspective, change.side, change.piece,
-            currentKings[perspective], change.square);
+        const uint32_t kingBase = NnueLayout::kingBase(perspective, king);
+        for (size_t i = firstPending; i < history_.size(); ++i) {
+          const PieceChange& change = history_[i];
+          const uint32_t index = kingBase + NnueLayout::pieceOffset(
+            perspective, change.side, change.piece, change.square);
           if (change.add) {
             model_->feedIncremental<true>(index, perspective);
           } else {
@@ -147,8 +168,7 @@ namespace bb::evaluation {
         }
       }
 
-      pending_.clear();
-      fullRefreshNeeded_ = false;
+      applied_ = history_.size();
       return static_cast<int32_t>(std::lround(model_->evaluate(state.getSideToMove())));
     }
   };

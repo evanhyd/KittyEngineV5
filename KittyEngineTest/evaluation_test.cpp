@@ -102,13 +102,13 @@ TEST(Nnue, AccumulatorAndHiddenLayersUseLeakyRelu) {
   const std::array<uint32_t, 0> empty{};
   model->feedFull(active, 0);
   model->feedFull(empty, 1);
-  EXPECT_NEAR(model->evaluate(0), 1.0f, 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 100.0f * nnue::kLeakyReluSlope, 1e-6f);
 
   model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 1.0f;
   model->firstHidden().weights()[0] = -100.0f;
   model->secondHidden().weights()[0] = -1.0f;
   model->feedFull(active, 0);
-  EXPECT_NEAR(model->evaluate(0), 1.0f, 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 100.0f * nnue::kLeakyReluSlope, 1e-6f);
 }
 
 TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
@@ -260,6 +260,26 @@ TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
   state.setPosition("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
   incremental.reset();
   incremental.prepare(state);
+  expectFreshScore(incremental, fresh, state);
+}
+
+TEST(Nnue, LongMoveSequenceWithoutEvaluationRefreshesSafely) {
+  evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
+  BoardState state{fen::kStartPosition};
+  incremental.evaluate(state);
+
+  const Move whiteOut(G1, F3, Knight);
+  const Move blackOut(G8, F6, Knight);
+  const Move whiteBack(F3, G1, Knight);
+  const Move blackBack(F6, G8, Knight);
+  for (int cycle = 0; cycle < 30; ++cycle) {
+    state.makeMove<White>(whiteOut, incremental);
+    state.makeMove<Black>(blackOut, incremental);
+    state.makeMove<White>(whiteBack, incremental);
+    state.makeMove<Black>(blackBack, incremental);
+  }
+
   expectFreshScore(incremental, fresh, state);
 }
 
