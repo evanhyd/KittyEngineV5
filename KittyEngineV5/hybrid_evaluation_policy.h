@@ -22,11 +22,6 @@ namespace bb::evaluation {
       nnueEval_.reset();
     }
 
-    void prepare(const BoardState& state) {
-      hcEval_.prepare(state);
-      nnueEval_.prepare(state);
-    }
-
     template <bool Add>
     void markPiece(Side side, Piece piece, Square square) noexcept {
       hcEval_.markPiece<Add>(side, piece, square);

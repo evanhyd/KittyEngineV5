@@ -207,7 +207,6 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
     BoardState state{testCase.fen};
     incremental.reset();
     fresh.reset();
-    incremental.prepare(state);
     const int32_t rootScore = incremental.evaluate(state);
     EXPECT_NEAR(rootScore, fresh.evaluate(state), 1);
 
@@ -238,7 +237,6 @@ TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
   evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
   evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
   BoardState state{fen::kStartPosition};
-  incremental.prepare(state);
   expectFreshScore(incremental, fresh, state);
 
   const Move whitePawn(E2, E4, Pawn, NoPiece, Move::kDoublePushFlag);
@@ -252,14 +250,10 @@ TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
   state.unmakeMove<White>(whiteKnight, whiteKnightUndo, incremental);
   state.unmakeMove<Black>(blackPawn, blackPawnUndo, incremental);
   state.unmakeMove<White>(whitePawn, whitePawnUndo, incremental);
-  incremental.prepare(state);
-  expectFreshScore(incremental, fresh, state);
-  incremental.prepare(state);
   expectFreshScore(incremental, fresh, state);
 
   state.setPosition("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
   incremental.reset();
-  incremental.prepare(state);
   expectFreshScore(incremental, fresh, state);
 }
 

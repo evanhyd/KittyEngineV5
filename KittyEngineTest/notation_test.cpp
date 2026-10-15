@@ -47,7 +47,6 @@ namespace {
     }
 
     void reset() {}
-    void prepare(const BoardState&) {}
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
   };

@@ -52,16 +52,16 @@ namespace bb::searching {
       const int depth;
       bool isFollowingPV;
       PVLine pvLine;
+      Move killerMove;
     };
 
     // Magic constant.
     // static constexpr int32_t kFutilityMovePriority = 0;
-    // static constexpr int32_t kKillerMove = 99;
-    static constexpr int32_t kEnPassantPriority = 150;
+    static constexpr int32_t kKillerMovePriority = 99;
     static constexpr int32_t kCastlingPriority = 151;
     static constexpr int32_t kPromotionPriority = 506;
-    static constexpr int32_t kTranspositionPriority = 10000;
-    static constexpr int32_t kPrincipalVariationPriority = 20000;
+    static constexpr int32_t kPrincipalVariationPriority = 10000;
+    static constexpr int32_t kTranspositionPriority = 20000;
     static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
     { {
         {105, 205, 305, 405, 505}, // pawn
@@ -123,7 +123,7 @@ namespace bb::searching {
                                           static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
       if (const auto it = std::find(hBegin + 1, hEnd, context.state.getHash()); it != hEnd) {
         const bool inGameHistory = int(std::distance(hBegin, it)) >= depth;
-        return Eval(0, !inGameHistory);
+        return Eval(0, inGameHistory);
       }
       if (context.state.getHalfmoveClock() >= 100) {
         return Eval(0, true);
@@ -164,7 +164,7 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove) const {
+    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, Move killerMove) const {
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -183,11 +183,12 @@ namespace bb::searching {
           if (move == pvMove) {
             priority += kPrincipalVariationPriority;
           }
+          if (move == killerMove) {
+            priority += kKillerMovePriority;
+          }
         }
 
-        if (move.isEnpassant()) {
-          priority += kEnPassantPriority;
-        } else if (move.isCastling()) {
+        if (move.isCastling()) {
           priority += kCastlingPriority;
         } else {
           if (move.isCapture()) {
@@ -288,7 +289,7 @@ namespace bb::searching {
         }
       }
 
-      sortMoves<meta>(context.state, moves, ttMove, pvMove);
+      sortMoves<meta>(context.state, moves, ttMove, pvMove, (meta.isInternal() ? frame->killerMove : Move{}));
       Move bestMove = moves[0];
 
       // Explore moves.
@@ -305,6 +306,14 @@ namespace bb::searching {
           if constexpr (meta.isMainSearch()) {
             storeTT(context, frame->depth, eval, TranspositionTable::ScoreType::LowerBound, move);
           }
+
+          // Killer move.
+          if constexpr (meta.isInternal()) {
+            if (!move.isViolentMove()) {
+              frame->killerMove = move;
+            }
+          }
+          
           return eval;
         }
         if (eval.score > bestEval.score) {
@@ -351,8 +360,6 @@ namespace bb::searching {
     template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
       constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root);
-      evalPolicy_.prepare(state);
-
       // Result statistics.
       SearchContext context{state, param.positionHistory, param.pvLine,
                             std::clamp(param.maxDepth, 1, kMaxDepthHardCutoff)};
@@ -386,15 +393,19 @@ namespace bb::searching {
         ttMove = ttEntry->bestMove;
       }
 
-      // Generate legal moves and check for checkmate or stalemate.
-      MoveList moves;
-      state.generateMoves<ally>(moves);
+      // Generate root moves for the first time.
+      if (!param.rootMoves) {
+        param.rootMoves.emplace();
+        state.generateMoves<ally>(*param.rootMoves);
+        std::ranges::for_each(searchStack_, [](auto& stack) { stack.killerMove = Move{}; });
+      }
+      MoveList& moves = *param.rootMoves;
       if (moves.empty()) {
         context.pvLine.clear();
         const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateScore : evaluation::kStalemateScore;
         return makeResult(score, std::nullopt);
       }
-      sortMoves<meta>(state, moves, ttMove, pvMove);
+      sortMoves<meta>(state, moves, ttMove, pvMove, searchStack_[0].killerMove);
 
       // Set up aspiration window.
       constexpr auto expandWindow = [](int& failTime, int32_t window) {
@@ -419,7 +430,7 @@ namespace bb::searching {
         Eval bestEval(alpha, false);
         Move bestMove = moves[0];
 
-        for (const Move& move : moves) {
+        for (Move& move : moves) {
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
           searchStack_[1].isFollowingPV = move == pvMove;
@@ -431,6 +442,10 @@ namespace bb::searching {
             bestEval = eval;
             bestMove = move;
             if (bestEval.score >= beta) {
+              if (!move.isViolentMove()) {
+                searchStack_[0].killerMove = move;
+              }
+              std::swap(moves[0], move);
               break;
             }
             acceptChildPVLine(searchStack_.data(), bestMove);

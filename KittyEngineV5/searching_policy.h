@@ -16,10 +16,11 @@ namespace bb {
     using MoveHistory = SmallVec<Move, kMaxMovePerGame>;
 
     struct SearchParam {
-      int maxDepth;                     // initial max depth
+      int maxDepth;                       // initial max depth
       int32_t pastEval;
-      PositionHistory& positionHistory; // input and output
-      PVLine& pvLine;                   // input and output
+      PositionHistory& positionHistory;   // input and output
+      PVLine& pvLine;                     // input and output
+      std::optional<MoveList>& rootMoves; // reuse across iterative deepening
     };
 
     struct SearchResult {

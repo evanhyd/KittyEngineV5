@@ -16,7 +16,6 @@ namespace bb::evaluation {
   concept EvaluationPolicy = requires(EvalPolicy policy, const BoardState& state) {
     { policy.evaluate(state) } -> std::same_as<int32_t>;
     { policy.reset() } -> std::same_as<void>;
-    { policy.prepare(state) } -> std::same_as<void>;
     { policy.template markPiece<true>(White, Pawn, A1) } -> std::same_as<void>;
     { policy.template markPiece<false>(White, Pawn, A1) } -> std::same_as<void>;
   };

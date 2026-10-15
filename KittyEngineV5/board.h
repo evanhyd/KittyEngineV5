@@ -148,12 +148,15 @@ namespace bb {
           .pvLine = &pvLine_,
         };
 
+        std::optional<MoveList> rootMoves;
+
         for (int depth = 1; depth <= maxDepth; ++depth) {
           const searching::SearchParam param{
             .maxDepth = depth,
             .pastEval = result.score,
             .positionHistory = positionHistory_,
             .pvLine = pvLine_,
+            .rootMoves = rootMoves,
           };
           result = searchingPolicy_.template search<ally>(state_, param);
           resultCallback(result);

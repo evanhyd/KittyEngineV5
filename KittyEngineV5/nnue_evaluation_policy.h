@@ -107,10 +107,6 @@ namespace bb::evaluation {
       model_->clearAccumulators();
     }
 
-    void prepare(const BoardState&) noexcept {
-      reset();
-    }
-
     template <bool Add>
     void markPiece(Side side, Piece piece, Square square) noexcept {
       if (!model_->hasAccumulator(White)) {

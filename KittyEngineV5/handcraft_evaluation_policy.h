@@ -319,7 +319,6 @@ namespace bb::evaluation {
 
   public:
     void reset() noexcept {}
-    void prepare(const BoardState&) noexcept {}
     template <bool Add> void markPiece(Side, Piece, Square) noexcept {}
 
     int32_t evaluate(const BoardState& state) const noexcept {
