@@ -27,10 +27,11 @@ namespace bb::searching {
       consteval NodeMeta toInternal() const { return NodeMeta{ side, NodeType::Internal }; }
       consteval NodeMeta toQuiescence() const { return NodeMeta{ side, NodeType::Quiescence }; }
       consteval NodeMeta toNullMove() const { return NodeMeta{ side, NodeType::NullMove }; }
+      consteval bool isRoot() const { return type == NodeType::Root; }
       consteval bool isInternal() const { return type == NodeType::Internal; }
       consteval bool isQuiescence() const { return type == NodeType::Quiescence; }
       consteval bool isNullMove() const { return type == NodeType::NullMove; }
-      consteval bool isMainSearch() const { return isInternal() || isNullMove(); }
+      consteval bool isMainSearch() const { return isRoot() || isInternal() || isNullMove(); }
     };
 
     struct Eval {
@@ -52,7 +53,7 @@ namespace bb::searching {
       const int depth;
       bool isFollowingPV;
       PVLine pvLine;
-      std::array<Move, 2> killerMoves;
+      std::array<Move, 3> killerMoves;
     };
 
     // Magic constant.
@@ -163,8 +164,17 @@ namespace bb::searching {
       return std::nullopt;
     }
 
+    void recordKiller(decltype(SearchStack::killerMoves)& killers, Move move) {
+      const auto it = std::find(killers.begin(), killers.end(), move);
+      const size_t slot = it == killers.end() ? killers.size() - 1 : static_cast<size_t>(it - killers.begin());
+      for (size_t i = slot; i > 0; --i) {
+        killers[i] = killers[i - 1];
+      }
+      killers[0] = move;
+    }
+
     template <NodeMeta meta>
-    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const std::array<Move, 2>& killerMoves) const {
+    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const {
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -183,14 +193,23 @@ namespace bb::searching {
           if (move == pvMove) {
             priority += kPrincipalVariationPriority;
           }
-          if constexpr (meta.isInternal()) {
-            if (move == killerMoves[0] || move == killerMoves[1]) {
-              priority += kKillerMovePriority;
+          if constexpr (!meta.isNullMove()) {
+            for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
+              if (move == killerMoves[i]) {
+                priority += kKillerMovePriority - i;
+              }
             }
+            //if (move == killerMoves[0]) {
+            //  priority += kKillerMovePriority;
+            //} else if (move == killerMoves[1]) {
+            //  priority += kKillerMovePriority - 1;
+            //}
           }
         }
 
-        if (move.isCastling()) {
+        if (move.isEnpassant()) {
+          priority += kCapturePriorityTable[Pawn][Pawn];
+        } if (!meta.isQuiescence() && move.isCastling()) {
           priority += kCastlingPriority;
         } else {
           if (move.isCapture()) {
@@ -312,11 +331,11 @@ namespace bb::searching {
           // Killer move.
           if constexpr (meta.isInternal()) {
             if (!move.isViolentMove()) {
-              if (frame->killerMoves[1] == Move{}) {
-                frame->killerMoves[1] = move;
-              } else {
-                frame->killerMoves[0] = move;
-              }
+              recordKiller(frame->killerMoves, move);
+              //if (move != frame->killerMoves[0]) {
+              //  frame->killerMoves[1] = frame->killerMoves[0];
+              //  frame->killerMoves[0] = move;
+              //}
             }
           }
           
@@ -449,11 +468,11 @@ namespace bb::searching {
             bestMove = move;
             if (bestEval.score >= beta) {
               if (!move.isViolentMove()) {
-                if (searchStack_[0].killerMoves[1] == Move{}) {
-                  searchStack_[0].killerMoves[1] = move;
-                } else {
-                  searchStack_[0].killerMoves[0] = move;
-                }
+                recordKiller(searchStack_[0].killerMoves, move);
+                //if (searchStack_[0].killerMoves[0] != move) {
+                //  searchStack_[0].killerMoves[1] = searchStack_[0].killerMoves[0];
+                //  searchStack_[0].killerMoves[0] = move;
+                //}
               }
               std::swap(moves[0], move);
               break;
