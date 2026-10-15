@@ -52,7 +52,7 @@ namespace bb::searching {
       const int depth;
       bool isFollowingPV;
       PVLine pvLine;
-      Move killerMove;
+      std::array<Move, 2> killerMoves;
     };
 
     // Magic constant.
@@ -164,7 +164,7 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, Move killerMove) const {
+    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const std::array<Move, 2>& killerMoves) const {
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -176,15 +176,17 @@ namespace bb::searching {
       std::ranges::transform(moves, scoredMoves.begin(), [&](const Move& move) {
         int32_t priority = 0;
 
-        if constexpr (!meta.isQuiescence()) {
+        if constexpr (meta.isMainSearch()) {
           if (move == ttMove) {
             priority += kTranspositionPriority;
           }
           if (move == pvMove) {
             priority += kPrincipalVariationPriority;
           }
-          if (move == killerMove) {
-            priority += kKillerMovePriority;
+          if constexpr (meta.isInternal()) {
+            if (move == killerMoves[0] || move == killerMoves[1]) {
+              priority += kKillerMovePriority;
+            }
           }
         }
 
@@ -289,7 +291,7 @@ namespace bb::searching {
         }
       }
 
-      sortMoves<meta>(context.state, moves, ttMove, pvMove, (meta.isInternal() ? frame->killerMove : Move{}));
+      sortMoves<meta>(context.state, moves, ttMove, pvMove, frame->killerMoves);
       Move bestMove = moves[0];
 
       // Explore moves.
@@ -310,7 +312,11 @@ namespace bb::searching {
           // Killer move.
           if constexpr (meta.isInternal()) {
             if (!move.isViolentMove()) {
-              frame->killerMove = move;
+              if (frame->killerMoves[1] == Move{}) {
+                frame->killerMoves[1] = move;
+              } else {
+                frame->killerMoves[0] = move;
+              }
             }
           }
           
@@ -397,7 +403,7 @@ namespace bb::searching {
       if (!param.rootMoves) {
         param.rootMoves.emplace();
         state.generateMoves<ally>(*param.rootMoves);
-        std::ranges::for_each(searchStack_, [](auto& stack) { stack.killerMove = Move{}; });
+        std::ranges::for_each(searchStack_, [](auto& stack) { stack.killerMoves = {}; });
       }
       MoveList& moves = *param.rootMoves;
       if (moves.empty()) {
@@ -405,7 +411,7 @@ namespace bb::searching {
         const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateScore : evaluation::kStalemateScore;
         return makeResult(score, std::nullopt);
       }
-      sortMoves<meta>(state, moves, ttMove, pvMove, searchStack_[0].killerMove);
+      sortMoves<meta>(state, moves, ttMove, pvMove, searchStack_[0].killerMoves);
 
       // Set up aspiration window.
       constexpr auto expandWindow = [](int& failTime, int32_t window) {
@@ -443,7 +449,11 @@ namespace bb::searching {
             bestMove = move;
             if (bestEval.score >= beta) {
               if (!move.isViolentMove()) {
-                searchStack_[0].killerMove = move;
+                if (searchStack_[0].killerMoves[1] == Move{}) {
+                  searchStack_[0].killerMoves[1] = move;
+                } else {
+                  searchStack_[0].killerMoves[0] = move;
+                }
               }
               std::swap(moves[0], move);
               break;
