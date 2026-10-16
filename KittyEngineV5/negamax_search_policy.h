@@ -124,10 +124,10 @@ namespace bb::searching {
                                           static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
       if (const auto it = std::find(hBegin + 1, hEnd, context.state.getHash()); it != hEnd) {
         const bool inGameHistory = int(std::distance(hBegin, it)) >= depth;
-        return Eval(0, inGameHistory);
+        return Eval(0, !inGameHistory);
       }
       if (context.state.getHalfmoveClock() >= 100) {
-        return Eval(0, true);
+        return Eval(0, false);
       }
       return std::nullopt;
     }
@@ -196,7 +196,7 @@ namespace bb::searching {
           if constexpr (!meta.isNullMove()) {
             for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
               if (move == killerMoves[i]) {
-                priority += kKillerMovePriority - i;
+                priority += kKillerMovePriority - int32_t(i);
               }
             }
             //if (move == killerMoves[0]) {
@@ -275,7 +275,7 @@ namespace bb::searching {
         if (const int remainDepth = context.maxDepth - frame->depth;
             meta.isInternal() && remainDepth > 1 && !frame->isFollowingPV && !inCheck &&
             context.state.template countMMPiece<meta.side>() >= 2) {
-          const int skipped = std::clamp(remainDepth - 1, 1, 3);
+          const int skipped = std::max(1, remainDepth / 2);
           MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
           context.positionHistory.push(context.state.getHash());
           Eval eval = searchInternal<meta.flip().toNullMove()>(context, frame + skipped, -beta, -beta + 1);
