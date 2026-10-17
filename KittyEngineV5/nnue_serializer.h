@@ -14,15 +14,12 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
-#include <vector>
 
 namespace nnue {
   class NnueSerializer {
     static_assert(std::endian::native == std::endian::little);
     static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
-    static constexpr std::array<char, 8> kMagicV3{'N', 'N', 'U', 'E', 'S', 'G', 'D', '3'};
-    static constexpr std::array<char, 8> kMagicV4{'N', 'N', 'U', 'E', 'S', 'G', 'D', '4'};
-    static constexpr std::array<char, 8> kMagic = kMagicV4;
+    static constexpr std::array<char, 8> kMagicV5{'N', 'N', 'U', 'E', 'S', 'G', 'D', '5'};
     static constexpr std::array<uint64_t, 4> kDimensions{
       NnueModel::kInputSize, NnueModel::kAccumulatorSize,
       NnueModel::kHiddenSize, NnueModel::kHiddenSize
@@ -90,11 +87,9 @@ namespace nnue {
       Reader reader(filename);
       std::array<char, 8> magic{};
       reader.value(magic, "header magic");
-      const bool isV3 = (magic == kMagicV3);
-      const bool isV4 = (magic == kMagicV4);
-      if (!isV3 && !isV4) {
+      if (magic != kMagicV5) {
         throw std::runtime_error(std::format(
-          "NNUE checkpoint '{}', header magic at byte 0: expected NNUESGD4 or NNUESGD3",
+          "NNUE checkpoint '{}', header magic at byte 0: expected NNUESGD5 (SCReLU); older checkpoints require retraining",
           filename.string()));
       }
 
@@ -113,19 +108,6 @@ namespace nnue {
       auto model = std::make_unique<NnueModel>();
       reader.floats(model->accumulator().biases(), "accumulator biases");
       reader.floats(model->accumulator().weights(), "accumulator weights");
-      if (isV3) {
-        std::vector<float> converted(model->accumulator().weights().size());
-        for (size_t kingSquare = 0; kingSquare < 64; ++kingSquare) {
-          for (size_t pieceIdx = 0; pieceIdx < 10; ++pieceIdx) {
-            const size_t oldIndex = (pieceIdx * 64 + kingSquare) * 64;
-            const size_t newIndex = (kingSquare * 10 + pieceIdx) * 64;
-            std::copy_n(model->accumulator().weights().data() + oldIndex * NnueModel::kAccumulatorSize,
-                        64 * NnueModel::kAccumulatorSize,
-                        converted.data() + newIndex * NnueModel::kAccumulatorSize);
-          }
-        }
-        std::copy(converted.begin(), converted.end(), model->accumulator().weights().data());
-      }
       reader.floats(model->firstHidden().biases(), "first hidden biases");
       reader.floats(model->firstHidden().weights(), "first hidden weights");
       reader.floats(model->secondHidden().biases(), "second hidden biases");
@@ -141,7 +123,7 @@ namespace nnue {
       if (!stream) {
         throw std::runtime_error(std::format("Could not create NNUE checkpoint '{}'", filename.string()));
       }
-      stream.write(kMagicV4.data(), kMagicV4.size());
+      stream.write(kMagicV5.data(), kMagicV5.size());
       for (uint64_t dim : kDimensions) {
         stream.write(reinterpret_cast<const char*>(&dim), sizeof(dim));
       }

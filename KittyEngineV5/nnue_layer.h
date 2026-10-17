@@ -118,11 +118,11 @@ namespace nnue {
         if (!isComputed[p]) {
           isComputed[p] = true;
 
-          // Apply leaky ReLU and store in the final output.
+          // Apply SCReLU and cache the output.
           for (size_t i = 0; i < Shape::kBlockSize; ++i) {
             const size_t offset = i * internal::kFloatPerBlock;
             __m256 rawOutput = _mm256_load_ps(&accumulators_[p][offset]);
-            _mm256_store_ps(&output_[p][offset], nnue::leakyRelu(rawOutput));
+            _mm256_store_ps(&output_[p][offset], nnue::squaredClippedRelu(rawOutput));
           }
         }
       }
@@ -207,8 +207,8 @@ namespace nnue {
         __m256 dotProduct = bulkReduceSum(std::make_index_sequence<internal::kFloatPerBlock>(), outputs);
         __m256 outputAfterReduce = _mm256_add_ps(dotProduct, _mm256_load_ps(&biases_[iOffset]));
 
-        // Apply leaky ReLU.
-        _mm256_store_ps(&output_[iOffset], nnue::leakyRelu(outputAfterReduce));
+        // Apply SCReLU.
+        _mm256_store_ps(&output_[iOffset], nnue::squaredClippedRelu(outputAfterReduce));
       }
     }
 

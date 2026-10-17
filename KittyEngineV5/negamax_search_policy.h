@@ -59,17 +59,19 @@ namespace bb::searching {
     // static constexpr int32_t kFutilityMovePriority = 0;
     static constexpr int32_t kKillerMovePriority = 99;
     static constexpr int32_t kCastlingPriority = 151;
-    static constexpr int32_t kPromotionPriority = 506;
+    static constexpr int32_t kPromotionPriority = 900;
     static constexpr int32_t kPrincipalVariationPriority = 10000;
     static constexpr int32_t kTranspositionPriority = 20000;
+
+    // Assume enemy doesn't hang a piece for free, penalize high value capturing low value.
     static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
     { {
-        {105, 205, 305, 405, 505}, // pawn
-        {104, 204, 304, 404, 504}, // knight
-        {103, 203, 303, 403, 503}, // bishop
-        {102, 202, 302, 402, 502}, // rook
-        {101, 201, 301, 401, 501}, // queen
-        {100, 200, 300, 400, 500}  // king
+        { 100, 300, 300, 500, 900 }, // pawn
+        {  25, 225, 225, 425, 825 }, // knight
+        {  25, 225, 225, 425, 825 }, // bishop
+        { -25, 175, 175, 375, 775 }, // rook
+        {-125,  75,  75, 275, 675 }, // queen
+        { 100, 300, 300, 500, 900 }  // king
     } };
 
     template <int... Indices>
@@ -179,7 +181,7 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const {
+    void sortMoves(BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const {
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -214,7 +216,8 @@ namespace bb::searching {
           priority += kCastlingPriority;
         } else {
           if (move.isCapture()) {
-            priority += kCapturePriorityTable[move.getMovedPiece()][std::get<1>(*state.getPieceAt(move.getDest()))];
+            Piece capturedPiece = std::get<1>(*state.getPieceAt(move.getDest()));
+            priority += kCapturePriorityTable[move.getMovedPiece()][capturedPiece];
           }
           if (move.getPromotedPieceType() != NoPiece) {
             priority += kPromotionPriority;
@@ -323,6 +326,10 @@ namespace bb::searching {
         (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
 
         Eval eval = [&]() -> Eval {
+          //Eval result = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
+          //result.score = -result.score;
+          //return result;
+
           // Search the first move and nodes without an established best move in full.
           // Quiescence and null-move nodes retain their normal alpha-beta search.
           if (!meta.isInternal() || i == 0 || bestEval.score <= alpha) {

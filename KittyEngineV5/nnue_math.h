@@ -18,6 +18,17 @@ namespace nnue {
                          _mm256_mul_ps(slope, _mm256_min_ps(zero, value)));
   }
 
+  inline float squaredClippedRelu(float value) noexcept {
+    const float clipped = std::clamp(value, 0.0f, 1.0f);
+    return clipped * clipped;
+  }
+
+  inline __m256 squaredClippedRelu(__m256 value) noexcept {
+    const __m256 clipped = _mm256_min_ps(_mm256_max_ps(value, _mm256_setzero_ps()),
+                                          _mm256_set1_ps(1.0f));
+    return _mm256_mul_ps(clipped, clipped);
+  }
+
   inline float linear(float value) noexcept {
     return value;
   }

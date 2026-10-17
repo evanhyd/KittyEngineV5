@@ -34,8 +34,29 @@ namespace {
     }
   };
 
+  std::filesystem::path testWeightsPath() {
+    static TemporaryFile checkpoint;
+    static const bool saved = [] {
+      auto model = std::make_unique<nnue::NnueModel>();
+      model->accumulator().biases()[0] = 0.25f;
+      auto weights = model->accumulator().weights();
+      for (size_t feature = 0; feature < nnue::NnueModel::kInputSize; ++feature) {
+        weights[feature * nnue::NnueModel::kAccumulatorSize] =
+          static_cast<float>(feature % 17) / 1000.0f;
+      }
+      model->firstHidden().weights()[0] = 1.0f;
+      model->firstHidden().weights()[nnue::NnueModel::kAccumulatorSize] = 0.5f;
+      model->secondHidden().weights()[0] = 1.0f;
+      model->outputLayer().weights()[0] = 100.0f;
+      nnue::NnueSerializer::save(checkpoint.path, *model);
+      return true;
+    }();
+    (void)saved;
+    return checkpoint.path;
+  }
+
   void writeHeader(std::ostream& output, uint64_t inputSize = nnue::NnueModel::kInputSize) {
-    constexpr std::array<char, 8> magic{'N', 'N', 'U', 'E', 'S', 'G', 'D', '4'};
+    constexpr std::array<char, 8> magic{'N', 'N', 'U', 'E', 'S', 'G', 'D', '5'};
     constexpr std::array<uint64_t, 3> progress{};
     output.write(magic.data(), magic.size());
     for (uint64_t dimension : {inputSize, uint64_t{256}, uint64_t{32}, uint64_t{32}}) {
@@ -75,11 +96,10 @@ TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {
 TEST(Nnue, DenseInputPutsMoverBeforeOpponent) {
   auto model = std::make_unique<nnue::NnueModel>();
   auto accumulatorWeights = model->accumulator().weights();
-  accumulatorWeights[7 * nnue::NnueModel::kAccumulatorSize] = 100.0f;
-  accumulatorWeights[9 * nnue::NnueModel::kAccumulatorSize] = 200.0f;
+  accumulatorWeights[7 * nnue::NnueModel::kAccumulatorSize] = 0.5f;
+  accumulatorWeights[9 * nnue::NnueModel::kAccumulatorSize] = 0.25f;
   auto firstWeights = model->firstHidden().weights();
   firstWeights[0] = 1.0f;
-  firstWeights[nnue::NnueModel::kAccumulatorSize] = 2.0f;
   model->secondHidden().weights()[0] = 1.0f;
   model->outputLayer().weights()[0] = 1.0f;
 
@@ -87,14 +107,14 @@ TEST(Nnue, DenseInputPutsMoverBeforeOpponent) {
   const std::array<uint32_t, 1> blackFeature{9};
   model->feedFull(whiteFeature, 0);
   model->feedFull(blackFeature, 1);
-  EXPECT_NEAR(model->evaluate(0), 500.0f, 1e-6f);
-  EXPECT_NEAR(model->evaluate(1), 400.0f, 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 1.0f / 256.0f, 1e-7f);
+  EXPECT_NEAR(model->evaluate(1), 1.0f / 65536.0f, 1e-7f);
 }
 
-TEST(Nnue, AccumulatorAndHiddenLayersUseLeakyRelu) {
+TEST(Nnue, NewModelUsesSquaredClippedReluInEveryHiddenLayer) {
   auto model = std::make_unique<nnue::NnueModel>();
-  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = -100.0f;
-  model->firstHidden().weights()[0] = -1.0f;
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 0.5f;
+  model->firstHidden().weights()[0] = 1.0f;
   model->secondHidden().weights()[0] = 1.0f;
   model->outputLayer().weights()[0] = 1.0f;
 
@@ -102,17 +122,34 @@ TEST(Nnue, AccumulatorAndHiddenLayersUseLeakyRelu) {
   const std::array<uint32_t, 0> empty{};
   model->feedFull(active, 0);
   model->feedFull(empty, 1);
-  EXPECT_NEAR(model->evaluate(0), 100.0f * nnue::kLeakyReluSlope, 1e-6f);
+  EXPECT_NEAR(model->evaluate(0), 1.0f / 256.0f, 1e-7f);
 
-  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 1.0f;
-  model->firstHidden().weights()[0] = -100.0f;
-  model->secondHidden().weights()[0] = -1.0f;
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = -0.5f;
   model->feedFull(active, 0);
-  EXPECT_NEAR(model->evaluate(0), 100.0f * nnue::kLeakyReluSlope, 1e-6f);
+  EXPECT_EQ(model->evaluate(0), 0.0f);
+
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 2.0f;
+  model->firstHidden().weights()[0] = 2.0f;
+  model->secondHidden().weights()[0] = 2.0f;
+  model->feedFull(active, 0);
+  EXPECT_EQ(model->evaluate(0), 1.0f);
+}
+
+TEST(Nnue, CheckpointRequiresSCReLUVersion) {
+  EXPECT_THROW((void)nnue::NnueSerializer::load(weightsPath()), std::runtime_error);
+  auto model = std::make_unique<nnue::NnueModel>();
+  TemporaryFile checkpoint;
+  nnue::NnueSerializer::save(checkpoint.path, *model);
+  std::array<char, 8> magic{};
+  std::ifstream input(checkpoint.path, std::ios::binary);
+  input.read(magic.data(), magic.size());
+  EXPECT_EQ(std::string_view(magic.data(), magic.size()), "NNUESGD5");
+
+  EXPECT_NO_THROW((void)nnue::NnueSerializer::load(checkpoint.path));
 }
 
 TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
-  const auto trainedWeights = weightsPath();
+  const auto trainedWeights = testWeightsPath();
   ASSERT_TRUE(std::filesystem::exists(trainedWeights));
   EXPECT_EQ(std::filesystem::file_size(trainedWeights), 42'014'148u);
   EXPECT_NO_THROW((void)nnue::NnueSerializer::load(trainedWeights));
@@ -189,8 +226,8 @@ TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
 }
 
 TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
-  evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
-  evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
+  evaluation::NNUEEvaluationPolicy incremental{testWeightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{testWeightsPath()};
   const struct Case { std::string_view fen; Move move; } cases[] = {
     {fen::kStartPosition, Move(E2, E4, Pawn, NoPiece, Move::kDoublePushFlag)},
     {"4k3/8/8/8/8/8/4p3/4K3 w - - 0 1", Move(E1, E2, King, NoPiece, Move::kCaptureFlag)},
@@ -234,8 +271,8 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
 }
 
 TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
-  evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
-  evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
+  evaluation::NNUEEvaluationPolicy incremental{testWeightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{testWeightsPath()};
   BoardState state{fen::kStartPosition};
   expectFreshScore(incremental, fresh, state);
 
@@ -258,8 +295,8 @@ TEST(Nnue, SeveralMovesBetweenEvaluationsAndAnotherRoot) {
 }
 
 TEST(Nnue, LongMoveSequenceWithoutEvaluationRefreshesSafely) {
-  evaluation::NNUEEvaluationPolicy incremental{weightsPath()};
-  evaluation::NNUEEvaluationPolicy fresh{weightsPath()};
+  evaluation::NNUEEvaluationPolicy incremental{testWeightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{testWeightsPath()};
   BoardState state{fen::kStartPosition};
   incremental.evaluate(state);
 
@@ -280,7 +317,7 @@ TEST(Nnue, LongMoveSequenceWithoutEvaluationRefreshesSafely) {
 TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
   Board board{
     searching::NegamaxSearchPolicy{
-      evaluation::NNUEEvaluationPolicy{weightsPath()}, 80, 1u << 16
+      evaluation::NNUEEvaluationPolicy{testWeightsPath()}, 80, 1u << 16
     },
     time_control::EqualPercentageTimeControlPolicy{0.05f}
   };
