@@ -48,30 +48,31 @@ namespace bb::searching {
       uint64_t searchedNodes = 1;
     };
 
+    static constexpr size_t kMaxKillers = 3;
     struct SearchStack {
       const int depth;
       bool isFollowingPV;
       PVLine pvLine;
-      std::array<Move, 3> killerMoves;
+      std::array<Move, kMaxKillers> killerMoves;
     };
 
     // Magic constant.
     // static constexpr int32_t kFutilityMovePriority = 0;
-    static constexpr int32_t kKillerMovePriority = 99;
-    static constexpr int32_t kCastlingPriority = 151;
-    static constexpr int32_t kPromotionPriority = 900;
     static constexpr int32_t kPrincipalVariationPriority = 10000;
     static constexpr int32_t kTranspositionPriority = 20000;
-
-    // Assume enemy doesn't hang a piece for free, penalize high value capturing low value.
+    static constexpr int32_t kPromotionPriority = 2000;
+    static constexpr int32_t kCastlingPriority = 151;
+    static constexpr int32_t kUnderpromotionPriority = 100;
+    static constexpr int32_t kKillerMovePriority = 99;
+    static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
     static constexpr std::array<std::array<int32_t, kPieceSize - 1>, kPieceSize> kCapturePriorityTable =
     { {
-        { 100, 300, 300, 500, 900 }, // pawn
-        {  25, 225, 225, 425, 825 }, // knight
-        {  25, 225, 225, 425, 825 }, // bishop
-        { -25, 175, 175, 375, 775 }, // rook
-        {-125,  75,  75, 275, 675 }, // queen
-        { 100, 300, 300, 500, 900 }  // king
+        { 1099, 1299, 1299, 1499, 1899 }, // pawn
+        { 1097, 1297, 1297, 1497, 1897 }, // knight
+        { 1097, 1297, 1297, 1497, 1897 }, // bishop
+        { 1095, 1295, 1295, 1495, 1895 }, // rook
+        { 1091, 1291, 1291, 1491, 1891 }, // queen
+        { 1090, 1290, 1290, 1490, 1890 }  // king
     } };
 
     template <int... Indices>
@@ -81,8 +82,9 @@ namespace bb::searching {
 
     EvalPolicy evalPolicy_;
     const int32_t aspirationWindow_;
-    TranspositionTable ttTable_;
     std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
+    TranspositionTable ttTable_;
+    std::array<std::array<std::array<int32_t, kSquareSize>, kSquareSize>, 2> historyTable_;
 
     constexpr bool isCheckmateScore(int32_t score) const {
       return -evaluation::kCheckmateScore - std::abs(score) <= kMaxDepthHardCutoff;
@@ -180,6 +182,11 @@ namespace bb::searching {
       killers[0] = move;
     }
 
+    void recordHistory(Side side, Move move, int32_t reward) {
+      int32_t bonus = historyTable_[side][move.from()][move.to()];
+      historyTable_[side][move.from()][move.to()] = std::clamp(bonus + reward, 0, kMaxHistoryPriority);
+    }
+
     template <NodeMeta meta>
     void sortMoves(BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const {
       struct PriorityMove {
@@ -201,26 +208,36 @@ namespace bb::searching {
             priority += kPrincipalVariationPriority;
           }
           if constexpr (!meta.isNullMove()) {
-            // Disblaek killer move on null move search, because it skips depth.
-            for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
-              if (move == killerMoves[i]) {
-                priority += kKillerMovePriority - int32_t(i);
+            if (!move.isViolentMove()) {
+              // Killer move heuristics.
+              for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
+                if (move == killerMoves[i]) {
+                  priority += kKillerMovePriority - int32_t(i);
+                }
               }
+
+              // History heuristics.
+              priority += historyTable_[meta.side][move.from()][move.to()];
             }
+            
           }
         }
 
         if (move.isEnpassant()) {
           priority += kCapturePriorityTable[Pawn][Pawn];
-        } if (!meta.isQuiescence() && move.isCastling()) {
+        } else if (!meta.isQuiescence() && move.isCastling()) {
           priority += kCastlingPriority;
         } else {
           if (move.isCapture()) {
-            Piece capturedPiece = std::get<1>(*state.getPieceAt(move.getDest()));
+            Piece capturedPiece = std::get<1>(*state.getPieceAt(move.to()));
             priority += kCapturePriorityTable[move.getMovedPiece()][capturedPiece];
           }
           if (move.getPromotedPieceType() != NoPiece) {
-            priority += kPromotionPriority;
+            if (move.getPromotedPieceType() == Queen) {
+              priority += kPromotionPriority;
+            } else {
+              priority += kUnderpromotionPriority;
+            }
           }
         }
 
@@ -356,6 +373,13 @@ namespace bb::searching {
           storeTT<meta>(context, frame->depth, eval, TranspositionTable::ScoreType::LowerBound, move);
           if (meta.isInternal() && !move.isViolentMove()) {
             recordKiller(frame->killerMoves, move);
+            int killDepth = context.maxDepth - frame->depth;
+            recordHistory(meta.side, move, killDepth * killDepth);
+            for (size_t j = 0; j < i; ++j) {
+              if (!moves[j].isViolentMove()) {
+                recordHistory(meta.side, moves[j], -killDepth * killDepth);
+              }
+            }
           }
           return eval;
         }
@@ -382,6 +406,7 @@ namespace bb::searching {
 
     void reset() {
       evalPolicy_.reset();
+      historyTable_ = {};
       ttTable_.clear();
       for (SearchStack& frame : searchStack_) {
         frame.isFollowingPV = false;
@@ -472,7 +497,8 @@ namespace bb::searching {
         Eval bestEval(alpha, false);
         Move bestMove = moves[0];
 
-        for (Move& move : moves) {
+        for (size_t i = 0; i < moves.size(); ++i) {
+          const Move move = moves[i];
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
           searchStack_[1].isFollowingPV = move == pvMove;
@@ -486,8 +512,14 @@ namespace bb::searching {
             if (bestEval.score >= beta) {
               if (!move.isViolentMove()) {
                 recordKiller(searchStack_[0].killerMoves, move);
+                recordHistory(meta.side, move, context.maxDepth * context.maxDepth);
+                for (size_t j = 0; j < i; ++j) {
+                  if (!moves[j].isViolentMove()) {
+                    recordHistory(meta.side, moves[j], -context.maxDepth * context.maxDepth);
+                  }
+                }
               }
-              std::swap(moves[0], move);
+              std::swap(moves[0], moves[i]);
               break;
             }
             acceptChildPVLine<meta>(searchStack_.data(), bestMove);

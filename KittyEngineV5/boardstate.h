@@ -362,8 +362,8 @@ namespace bb {
       };
 
       if constexpr (!isNullMove) {
-        const Square srce = move.getSource();
-        const Square dest = move.getDest();
+        const Square srce = move.from();
+        const Square dest = move.to();
         const Piece movedPiece = move.getMovedPiece();
         const Piece promotion = move.getPromotedPieceType();
 
@@ -454,8 +454,8 @@ namespace bb {
       assert(side_ == getOtherSide(ally));
       if constexpr (!isNullMove) {
         constexpr Side enemy = getOtherSide(ally);
-        const Square srce = move.getSource();
-        const Square dest = move.getDest();
+        const Square srce = move.from();
+        const Square dest = move.to();
 
         if (move.isCastling()) {
           const Square rookFrom = dest > srce ? (ally == White ? H1 : H8) : (ally == White ? A1 : A8);

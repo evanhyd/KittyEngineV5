@@ -10,7 +10,7 @@ namespace bb {
 
   namespace searching {
     inline constexpr int kMaxDepthHardCutoff = 64;
-    inline constexpr size_t kMaxMovePerGame = 1024;
+    inline constexpr size_t kMaxMovePerGame = 512;
     using PVLine = SmallVec<Move, kMaxDepthHardCutoff + 1>;
     using PositionHistory = SmallVec<ZobristHash::Hash, kMaxMovePerGame>;
     using MoveHistory = SmallVec<Move, kMaxMovePerGame>;

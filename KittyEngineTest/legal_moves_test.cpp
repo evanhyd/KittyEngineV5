@@ -29,10 +29,10 @@ std::vector<LegalMove> legalMoves(const BoardState& state) {
   state.generateMoves<side>(moves);
   std::vector<LegalMove> result;
   for (const Move& move : moves) {
-    result.push_back({move.getSource(), move.getDest(), move.getMovedPiece(),
+    result.push_back({move.from(), move.to(), move.getMovedPiece(),
                       move.getPromotedPieceType(), move.isEnpassant(), move.isDoublePush(),
-                      move.isCastling() && move.getDest() > move.getSource(),
-                      move.isCastling() && move.getDest() < move.getSource()});
+                      move.isCastling() && move.to() > move.from(),
+                      move.isCastling() && move.to() < move.from()});
   }
   return result;
 }
@@ -436,7 +436,7 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
       state.generateMoves<Black>(moves);
     }
     for (const Move& move : moves) {
-      SCOPED_TRACE(std::to_string(move.getSource()) + " to " + std::to_string(move.getDest()));
+      SCOPED_TRACE(std::to_string(move.from()) + " to " + std::to_string(move.to()));
       if (state.getSideToMove() == White) {
         const auto undo = state.makeMove<White>(move, testing_support::NoOpMoveCallback{});
         EXPECT_EQ(state.getSideToMove(), Black);

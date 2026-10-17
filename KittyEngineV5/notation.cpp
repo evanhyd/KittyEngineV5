@@ -183,7 +183,7 @@ namespace bb::notation {
   //}
 
   std::string moveToString(Move move) {
-    std::string str = squareToString(move.getSource()) + squareToString(move.getDest());
+    std::string str = squareToString(move.from()) + squareToString(move.to());
     if (Piece promotedPiece = move.getPromotedPieceType(); promotedPiece != NoPiece) {
       str += pieceToAscii(Black, promotedPiece);
     }

@@ -52,11 +52,11 @@ namespace bb {
     }
 
     // Getters.
-    constexpr Square getSource() const noexcept {
+    constexpr Square from() const noexcept {
       return rawMove & kGetSquareMask;
     }
 
-    constexpr Square getDest() const noexcept {
+    constexpr Square to() const noexcept {
       return (rawMove >> 6) & kGetSquareMask;
     }
 

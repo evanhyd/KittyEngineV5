@@ -22,11 +22,6 @@ namespace bb {
     searching::MoveHistory moveHistory_;
     searching::PVLine pvLine_;
 
-    struct PVReplayCallback {
-      template <bool Add>
-      void markPiece(Side, Piece, Square) const noexcept {}
-    };
-
     void advancePV(const Move& move) {
       if (pvLine_.empty() || pvLine_.front() != move) {
         pvLine_.clear();
@@ -95,9 +90,9 @@ namespace bb {
               break;
             }
             if (ally == White) {
-              pvState.makeMove<White>(previousPV[i], PVReplayCallback{});
+              pvState.makeMove<White>(previousPV[i]);
             } else {
-              pvState.makeMove<Black>(previousPV[i], PVReplayCallback{});
+              pvState.makeMove<Black>(previousPV[i]);
             }
             if (pvState.getHash() == state_.getHash()) {
               pvLine_.resize(previousPV.size() - i - 1);
