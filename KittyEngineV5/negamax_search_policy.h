@@ -116,10 +116,10 @@ namespace bb::searching {
         if (!eval.historyDependent) {
           ttTable_.put(TranspositionTable::Entry{
             .key = context.state.getHash(),
-            .depth = context.maxDepth - depth,
-            .score = normalizeCheckmateScore(eval.score, depth),
+            .depth = static_cast<int16_t>(context.maxDepth - depth),
             .scoreType = scoreType,
             .bestMove = bestMove,
+            .score = normalizeCheckmateScore(eval.score, depth),
           });
         }
       }
@@ -439,6 +439,7 @@ namespace bb::searching {
         param.rootMoves.emplace();
         state.generateMoves<ally>(*param.rootMoves);
         std::ranges::for_each(searchStack_, [](auto& stack) { stack.killerMoves = {}; });
+        ttTable_.age();
       }
       MoveList& moves = *param.rootMoves;
       if (moves.empty()) {

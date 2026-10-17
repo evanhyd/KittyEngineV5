@@ -1,6 +1,8 @@
 #pragma once
 #include "zobrist_hash.h"
 #include "move.h"
+#include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -10,54 +12,93 @@ namespace bb {
   class TranspositionTable {
   public:
     enum class ScoreType : uint8_t {
-      LowerBound,
-      Exact,
-      UpperBound,
+      None = 0,
+      LowerBound = 1,
+      Exact = 2,
+      UpperBound = 3,
     };
 
     struct Entry {
-      ZobristHash::Hash key;
-      int depth; // number of moves look ahead rooted at this node.
-      int32_t score;
-      ScoreType scoreType;
-      bool isValid = false;
-      Move bestMove;
+      ZobristHash::Hash key = 0;                   // 8 bytes (offset 0..7)
+      int16_t depth = 0;                           // 2 bytes (offset 8..9)
+      int16_t age = 0;                             // 2 bytes (offset 10..11)
+      ScoreType scoreType = ScoreType::None;       // 1 byte  (offset 12)
+      Move bestMove{};                             // 4 bytes (offset 16..19)
+      int32_t score = 0;                           // 4 bytes (offset 20..23)
+
+      constexpr bool isValid() const noexcept {
+        return scoreType != ScoreType::None;
+      }
     };
+    static_assert(sizeof(Entry) == 24, "TranspositionTable::Entry must be 24 bytes");
+    static_assert(std::is_trivially_copyable_v<Entry>, "TranspositionTable::Entry must be trivially copyable for SIMD operations");
 
     explicit TranspositionTable(size_t capacity)
-      : entries_(std::make_unique<Entry[]>(capacity)), capacity_(capacity) {
-      if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
-        throw std::invalid_argument("transposition table entry size must be two's power");
+      : entries_(std::make_unique<Entry[]>(capacity)),
+        capacity_(capacity) {
+      if (!std::has_single_bit(capacity)) {
+        throw std::invalid_argument("transposition table entry size must be a power of two");
       }
     }
 
+    void age() noexcept {
+      ++currentAge_;
+    }
+
     void put(const Entry& entry) noexcept {
-      auto& slot = entries_[entry.key & (capacity_ - 1)];
-      if (!slot.isValid ||
-          slot.key != entry.key ||
-          entry.depth > slot.depth ||
-          (entry.depth == slot.depth && entry.scoreType == ScoreType::Exact && slot.scoreType != ScoreType::Exact)) {
+      auto& slot = entries_[getIndex(entry.key)];
+
+      // Empty slot, always write.
+      if (!slot.isValid()) {
         slot = entry;
-        slot.isValid = true;
+        slot.age = currentAge_;
+        return;
+      }
+
+      // Same position, take the younger and deeper one.
+      if (slot.key == entry.key) {
+        const Move bestMove = entry.bestMove != Move{} ? entry.bestMove : slot.bestMove;
+
+        if (entry.depth >= slot.depth ||
+            (entry.scoreType == ScoreType::Exact && slot.scoreType != ScoreType::Exact)) {
+          slot = entry;
+          slot.bestMove = bestMove;
+        } else if (slot.bestMove == Move{} && bestMove != Move{}) {
+          slot.bestMove = bestMove;
+        }
+        slot.age = currentAge_;
+        return;
+      }
+
+      // Different position, take the younger and deeper one.
+      const int ageDiff = std::min(currentAge_ - slot.age, 100);
+      const int effectiveOldDepth = slot.depth - 2 * ageDiff;
+      if (entry.depth >= effectiveOldDepth) {
+        slot = entry;
+        slot.age = currentAge_;
       }
     }
 
     const Entry* get(ZobristHash::Hash key) const noexcept {
-      const auto& entry = entries_[key & (capacity_ - 1)];
-      if (!entry.isValid || entry.key != key) {
+      const auto& entry = entries_[getIndex(key)];
+      if (!entry.isValid() || entry.key != key) {
         return nullptr;
       }
       return &entry;
     }
 
     void clear() noexcept {
-      for (size_t i = 0; i < capacity_; ++i) {
-        entries_[i].isValid = false;
-      }
+      currentAge_ = 0;
+      std::fill_n(entries_.get(), capacity_, Entry{});
     }
 
   private:
+    [[nodiscard]] constexpr size_t getIndex(ZobristHash::Hash key) const noexcept {
+      return key & (capacity_ - 1);
+    }
+
     std::unique_ptr<Entry[]> entries_;
     size_t capacity_;
+    int16_t currentAge_ = 0;
   };
 }

@@ -42,13 +42,12 @@ int main() {
   try {
     Board board{
     searching::NegamaxSearchPolicy{
-      evaluation::NNUEEvaluationPolicy{"weights.bin"},
-       //evaluation::HandCraftEvaluationPolicy{},
-      aspirationWindow,
-      ttTableSize},
-    time_control::EqualPercentageTimeControlPolicy{
-      timePercentage
-    }
+        //evaluation::NNUEEvaluationPolicy{"weights.bin"},
+        evaluation::HandCraftEvaluationPolicy{},
+        aspirationWindow,
+        ttTableSize
+      },
+      time_control::EqualPercentageTimeControlPolicy{timePercentage}
     };
 
     user_interface::TerminalUI terminal{ board, cin, cout, cerr };
