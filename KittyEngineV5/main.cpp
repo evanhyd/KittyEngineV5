@@ -42,8 +42,8 @@ int main() {
   try {
     Board board{
     searching::NegamaxSearchPolicy{
-        //evaluation::NNUEEvaluationPolicy{"weights.bin"},
-        evaluation::HandCraftEvaluationPolicy{},
+        evaluation::NNUEEvaluationPolicy{"weights.bin"},
+        //evaluation::HandCraftEvaluationPolicy{},
         aspirationWindow,
         ttTableSize
       },

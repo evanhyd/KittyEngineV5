@@ -9,13 +9,18 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 
 ### NegamaxSearchingPolicy
 
-- Iterative deepening
-- Alpha-beta pruning
-- Aspiration windows
-- Move ordering
+- Iterative Deepening
+- Alpha-beta Pruning
+- Principal Variation Search
+- Null-Move Pruning
+- Late Move Reductions
+- Aspiration Windows
+- Transposition Table With Generation
+- MVV-LVA Move Ordering
+- Generalized Killer Moves
+- Butterfly History Table
 - Transposition table
-- Quiescence search
-- Repetition and 50-move draw detection
+- Quiescence Search
 
 ## TimeControl Policy
 
@@ -35,17 +40,18 @@ The handcrafted policy combines:
 - Isolated, doubled, and passed pawn scores.
 - Bishop-pair and open or semi-open rook-file bonuses.
 - King placement, pawn shelter, open files near the king, and nearby attacks.
-- Penalties for overloaded defenders.
 
 Pawn and king placement scores are blended between opening and endgame values according to the remaining material.
 
 ### NNUE evaluation
 
+- Classic Half-KP
 - Architecture: 40,960 sparse inputs per perspective, two 256-neuron accumulators, 32 and 32 hidden neurons, and one output; all values are floats.
 - Inputs: non-king pieces indexed by side, piece type, king square, and piece square from each perspective.
-- Activations: leaky ReLU in the accumulators and hidden layers, and `sigmoid(x / 400)` at the output.
-- Score: WDL space to centipawn space.
-- Weights: loaded from `weights.bin` in the current working directory, using the `NNUESGD3` checkpoint format.
+- Activations: squared clipped ReLU in the accumulators and hidden layers, and a linear output.
+- Hand-tuned SIMD Matrix optimzied for low latency CPU computations.
+- Training: more than 410 million unique positions distilled from Stockfish evaluations using the Bullet library.
+- Weights: loaded from `weights.bin` in the current working directory.
 
 ## UCI Command
 

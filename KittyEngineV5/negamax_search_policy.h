@@ -343,22 +343,30 @@ namespace bb::searching {
         (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
 
         Eval eval = [&]() -> Eval {
-          //Eval result = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
-          //result.score = -result.score;
-          //return result;
-
-          // Search the first move and nodes without an established best move in full.
-          // Quiescence and null-move nodes retain their normal alpha-beta search.
-          if (!meta.isInternal() || i == 0 || bestEval.score <= alpha) {
+          // THe first move and quiescence/null-move must be search in full.
+          if (!meta.isInternal() || i == 0) {
             Eval result = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
             result.score = -result.score;
             return result;
           }
 
-          // A scout needs only to determine whether this move beats the current best.
-          // Keep the child an internal node so TT bounds and depth handling stay intact.
-          Eval result = searchInternal<meta.flip()>(context, frame + 1, -bestEval.score - 1, -bestEval.score);
+          // Late move reduction.
+          int reduction = 0;
+          if (meta.isInternal() && context.maxDepth - frame->depth >= 3 && i >= 3 && !move.isViolentMove() && !inCheck) {
+            reduction = 1;
+          }
+
+          // Scout search (reduced depth + narrow window).
+          Eval result = searchInternal<meta.flip()>(context, frame + 1 + reduction, -bestEval.score - 1, -bestEval.score);
           result.score = -result.score;
+
+          // PV search (narrow window).
+          if (reduction > 0 && result.score > bestEval.score) {
+            result = searchInternal<meta.flip()>(context, frame + 1, -bestEval.score - 1, -bestEval.score);
+            result.score = -result.score;
+          }
+
+          // Full window search.
           if (bestEval.score < result.score && result.score < beta) {
             result = searchInternal<meta.flip()>(context, frame + 1, -beta, -bestEval.score);
             result.score = -result.score;
