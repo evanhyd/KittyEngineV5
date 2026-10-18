@@ -5,11 +5,6 @@
 #include <iostream>
 
 namespace perft {
-  struct NoOpMoveCallback {
-    template <bool Add>
-    constexpr void markPiece(bb::Side, bb::Piece, bb::Square) const noexcept {}
-  };
-
   struct Config {
     bool isParallel;
     bool isBulkCount;
@@ -41,9 +36,9 @@ namespace perft {
       return;
     }
     for (const bb::Move& move : moves) {
-      const bb::MoveUndo undo = state.makeMove<ally>(move, NoOpMoveCallback{});
+      const bb::MoveUndo undo = state.makeMove<ally>(move);
       countChildren<config, bb::getOtherSide(ally)>(state, depth - 1, result);
-      state.unmakeMove<ally>(move, undo, NoOpMoveCallback{});
+      state.unmakeMove<ally>(move, undo);
     }
   }
 

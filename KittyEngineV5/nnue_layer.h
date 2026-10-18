@@ -92,7 +92,7 @@ namespace nnue {
 
     // Inputs must be aligned to __m256.
     template <bool isAdd>
-    void feedIncremental(uint32_t inputIndex, uint32_t perspectiveIndex) {
+    void feedIncremental(uint32_t inputIndex, uint32_t perspectiveIndex) noexcept {
       isComputed[perspectiveIndex] = false;
 
       for (size_t i = 0; i < Shape::kBlockSize; ++i) {

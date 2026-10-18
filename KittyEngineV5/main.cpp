@@ -4,6 +4,7 @@
 #include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
 #include "nnue_evaluation_policy.h"
+#include "noop_evaluation_policy.h"
 #include "equal_percentage_time_control_policy.h"
 #include "terminal_ui.h"
 #include <iostream>
@@ -44,6 +45,7 @@ int main() {
     searching::NegamaxSearchPolicy{
         evaluation::NNUEEvaluationPolicy{"weights.bin"},
         //evaluation::HandCraftEvaluationPolicy{},
+        //evaluation::NoopEvaluationPolicy{},
         aspirationWindow,
         ttTableSize
       },

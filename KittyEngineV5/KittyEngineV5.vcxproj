@@ -241,7 +241,7 @@
     <ClInclude Include="equal_percentage_time_control_policy.h" />
     <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
-    <ClInclude Include="hybrid_evaluation_policy.h" />
+    <ClInclude Include="noop_evaluation_policy.h" />
     <ClInclude Include="nnue_math.h" />
     <ClInclude Include="nnue_matrix.h" />
     <ClInclude Include="nnue_layer.h" />

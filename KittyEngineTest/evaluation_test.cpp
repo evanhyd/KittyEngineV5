@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <gtest/gtest.h>
 
 using namespace bb;
@@ -136,7 +137,15 @@ TEST(Nnue, NewModelUsesSquaredClippedReluInEveryHiddenLayer) {
 }
 
 TEST(Nnue, CheckpointRequiresSCReLUVersion) {
-  EXPECT_THROW((void)nnue::NnueSerializer::load(weightsPath()), std::runtime_error);
+  TemporaryFile legacyCheckpoint;
+  {
+    std::ofstream out(legacyCheckpoint.path, std::ios::binary);
+    constexpr std::string_view legacyMagic = "NNUESGD4";
+    out.write(legacyMagic.data(), legacyMagic.size());
+    std::vector<char> dummy(42'014'148 - legacyMagic.size(), 0);
+    out.write(dummy.data(), dummy.size());
+  }
+  EXPECT_THROW((void)nnue::NnueSerializer::load(legacyCheckpoint.path), std::runtime_error);
   auto model = std::make_unique<nnue::NnueModel>();
   TemporaryFile checkpoint;
   nnue::NnueSerializer::save(checkpoint.path, *model);

@@ -117,7 +117,7 @@
     <ClInclude Include="nnue_evaluation_policy.h">
       <Filter>Cores\Evaluation Policies</Filter>
     </ClInclude>
-    <ClInclude Include="hybrid_evaluation_policy.h">
+    <ClInclude Include="noop_evaluation_policy.h">
       <Filter>Cores\Evaluation Policies</Filter>
     </ClInclude>
   </ItemGroup>

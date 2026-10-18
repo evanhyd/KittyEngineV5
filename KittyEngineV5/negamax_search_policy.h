@@ -22,15 +22,15 @@ namespace bb::searching {
 
       const Side side;
       const NodeType type;
-      consteval NodeMeta(Side side, NodeType type) : side(side), type(type) {}
-      consteval NodeMeta flip() const { return NodeMeta{ getOtherSide(side), type }; }
-      consteval NodeMeta toInternal() const { return NodeMeta{ side, NodeType::Internal }; }
-      consteval NodeMeta toNullMove() const { return NodeMeta{ side, NodeType::NullMove }; }
-      consteval NodeMeta toQuiescence() const { return NodeMeta{ side, NodeType::Quiescence }; }
-      consteval bool isRoot() const { return type == NodeType::Root; }
-      consteval bool isInternal() const { return type == NodeType::Internal; }
-      consteval bool isNullMove() const { return type == NodeType::NullMove; }
-      consteval bool isQuiescence() const { return type == NodeType::Quiescence; }
+      consteval NodeMeta(Side side, NodeType type) noexcept : side(side), type(type) {}
+      consteval NodeMeta flip() const noexcept { return NodeMeta{ getOtherSide(side), type }; }
+      consteval NodeMeta toInternal() const noexcept { return NodeMeta{ side, NodeType::Internal }; }
+      consteval NodeMeta toNullMove() const noexcept { return NodeMeta{ side, NodeType::NullMove }; }
+      consteval NodeMeta toQuiescence() const noexcept { return NodeMeta{ side, NodeType::Quiescence }; }
+      consteval bool isRoot() const noexcept { return type == NodeType::Root; }
+      consteval bool isInternal() const noexcept { return type == NodeType::Internal; }
+      consteval bool isNullMove() const noexcept { return type == NodeType::NullMove; }
+      consteval bool isQuiescence() const noexcept { return type == NodeType::Quiescence; }
     };
 
     struct Eval {
@@ -86,24 +86,24 @@ namespace bb::searching {
     TranspositionTable ttTable_;
     std::array<std::array<std::array<int32_t, kSquareSize>, kSquareSize>, 2> historyTable_;
 
-    constexpr bool isCheckmateScore(int32_t score) const {
+    bool isCheckmateScore(int32_t score) const noexcept {
       return -evaluation::kCheckmateScore - std::abs(score) <= kMaxDepthHardCutoff;
     }
 
     // Convert between root-relative and node-relative checkmate distance penalties.
-    constexpr int32_t normalizeCheckmateScore(int32_t score, int depth) const {
+    int32_t normalizeScore(int32_t score, int depth) const noexcept {
       if (!isCheckmateScore(score)) {
         return score;
       }
       return score < 0 ? score - depth : score + depth;
     }
 
-    constexpr int32_t denormalizeCheckmateScore(int32_t score, int depth) const {
-      return normalizeCheckmateScore(score, -depth);
+    int32_t denormalizeScore(int32_t score, int depth) const noexcept {
+      return normalizeScore(score, -depth);
     }
 
     template <NodeMeta meta>
-    void acceptChildPVLine(SearchStack* frame, Move move) {
+    void acceptChildPVLine(SearchStack* frame, Move move) noexcept {
       if constexpr (meta.isRoot() || meta.isInternal()) {
         frame->pvLine.resize((frame + 1)->pvLine.size() + 1);
         frame->pvLine.front() = move;
@@ -113,7 +113,7 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     void storeTT(const SearchContext& context, int depth, Eval eval,
-                 TranspositionTable::ScoreType scoreType, Move bestMove) {
+                 TranspositionTable::ScoreType scoreType, Move bestMove) noexcept {
       if constexpr (meta.isRoot() || meta.isInternal() || meta.isNullMove()) {
         if (!eval.historyDependent) {
           ttTable_.put(TranspositionTable::Entry{
@@ -121,13 +121,13 @@ namespace bb::searching {
             .depth = static_cast<int16_t>(context.maxDepth - depth),
             .scoreType = scoreType,
             .bestMove = bestMove,
-            .score = normalizeCheckmateScore(eval.score, depth),
+            .score = normalizeScore(eval.score, depth),
           });
         }
       }
     }
 
-    std::optional<Eval> checkDraw(const SearchContext& context, int depth) const {
+    std::optional<Eval> checkDraw(const SearchContext& context, int depth) const noexcept {
       const auto hBegin = context.positionHistory.rbegin();
       const auto hEnd = hBegin + std::min(context.positionHistory.size(),
                                           static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
@@ -143,7 +143,7 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     std::optional<Eval> probeTT(const SearchContext& context, SearchStack* frame,
-                                int32_t alpha, int32_t beta, Move pvMove, Move& ttMove) {
+                                int32_t alpha, int32_t beta, Move pvMove, Move& ttMove) noexcept {
       auto ttEntry = ttTable_.get(context.state.getHash());
       if (!ttEntry) {
         return std::nullopt;
@@ -153,7 +153,7 @@ namespace bb::searching {
         return std::nullopt;
       }
 
-      const int32_t score = denormalizeCheckmateScore(ttEntry->score, frame->depth);
+      const int32_t score = denormalizeScore(ttEntry->score, frame->depth);
       if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
         if constexpr (meta.isInternal()) {
           if (ttEntry->bestMove == pvMove) {
@@ -173,7 +173,7 @@ namespace bb::searching {
       return std::nullopt;
     }
 
-    void recordKiller(decltype(SearchStack::killerMoves)& killers, Move move) {
+    void recordKiller(decltype(SearchStack::killerMoves)& killers, Move move) noexcept {
       const auto it = std::find(killers.begin(), killers.end(), move);
       const size_t slot = it == killers.end() ? killers.size() - 1 : static_cast<size_t>(it - killers.begin());
       for (size_t i = slot; i > 0; --i) {
@@ -182,13 +182,13 @@ namespace bb::searching {
       killers[0] = move;
     }
 
-    void recordHistory(Side side, Move move, int32_t reward) {
+    void recordHistory(Side side, Move move, int32_t reward) noexcept {
       int32_t bonus = historyTable_[side][move.from()][move.to()];
       historyTable_[side][move.from()][move.to()] = std::clamp(bonus + reward, 0, kMaxHistoryPriority);
     }
 
     template <NodeMeta meta>
-    void sortMoves(BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const {
+    void sortMoves(BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const noexcept {
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -483,7 +483,7 @@ namespace bb::searching {
       sortMoves<meta>(state, moves, ttMove, pvMove, searchStack_[0].killerMoves);
 
       // Set up aspiration window.
-      constexpr auto expandWindow = [](int& failTime, int32_t window) {
+      const auto expandWindow = [](int& failTime, int32_t window) noexcept {
         ++failTime;
         switch (failTime) {
         case 1:
