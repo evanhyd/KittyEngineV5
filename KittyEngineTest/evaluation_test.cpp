@@ -5,8 +5,10 @@
 #include "negamax_search_policy.h"
 #include "nnue_serializer.h"
 #include "notation.h"
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -72,6 +74,67 @@ namespace {
     fresh.reset();
     EXPECT_NEAR(incremental.evaluate(state), fresh.evaluate(state), 1);
   }
+}
+
+TEST(Nnue, DenseReductionMatchesScalarReference) {
+  const auto check = []<size_t N, size_t P>() {
+    SCOPED_TRACE(N);
+    SCOPED_TRACE(P);
+    auto weights = std::make_unique<nnue::Matrix<float, N, P>>();
+    std::array<float, N> biases;
+    uint32_t rng = 7919u + static_cast<uint32_t>(N * 31 + P);
+    const auto random = [&] { return rng = rng * 1664525u + 1013904223u; };
+    for (size_t row = 0; row < N; ++row) {
+      biases[row] = static_cast<float>(static_cast<int>(row % 7) - 2) * 0.25f;
+      for (size_t col = 0; col < P; ++col) {
+        (*weights)(row, col) = static_cast<float>(static_cast<int>(random() % 2049) - 1024) / 8192.0f;
+      }
+    }
+    if constexpr (N >= 4) {
+      for (size_t row = 0; row < 4; ++row) {
+        biases[row] = std::array<float, 4>{-0.000001f, 0.000001f, 0.999999f, 1.000001f}[row];
+        for (size_t col = 0; col < P; ++col) (*weights)(row, col) = 0.0f;
+      }
+    } else {
+      biases[0] = 0.25f;
+    }
+    if constexpr (N > 4) {
+      biases[4] = 0.25f;
+      for (size_t col = 0; col < P; ++col) (*weights)(4, col) = col % 2 ? -0.125f : 0.125f;
+    }
+    auto layer = std::make_unique<nnue::DenseLayer<N, P>>(biases, *weights);
+    alignas(__m256) std::array<float, (P + 7) / 8 * 8> inputs{};
+    for (size_t fixture = 0; fixture < 64; ++fixture) {
+      SCOPED_TRACE(fixture);
+      for (size_t col = 0; col < P; ++col) {
+        float value = static_cast<float>(random() % 4097) / 4096.0f;
+        if (fixture == 0) value = 0.0f;
+        if (fixture == 1) value = 1.0f;
+        if (fixture % 8 == 2 && col % 2) value = -value;
+        if (fixture % 8 == 3 && col % 2) value *= 0.000001f;
+        inputs[col] = value;
+      }
+      layer->feedFull(inputs);
+      const auto output = layer->output();
+      for (size_t row = 0; row < N; ++row) {
+        std::array<float, 8> sums{};
+        for (size_t col = 0; col < P; ++col) {
+          sums[col % 8] = std::fma(inputs[col], (*weights)(row, col), sums[col % 8]);
+        }
+        const float sum = ((sums[0] + sums[1]) + (sums[2] + sums[3]))
+                        + ((sums[4] + sums[5]) + (sums[6] + sums[7]));
+        const float clipped = std::clamp(sum + biases[row], 0.0f, 1.0f);
+        EXPECT_NEAR(output[row], clipped * clipped, 1e-5f) << "neuron " << row;
+      }
+      for (size_t row = N; row < output.size(); ++row) EXPECT_EQ(output[row], 0.0f);
+    }
+  };
+  check.operator()<8, 8>();
+  check.operator()<32, 512>();
+  check.operator()<32, 32>();
+  check.operator()<40, 24>();
+  check.operator()<17, 33>();
+  check.operator()<1, 7>();
 }
 
 TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {

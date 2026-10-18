@@ -152,16 +152,15 @@ namespace nnue {
       ((output[i] = _mm256_fmadd_ps(inputs, _mm256_load_ps(&weights_(iOffset + i, jOffset)), output[i])), ...);
     }
 
-    float reduceSum(__m256 v) {
-      alignas(__m256) std::array<float, internal::kFloatPerBlock> vals;
-      _mm256_store_ps(vals.data(), v);
-      return ((vals[0] + vals[1]) + (vals[2] + vals[3])) + ((vals[4] + vals[5]) + (vals[6] + vals[7]));
-    }
-
-    template <size_t... i>
-    __m256 bulkReduceSum(std::index_sequence<i...>,
-                         const std::array<__m256, internal::kFloatPerBlock>& outputs) {
-      return _mm256_setr_ps(reduceSum(outputs[i])...);
+    __m256 bulkReduceSum(const std::array<__m256, internal::kFloatPerBlock>& outputs) noexcept {
+      // Reduce eight AVX2 dot products in parallel, preserving neuron order.
+      const __m256 first = _mm256_hadd_ps(
+        _mm256_hadd_ps(outputs[0], outputs[1]), _mm256_hadd_ps(outputs[2], outputs[3]));
+      const __m256 second = _mm256_hadd_ps(
+        _mm256_hadd_ps(outputs[4], outputs[5]), _mm256_hadd_ps(outputs[6], outputs[7]));
+      const __m128 low = _mm_add_ps(_mm256_castps256_ps128(first), _mm256_extractf128_ps(first, 1));
+      const __m128 high = _mm_add_ps(_mm256_castps256_ps128(second), _mm256_extractf128_ps(second, 1));
+      return _mm256_insertf128_ps(_mm256_castps128_ps256(low), high, 1);
     }
 
   public:
@@ -204,7 +203,7 @@ namespace nnue {
         }
 
         // Calculate the dot product for each neuron, then add the biases.
-        __m256 dotProduct = bulkReduceSum(std::make_index_sequence<internal::kFloatPerBlock>(), outputs);
+        __m256 dotProduct = bulkReduceSum(outputs);
         __m256 outputAfterReduce = _mm256_add_ps(dotProduct, _mm256_load_ps(&biases_[iOffset]));
 
         // Apply SCReLU.
