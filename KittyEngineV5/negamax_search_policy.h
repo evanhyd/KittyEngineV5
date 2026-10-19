@@ -61,8 +61,8 @@ namespace bb::searching {
     static constexpr int32_t kPrincipalVariationPriority = 10000;
     static constexpr int32_t kTranspositionPriority = 20000;
     static constexpr int32_t kPromotionPriority = 3000;
+    static constexpr int32_t kUnderpromotionPriority = 50;
     static constexpr int32_t kCastlingPriority = 151;
-    static constexpr int32_t kUnderpromotionPriority = 100;
     static constexpr int32_t kKillerMovePriority = 99;
     static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
     static constexpr std::array<std::array<int32_t, kPieceSize>, kPieceSize> kCapturePriorityTable =

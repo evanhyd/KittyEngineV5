@@ -105,6 +105,25 @@ TEST(LegalMoves, InitialPosition) {
   EXPECT_TRUE(doublePush->doublePush);
 }
 
+TEST(LegalMoves, ViolentMovesIncludeOrdinaryPawnCaptures) {
+  // After 19. Qxg5, Black must be able to see 19...hxg5 in quiescence.
+  const BoardState state{"r1b1k2r/1p3p2/pq2p2p/4p1Q1/8/2N2R2/PPP1B1PP/2K2R2 b kq - 0 19"};
+  MoveList moves;
+  state.generateMoves<Black, true>(moves);
+
+  EXPECT_TRUE(std::any_of(moves.begin(), moves.end(), [](const Move& move) {
+    return move.from() == H6 && move.to() == G5 && move.isCapture();
+  }));
+  MoveList allMoves;
+  state.generateMoves<Black>(allMoves);
+  const auto isForwardPush = [](const Move& move) { return move.from() == H6 && move.to() == H5; };
+  EXPECT_TRUE(std::any_of(allMoves.begin(), allMoves.end(), isForwardPush));
+  EXPECT_FALSE(std::any_of(moves.begin(), moves.end(), isForwardPush));
+  EXPECT_TRUE(std::all_of(moves.begin(), moves.end(), [](const Move& move) {
+    return move.isViolentMove();
+  }));
+}
+
 TEST(LegalMoves, KingMustEscapeCheck) {
   const auto state = BoardState{"4r2k/8/8/8/8/8/8/4K3 w - - 0 1"};
   const auto& moves = legalMoves<White>(state);
@@ -344,6 +363,19 @@ TEST(LegalMoves, CapturePromotionHasFourChoices) {
 
   EXPECT_EQ(countMoves(moves, A7, A8), 4u);
   EXPECT_EQ(countMoves(moves, A7, B8), 4u);
+
+  MoveList violentMoves;
+  state.generateMoves<White, true>(violentMoves);
+  for (Piece promotion : {Knight, Bishop, Rook, Queen}) {
+    EXPECT_EQ(std::count_if(violentMoves.begin(), violentMoves.end(), [=](const Move& move) {
+      return move.from() == A7 && move.to() == B8 && move.isCapture() &&
+        move.getPromotedPieceType() == promotion;
+    }), 1);
+    EXPECT_EQ(std::count_if(violentMoves.begin(), violentMoves.end(), [=](const Move& move) {
+      return move.from() == A7 && move.to() == A8 && !move.isCapture() &&
+        move.getPromotedPieceType() == promotion;
+    }), 1);
+  }
 }
 
 TEST(LegalMoves, BlackCapturePromotionHasFourChoices) {

@@ -35,10 +35,8 @@ namespace bb {
         moves.push(Move(srce, dest, Pawn, Bishop, flags));
         moves.push(Move(srce, dest, Pawn, Rook, flags));
         moves.push(Move(srce, dest, Pawn, Queen, flags));
-      } else {
-        if constexpr (!violentOnly) {
-          moves.push(Move(srce, dest, Pawn, NoPiece, flags));
-        }
+      } else if (!violentOnly || (flags & Move::kCaptureFlag)) {
+        moves.push(Move(srce, dest, Pawn, NoPiece, flags));
       }
     }
 
