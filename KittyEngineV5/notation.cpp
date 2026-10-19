@@ -138,7 +138,7 @@ namespace bb::notation {
       int emptySquares = 0;
       for (Square file = 0; file < kBoardLenSize; ++file) {
         const auto occupant = state.getPieceAt(rankFileToSquare(rank, file));
-        if (!occupant) {
+        if (occupant.piece == NoPiece) {
           ++emptySquares;
           continue;
         }
@@ -146,14 +146,14 @@ namespace bb::notation {
           placement += static_cast<char>('0' + emptySquares);
           emptySquares = 0;
         }
-        placement += pieceToAscii(std::get<0>(*occupant), std::get<1>(*occupant));
+        placement += pieceToAscii(occupant.side, occupant.piece);
       }
       if (emptySquares != 0) {
         placement += static_cast<char>('0' + emptySquares);
       }
     }
 
-    const Side side = state.getSideToMove();
+    const Side side = state.getSide();
     if (side != White && side != Black) {
       throw std::invalid_argument("Invalid side to move");
     }

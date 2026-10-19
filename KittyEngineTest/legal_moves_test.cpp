@@ -132,9 +132,11 @@ TEST(LegalMoves, CastlingMovesRookAndClearsRights) {
   EXPECT_EQ(countMoves(moves, E1, C1), 1u);
   auto afterCastle = state;
   afterCastle.makeMove<White>(Move(E1, G1, King, NoPiece, Move::kCastlingFlag), testing_support::NoOpMoveCallback{});
-  EXPECT_EQ(afterCastle.getPieceAt(G1), (std::tuple<Side, Piece>{White, King}));
-  EXPECT_EQ(afterCastle.getPieceAt(F1), (std::tuple<Side, Piece>{White, Rook}));
-  EXPECT_FALSE(afterCastle.getPieceAt(H1).has_value());
+  EXPECT_EQ(afterCastle.getPieceAt(G1).side, White);
+  EXPECT_EQ(afterCastle.getPieceAt(G1).piece, King);
+  EXPECT_EQ(afterCastle.getPieceAt(F1).side, White);
+  EXPECT_EQ(afterCastle.getPieceAt(F1).piece, Rook);
+  EXPECT_EQ(afterCastle.getPieceAt(H1).piece, NoPiece);
   EXPECT_EQ(afterCastle.getCastlingRights(), BlackKingCastle | BlackQueenCastle);
 }
 
@@ -205,8 +207,9 @@ TEST(LegalMoves, PawnHasFourPromotionChoices) {
   EXPECT_EQ(countMoves(moves, A7, A8), 4u);
   auto promoted = state;
   promoted.makeMove<White>(Move(A7, A8, Pawn, Queen), testing_support::NoOpMoveCallback{});
-  EXPECT_FALSE(promoted.getPieceAt(A7).has_value());
-  EXPECT_EQ(promoted.getPieceAt(A8), (std::tuple<Side, Piece>{White, Queen}));
+  EXPECT_EQ(promoted.getPieceAt(A7).piece, NoPiece);
+  EXPECT_EQ(promoted.getPieceAt(A8).side, White);
+  EXPECT_EQ(promoted.getPieceAt(A8).piece, Queen);
 }
 
 TEST(BoardState, CaptureRemovesOpponentPiece) {
@@ -214,8 +217,9 @@ TEST(BoardState, CaptureRemovesOpponentPiece) {
   auto afterCapture = state;
   afterCapture.makeMove<White>(Move(E1, E2, Rook, NoPiece, Move::kCaptureFlag), testing_support::NoOpMoveCallback{});
 
-  EXPECT_EQ(afterCapture.getPieceAt(E2), (std::tuple<Side, Piece>{White, Rook}));
-  EXPECT_FALSE(afterCapture.getPieceAt(E1).has_value());
+  EXPECT_EQ(afterCapture.getPieceAt(E2).side, White);
+  EXPECT_EQ(afterCapture.getPieceAt(E2).piece, Rook);
+  EXPECT_EQ(afterCapture.getPieceAt(E1).piece, NoPiece);
   EXPECT_EQ(afterCapture.getHalfmoveClock(), 0);
 }
 
@@ -234,8 +238,9 @@ TEST(BoardState, EnPassantCaptureExpiresImmediately) {
   auto afterCapture = afterPush;
   afterCapture.makeMove<White>(Move(E5, D6, Pawn, NoPiece, Move::kEnpassantFlag), testing_support::NoOpMoveCallback{});
   EXPECT_EQ(afterCapture.getEnpassantSquare(), NoSquare);
-  EXPECT_EQ(afterCapture.getPieceAt(D6), (std::tuple<Side, Piece>{White, Pawn}));
-  EXPECT_FALSE(afterCapture.getPieceAt(D5).has_value());
+  EXPECT_EQ(afterCapture.getPieceAt(D6).side, White);
+  EXPECT_EQ(afterCapture.getPieceAt(D6).piece, Pawn);
+  EXPECT_EQ(afterCapture.getPieceAt(D5).piece, NoPiece);
 
   const auto& blackMoves = legalMoves<Black>(afterCapture);
   EXPECT_EQ(countMoves(blackMoves, C7, D6), 1u);
@@ -430,26 +435,31 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
     BoardState state{fen};
     const BoardState original = state;
     MoveList moves;
-    if (state.getSideToMove() == White) {
+    if (state.getSide() == White) {
       state.generateMoves<White>(moves);
     } else {
       state.generateMoves<Black>(moves);
     }
     for (const Move& move : moves) {
       SCOPED_TRACE(std::to_string(move.from()) + " to " + std::to_string(move.to()));
-      if (state.getSideToMove() == White) {
+      if (state.getSide() == White) {
         const auto undo = state.makeMove<White>(move, testing_support::NoOpMoveCallback{});
-        EXPECT_EQ(state.getSideToMove(), Black);
+        EXPECT_EQ(state.getSide(), Black);
         state.unmakeMove<White>(move, undo, testing_support::NoOpMoveCallback{});
       } else {
         const auto undo = state.makeMove<Black>(move, testing_support::NoOpMoveCallback{});
-        EXPECT_EQ(state.getSideToMove(), White);
+        EXPECT_EQ(state.getSide(), White);
         state.unmakeMove<Black>(move, undo, testing_support::NoOpMoveCallback{});
       }
       for (Square square = 0; square < kSquareSize; ++square) {
-        EXPECT_EQ(state.getPieceAt(square), original.getPieceAt(square));
+        const auto actual = state.getPieceAt(square);
+        const auto expected = original.getPieceAt(square);
+        EXPECT_EQ(actual.piece, expected.piece);
+        if (expected.piece != NoPiece) {
+          EXPECT_EQ(actual.side, expected.side);
+        }
       }
-      EXPECT_EQ(state.getSideToMove(), original.getSideToMove());
+      EXPECT_EQ(state.getSide(), original.getSide());
       EXPECT_EQ(state.getCastlingRights(), original.getCastlingRights());
       EXPECT_EQ(state.getEnpassantSquare(), original.getEnpassantSquare());
       EXPECT_EQ(state.getHalfmoveClock(), original.getHalfmoveClock());
@@ -461,14 +471,14 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
 TEST(BoardState, BlackMoveAndEnPassantRestoreColor) {
   BoardState black{"7k/8/8/8/8/8/8/7K b - - 0 1"};
   const auto blackUndo = black.makeMove<Black>(Move(H8, G8, King), testing_support::NoOpMoveCallback{});
-  EXPECT_EQ(black.getSideToMove(), White);
+  EXPECT_EQ(black.getSide(), White);
   black.unmakeMove<Black>(Move(H8, G8, King), blackUndo, testing_support::NoOpMoveCallback{});
-  EXPECT_EQ(black.getSideToMove(), Black);
+  EXPECT_EQ(black.getSide(), Black);
 
   BoardState enpassant{"7k/8/8/3pP3/8/8/8/7K w - d6 0 1"};
   const Move capture(E5, D6, Pawn, NoPiece, Move::kEnpassantFlag);
   const auto undo = enpassant.makeMove<White>(capture, testing_support::NoOpMoveCallback{});
-  EXPECT_EQ(enpassant.getSideToMove(), Black);
+  EXPECT_EQ(enpassant.getSide(), Black);
   enpassant.unmakeMove<White>(capture, undo, testing_support::NoOpMoveCallback{});
-  EXPECT_EQ(enpassant.getSideToMove(), White);
+  EXPECT_EQ(enpassant.getSide(), White);
 }

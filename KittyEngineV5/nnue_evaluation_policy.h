@@ -165,7 +165,7 @@ namespace bb::evaluation {
       }
 
       applied_ = history_.size();
-      return static_cast<int32_t>(std::lround(model_->evaluate(state.getSideToMove())));
+      return static_cast<int32_t>(std::lround(model_->evaluate(state.getSide())));
     }
   };
 

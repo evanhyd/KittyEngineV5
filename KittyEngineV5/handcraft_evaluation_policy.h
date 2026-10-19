@@ -345,7 +345,7 @@ namespace bb::evaluation {
                                kingWeakness<White>(state, blackAttacks, phase) -
                                kingWeakness<Black>(state, whiteAttacks, phase);
 
-      return state.getSideToMove() == White ? netScore : -netScore;
+      return state.getSide() == White ? netScore : -netScore;
     }
   };
 

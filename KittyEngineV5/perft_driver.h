@@ -51,7 +51,7 @@ namespace perft {
       return result;
     }
     bb::BoardState state = position;
-    if (state.getSideToMove() == bb::White) {
+    if (state.getSide() == bb::White) {
       countChildren<config, bb::White>(state, depth, result);
     } else {
       countChildren<config, bb::Black>(state, depth, result);

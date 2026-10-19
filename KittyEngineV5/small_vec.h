@@ -2,6 +2,12 @@
 #include <array>
 #include <iterator>
 
+#ifdef _MSC_VER
+#pragma warning(push)
+// Elements beyond size_ are intentionally uninitialized until written.
+#pragma warning(disable : 26495)
+#endif
+
 namespace bb {
   template <typename T, size_t cap = 218>
     requires std::is_trivially_destructible_v<T>
@@ -115,3 +121,7 @@ namespace bb {
     }
   };
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

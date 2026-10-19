@@ -80,7 +80,7 @@ namespace bb {
           BoardState pvState = previousState;
           for (size_t i = 0; i < previousPV.size(); ++i) {
             MoveList legalMoves;
-            const Side ally = pvState.getSideToMove();
+            const Side ally = pvState.getSide();
             if (ally == White) {
               pvState.generateMoves<White>(legalMoves);
             } else {
@@ -126,7 +126,7 @@ namespace bb {
         throw std::invalid_argument(std::format("Illegal UCI move: {}", moveText));
       };
 
-      if (state_.getSideToMove() == White) {
+      if (state_.getSide() == White) {
         playMoveImpl.template operator()<White>();
       } else {
         playMoveImpl.template operator()<Black>();
@@ -164,7 +164,7 @@ namespace bb {
         return result;
       };
 
-      if (state_.getSideToMove() == White) {
+      if (state_.getSide() == White) {
         return iterativeDeepening.template operator()<White>();
       } else {
         return iterativeDeepening.template operator()<Black>();

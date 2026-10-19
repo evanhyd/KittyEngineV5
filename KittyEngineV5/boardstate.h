@@ -72,7 +72,7 @@ namespace bb {
     void setPosition(std::string_view fen);
 
     constexpr Bitboard getPieces(Side side, Piece piece) const noexcept { return bitboards_[side][piece]; }
-    constexpr Side getSideToMove() const noexcept { return side_; }
+    constexpr Side getSide() const noexcept { return side_; }
     constexpr CastlePermission getCastlingRights() const noexcept { return castlePermission_; }
     constexpr Square getEnpassantSquare() const noexcept { return enpassant_; }
     constexpr auto getHalfmoveClock() const noexcept { return halfmove_; }
@@ -91,15 +91,19 @@ namespace bb {
         bitboards_[side][Queen] | bitboards_[side][King];
     }
 
-    constexpr std::optional<std::tuple<Side, Piece>> getPieceAt(Square square) const noexcept {
+    constexpr auto getPieceAt(Square square) const noexcept {
+      struct SidePiece {
+        Side side;
+        Piece piece;
+      };
       for (Side side = White; side < kSideSize; ++side) {
         for (Piece piece = Pawn; piece < kPieceSize; ++piece) {
           if (isSquareSet(bitboards_[side][piece], square)) {
-            return std::tuple<Side, Piece>{side, piece};
+            return SidePiece{ side, piece};
           }
         }
       }
-      return std::nullopt;
+      return SidePiece{ .piece = NoPiece };
     }
 
     // Return a bitboard containing squares attacked by enemy pieces.

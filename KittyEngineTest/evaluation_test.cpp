@@ -319,7 +319,7 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
     const int32_t rootScore = incremental.evaluate(state);
     EXPECT_NEAR(rootScore, fresh.evaluate(state), 1);
 
-    if (state.getSideToMove() == White) {
+    if (state.getSide() == White) {
       const MoveUndo undo = state.makeMove<White>(testCase.move, incremental);
       expectFreshScore(incremental, fresh, state);
       state.unmakeMove<White>(testCase.move, undo, incremental);
@@ -331,7 +331,7 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
     EXPECT_NEAR(incremental.evaluate(state), rootScore, 1);
 
     incremental.reset();
-    if (state.getSideToMove() == White) {
+    if (state.getSide() == White) {
       const MoveUndo undo = state.makeMove<White>(testCase.move, incremental);
       state.unmakeMove<White>(testCase.move, undo, incremental);
     } else {

@@ -43,8 +43,8 @@ namespace bb::user_interface {
         printBuffer_ += "  -------------------------------\n ";
         for (Square file = 0; file < kBoardLenSize; ++file) {
           const auto occupant = state.getPieceAt(rankFileToSquare(rank, file));
-          const char symbol = occupant
-            ? notation::pieceToAsciiVisual(std::get<0>(*occupant), std::get<1>(*occupant))
+          const char symbol = occupant.piece != NoPiece
+            ? notation::pieceToAsciiVisual(occupant.side, occupant.piece)
             : ' ';
           printBuffer_ += "| ";
           printBuffer_ += symbol;
@@ -56,7 +56,7 @@ namespace bb::user_interface {
       }
       printBuffer_ += "  -------------------------------\n   a   b   c   d   e   f   g   h\n";
       printBuffer_ += std::format("Side to move: {}\nCastling: {}\nEn passant: {}\nHalfmove clock: {}\nFullmove number: {}\n",
-                                  notation::sideToString(state.getSideToMove()),
+                                  notation::sideToString(state.getSide()),
                                   notation::castleToString(state.getCastlingRights()),
                                   notation::squareToString(state.getEnpassantSquare()),
                                   state.getHalfmoveClock(), state.getFullmoveNumber());
