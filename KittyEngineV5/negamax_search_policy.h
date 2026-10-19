@@ -5,6 +5,7 @@
 #include "transposition_table.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -67,6 +68,16 @@ namespace bb::searching {
     static constexpr int32_t kCastlingPriority = 151;
     static constexpr int32_t kKillerMovePriority = 99;
     static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
+    static inline const auto kLmrReductions = [] {
+      std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> table{};
+      for (size_t depth = 1; depth < table.size(); ++depth) {
+        const double lnDepth = std::log(double(depth));
+        for (size_t i = 1; i < table[depth].size(); ++i) {
+          table[depth][i] = static_cast<uint8_t>(0.7844 + lnDepth * std::log(double(i)) / 2.4696);
+        }
+      }
+      return table;
+    }();
     // 1000 + victim value - attacker index; the king uses a 4000-point SEE sentinel.
     static constexpr std::array<int32_t, kPieceSize> kVictimPriority{1100, 1320, 1330, 1500, 1900, 5000};
 
@@ -437,9 +448,10 @@ namespace bb::searching {
           }
 
           // Late move reduction.
+          // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
           int reduction = 0;
-          if (depth >= 3 && i >= 3 && !move.isViolentMove() && !inCheck) {
-            reduction = 1 + (depth >= 6 && i >= 6) + (depth >= 10 && i >= 12);
+          if (depth >= 3 && !move.isViolentMove() && !inCheck) {
+            reduction = std::min<int>(kLmrReductions[depth][i], childDepth - 1);
           }
 
           // Scout search (reduced depth + narrow window).
