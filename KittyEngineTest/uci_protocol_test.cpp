@@ -387,6 +387,52 @@ TEST(SearchStatistics, ReusesRootTranspositionWithNanosecondDuration) {
   EXPECT_GE(cached.searchingTime.count(), 0);
 }
 
+TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16},
+                 TestTimePolicy{kTestTimePercentage}};
+  const auto cold = board.search(5, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_TRUE(cold.bestMove.has_value());
+  ASSERT_FALSE(cold.pvLine->empty());
+  EXPECT_EQ(cold.pvLine->front(), *cold.bestMove);
+  EXPECT_LE(cold.pvLine->size(), 5u);
+
+  BoardState pvState = board.getState();
+  for (const Move move : *cold.pvLine) {
+    MoveList legalMoves;
+    if (pvState.getSide() == White) {
+      pvState.generateMoves<White>(legalMoves);
+      ASSERT_NE(std::find(legalMoves.begin(), legalMoves.end(), move), legalMoves.end());
+      pvState.makeMove<White>(move, testing_support::NoOpMoveCallback{});
+    } else {
+      pvState.generateMoves<Black>(legalMoves);
+      ASSERT_NE(std::find(legalMoves.begin(), legalMoves.end(), move), legalMoves.end());
+      pvState.makeMove<Black>(move, testing_support::NoOpMoveCallback{});
+    }
+  }
+
+  const searching::PVLine coldPV = *cold.pvLine;
+  const auto warm = board.search(5, std::nullopt, [](const searching::SearchResult&) {});
+  ASSERT_TRUE(warm.bestMove.has_value());
+  EXPECT_EQ(warm.score, cold.score);
+  EXPECT_EQ(warm.bestMove, cold.bestMove);
+  EXPECT_EQ(warm.pvLine->size(), coldPV.size());
+  EXPECT_TRUE(std::equal(warm.pvLine->begin(), warm.pvLine->end(), coldPV.begin()));
+}
+
+TEST(SearchFrame, MateDistanceUsesActualPlyAcrossDepths) {
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16},
+                 TestTimePolicy{kTestTimePercentage}};
+  board.setPosition("7k/8/5KQ1/8/8/8/8/8 w - - 0 1");
+
+  for (const int depth : {1, 4}) {
+    const auto result = board.search(depth, std::nullopt, [](const searching::SearchResult&) {});
+    ASSERT_TRUE(result.bestMove.has_value());
+    EXPECT_EQ(result.score, -evaluation::kCheckmateScore - 1);
+    ASSERT_FALSE(result.pvLine->empty());
+    EXPECT_EQ(result.pvLine->front(), *result.bestMove);
+  }
+}
+
 TEST(UciIntegration, PassesGoDepthToSearch) {
   std::istringstream input{"go depth 3\nquit\n"};
   std::ostringstream uciOutput;
