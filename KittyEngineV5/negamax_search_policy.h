@@ -425,8 +425,8 @@ namespace bb::searching {
         context.positionHistory.push(context.state.getHash());
         (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
 
-        const auto searchChild = [&](int childSearchDepth, int32_t childAlpha, int32_t childBeta) {
-          Eval result = searchInternal<meta.flip()>(context, frame + 1, childSearchDepth, -childBeta, -childAlpha);
+        const auto searchChild = [&](int childDepth, int32_t childAlpha, int32_t childBeta) {
+          Eval result = searchInternal<meta.flip()>(context, frame + 1, childDepth, -childBeta, -childAlpha);
           result.score = -result.score;
           return result;
         };
@@ -437,7 +437,10 @@ namespace bb::searching {
           }
 
           // Late move reduction.
-          const int reduction = depth >= 3 && i >= 3 && !move.isViolentMove() && !inCheck;
+          int reduction = 0;
+          if (depth >= 3 && i >= 3 && !move.isViolentMove() && !inCheck) {
+            reduction = 1 + (depth >= 6 && i >= 6) + (depth >= 10 && i >= 12);
+          }
 
           // Scout search (reduced depth + narrow window).
           Eval result = searchChild(childDepth - reduction, bestEval.score, bestEval.score + 1);
