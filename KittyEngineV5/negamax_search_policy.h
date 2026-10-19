@@ -451,7 +451,7 @@ namespace bb::searching {
           // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
           int reduction = 0;
           if (depth >= 3 && !move.isViolentMove() && !inCheck) {
-            reduction = std::min<int>(kLmrReductions[depth][i], childDepth - 1);
+            reduction = int(kLmrReductions[depth][i]);
           }
 
           // Scout search (reduced depth + narrow window).
