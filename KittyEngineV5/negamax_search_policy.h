@@ -56,6 +56,10 @@ namespace bb::searching {
       std::array<Move, kMaxKillers> killerMoves;
       uint8_t pvLength;
       bool isFollowingPV;
+
+      bool isKillerMove(Move move) const noexcept {
+        return std::find(killerMoves.begin(), killerMoves.end(), move) != killerMoves.end();
+      }
     };
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
 
@@ -203,8 +207,8 @@ namespace bb::searching {
     }
 
     void recordHistory(Side side, Move move, int32_t reward) noexcept {
-      int32_t bonus = historyTable_[side][move.from()][move.to()];
-      historyTable_[side][move.from()][move.to()] = std::clamp(bonus + reward, 0, kMaxHistoryPriority);
+      int32_t& score = historyTable_[side][move.from()][move.to()];
+      score = std::clamp(score + reward, 0, kMaxHistoryPriority);
     }
 
     void recordQuietCutoff(Side side, SearchStack* frame, const MoveList& moves, size_t index, int depth) noexcept {
@@ -343,7 +347,7 @@ namespace bb::searching {
     // SEARCH INTERNAL //
     /////////////////////
     template <NodeMeta meta>
-    Eval searchInternal(SearchContext& context, SearchStack* frame, int depth,
+    Eval searchInternal(SearchContext& context, SearchStack* frame, const int depth,
                         const int32_t alpha, const int32_t beta) {
       ++context.searchedNodes;
       const int ply = getPly(frame);
@@ -427,7 +431,6 @@ namespace bb::searching {
 
       sortMoves<meta>(context.state, moves, ttMove, pvMove, frame->killerMoves);
       Move bestMove = moves[0];
-      const int childDepth = meta.isQuiescence() ? 0 : depth - 1;
 
       // Explore moves.
       for (size_t i = 0; i < moves.size(); ++i) {
@@ -444,27 +447,29 @@ namespace bb::searching {
         Eval eval = [&]() -> Eval {
           // The first move and quiescence/null-move must be searched in full.
           if (!meta.isInternal() || i == 0) {
-            return searchChild(childDepth, bestEval.score, beta);
+            return searchChild(depth - 1, bestEval.score, beta);
           }
 
           // Late move reduction.
           // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
           int reduction = 0;
-          if (depth >= 3 && !move.isViolentMove() && !inCheck) {
-            reduction = int(kLmrReductions[depth][i]);
+          if (depth >= 3 && !inCheck && !move.isViolentMove()) {
+            //if (!(historyTable_[meta.side][move.from()][move.to()] == kMaxHistoryPriority && frame->isKillerMove(move))) {
+              reduction = int(kLmrReductions[depth][i]);
+            //}
           }
 
           // Scout search (reduced depth + narrow window).
-          Eval result = searchChild(childDepth - reduction, bestEval.score, bestEval.score + 1);
+          Eval result = searchChild(depth - 1 - reduction, bestEval.score, bestEval.score + 1);
 
           // PV search (narrow window).
           if (reduction > 0 && result.score > bestEval.score) {
-            result = searchChild(childDepth, bestEval.score, bestEval.score + 1);
+            result = searchChild(depth - 1, bestEval.score, bestEval.score + 1);
           }
 
           // Full window search.
           if (bestEval.score < result.score && result.score < beta) {
-            result = searchChild(childDepth, bestEval.score, beta);
+            result = searchChild(depth - 1, bestEval.score, beta);
           }
           return result;
         }();

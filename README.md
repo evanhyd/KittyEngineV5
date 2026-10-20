@@ -16,10 +16,9 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 - Late Move Reductions
 - Aspiration Windows
 - Transposition Table With Generation
-- MVV-LVA Move Ordering
+- Static Exchange Evaluation
 - Generalized Killer Moves
 - Butterfly History Table
-- Transposition table
 - Quiescence Search
 
 ## TimeControl Policy
@@ -31,6 +30,8 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 
 ## Evaluation Policy
 
+The executable currently uses the handcrafted evaluation policy; NNUE is available as an alternative in `main.cpp`.
+
 ### Handcrafted evaluation
 
 The handcrafted policy combines:
@@ -40,8 +41,7 @@ The handcrafted policy combines:
 - Isolated, doubled, and passed pawn scores.
 - Bishop-pair and open or semi-open rook-file bonuses.
 - King placement, pawn shelter, open files near the king, and nearby attacks.
-
-Pawn and king placement scores are blended between opening and endgame values according to the remaining material.
+- Tappered evaluation.
 
 ### NNUE evaluation
 
