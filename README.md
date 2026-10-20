@@ -21,13 +21,6 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 - Butterfly History Table
 - Quiescence Search
 
-## TimeControl Policy
-
-### EqualPercentageTimeControlPolicy
-
-- Budgets time from a percentage of the remaining clock or the move increment, whichever is greater.
-- Checks whether to continue after each completed search depth.
-
 ## Evaluation Policy
 
 The executable currently uses the handcrafted evaluation policy; NNUE is available as an alternative in `main.cpp`.
@@ -52,6 +45,13 @@ The handcrafted policy combines:
 - Hand-tuned SIMD Matrix optimzied for low latency CPU computations.
 - Training: more than 410 million unique positions distilled from Stockfish evaluations using the Bullet library.
 - Weights: loaded from `weights.bin` in the current working directory.
+
+## TimeControl Policy
+
+### EqualPercentageTimeControlPolicy
+
+- Budgets time from a percentage of the remaining clock or the move increment, whichever is greater.
+- Checks whether to continue after each completed search depth.
 
 ## UCI Command
 
