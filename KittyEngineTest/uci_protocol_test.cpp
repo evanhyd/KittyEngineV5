@@ -504,6 +504,35 @@ TEST(UciIntegration, StopsTimedSearchAfterFirstCompletedDepthWhenBudgetIsZero) {
   EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
 }
 
+TEST(UciIntegration, UsesMoveTimeWithoutClocks) {
+  std::istringstream input{"go movetime 100\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  int requestedDepth = 0;
+  Board board{SlowSearchPolicy{&requestedDepth, std::chrono::milliseconds{60}}, TestTimePolicy{kTestTimePercentage}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  EXPECT_EQ(requestedDepth, 1);
+  EXPECT_EQ(uciOutput.str().find("info string error:"), std::string::npos);
+  EXPECT_NE(uciOutput.str().find("bestmove "), std::string::npos);
+}
+
+TEST(UciIntegration, MoveTimeOverridesClockAndAllowsDepthLimit) {
+  std::istringstream input{"go depth 2 movetime 0 wtime 100000 btime 100000\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  int requestedDepth = 0;
+  std::vector<searching::SearchResult> results;
+  Board board{RecordingSearchPolicy{&requestedDepth, &results}, TestTimePolicy{kTestTimePercentage}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  EXPECT_EQ(requestedDepth, 1);
+  EXPECT_EQ(results.size(), 1u);
+  EXPECT_EQ(uciOutput.str().find("info string error:"), std::string::npos);
+}
+
 TEST(UciIntegration, CapsRequestedSearchDepth) {
   const int depthBeyondLimit = searching::kMaxDepthHardCutoff + 1;
   std::istringstream input{"go depth " + std::to_string(depthBeyondLimit) + "\nquit\n"};
@@ -676,6 +705,10 @@ TEST(UciIntegration, RejectsIncompleteOrInvalidTimeControls) {
     "go wtime 100 btime 100 winc\n"
     "go wtime 100 btime 100 movestogo nope\n"
     "go wtime 100 btime 100 movestogo 1 movestogo 2\n"
+    "go movetime\n"
+    "go movetime -1\n"
+    "go movetime nope\n"
+    "go movetime 100 movetime 200\n"
     "quit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
@@ -689,7 +722,7 @@ TEST(UciIntegration, RejectsIncompleteOrInvalidTimeControls) {
   EXPECT_TRUE(results.empty());
   std::istringstream output{uciOutput.str()};
   std::string line;
-  for (int i = 0; i < 8; ++i) {
+  for (int i = 0; i < 12; ++i) {
     ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
     EXPECT_EQ(line.find("info string error:"), 0u);
   }

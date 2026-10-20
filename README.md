@@ -63,6 +63,7 @@ The handcrafted policy combines:
 | `position startpos [moves <move> ...]` | Set the starting position and optionally play UCI moves. |
 | `position fen <six FEN fields> [moves <move> ...]` | Set a FEN position and optionally play UCI moves. |
 | `go depth <N>` | Search to depth `N`, up to the engine's maximum depth. |
+| `go movetime <ms>` | Search with a fixed time budget for this move. A `depth` limit may also be supplied. |
 | `go wtime <ms> btime <ms> [winc <ms>] [binc <ms>] [movestogo <N>]` | Search using clock times and optional increments. A `depth` limit may also be supplied. |
 | `quit` | Exit the engine. |
 | `play <move>` | Play one UCI move on the current board; terminal extension. |

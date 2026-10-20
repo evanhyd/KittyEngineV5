@@ -110,6 +110,7 @@ namespace bb::user_interface {
           std::optional<int64_t> blackTime;
           std::optional<int64_t> whiteIncrement;
           std::optional<int64_t> blackIncrement;
+          std::optional<int64_t> moveTime;
           std::optional<int64_t> movesToGo;
           for (size_t i = 0; i < args.size(); ++i) {
             if (++i == args.size()) {
@@ -133,6 +134,7 @@ namespace bb::user_interface {
               else if (option == "btime") target = &blackTime;
               else if (option == "winc") target = &whiteIncrement;
               else if (option == "binc") target = &blackIncrement;
+              else if (option == "movetime") target = &moveTime;
               else if (option == "movestogo") target = &movesToGo;
               else throw std::invalid_argument("unsupported go option");
               if (*target) {
@@ -146,20 +148,23 @@ namespace bb::user_interface {
               (!hasClock && (whiteIncrement || blackIncrement))) {
             throw std::invalid_argument("go time control needs wtime and btime");
           }
-          if (!depth && !hasClock) {
+          if (!depth && !hasClock && !moveTime) {
             throw std::invalid_argument("go depth or time control is required");
           }
 
           std::optional<time_control::TimeControl> timeControl;
-          if (hasClock) {
+          if (hasClock || moveTime) {
             if (movesToGo && *movesToGo > std::numeric_limits<int>::max()) {
               throw std::invalid_argument("go movestogo is too large");
             }
             timeControl.emplace();
-            timeControl->wtime = std::chrono::milliseconds{*whiteTime};
-            timeControl->btime = std::chrono::milliseconds{*blackTime};
+            if (hasClock) {
+              timeControl->wtime = std::chrono::milliseconds{*whiteTime};
+              timeControl->btime = std::chrono::milliseconds{*blackTime};
+            }
             if (whiteIncrement) timeControl->winc = std::chrono::milliseconds{*whiteIncrement};
             if (blackIncrement) timeControl->binc = std::chrono::milliseconds{*blackIncrement};
+            if (moveTime) timeControl->moveTime = std::chrono::milliseconds{*moveTime};
             if (movesToGo) timeControl->movesToGo = static_cast<int>(*movesToGo);
           }
 
@@ -173,8 +178,7 @@ namespace bb::user_interface {
             const auto elapsed = std::chrono::steady_clock::now() - searchStart;
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
-            const uint64_t nps = elapsedSeconds <= 0 ? 0
-              : static_cast<uint64_t>(totalNodes / elapsedSeconds);
+            const uint64_t nps = static_cast<uint64_t>(totalNodes / std::max(elapsedSeconds, 0.001));
 
             constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);
             constexpr int64_t mateWindow = 100;

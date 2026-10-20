@@ -25,8 +25,12 @@ namespace bb::time_control {
         lastSearchStart_ = start_;
 
         // Calculate the allowed thinking time.
-        searchingTime[White] = std::max(duration_cast<milliseconds>(timeControl->wtime.value_or(0ms) * percentage_), timeControl->winc.value_or(0ms));
-        searchingTime[Black] = std::max(duration_cast<milliseconds>(timeControl->btime.value_or(0ms) * percentage_), timeControl->binc.value_or(0ms));
+        if (timeControl->moveTime) {
+          searchingTime.fill(*timeControl->moveTime);
+        } else {
+          searchingTime[White] = std::max(duration_cast<milliseconds>(timeControl->wtime.value_or(0ms) * percentage_), timeControl->winc.value_or(0ms));
+          searchingTime[Black] = std::max(duration_cast<milliseconds>(timeControl->btime.value_or(0ms) * percentage_), timeControl->binc.value_or(0ms));
+        }
       }
     }
 
