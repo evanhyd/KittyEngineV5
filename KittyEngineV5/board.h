@@ -1,10 +1,12 @@
 #pragma once
 #include "boardstate.h"
+#include "evaluation_policy.h"
 #include "notation.h"
 #include "position_fens.h"
 #include "searching_policy.h"
 #include "time_control_policy.h"
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <optional>
 #include <span>
@@ -156,7 +158,9 @@ namespace bb {
           result = searchingPolicy_.template search<ally>(state_, param);
           resultCallback(result);
 
-          if (!timeControlPolicy_.shouldContinue(ally)) {
+          constexpr int32_t mateScore = evaluation::kCheckmateWinScore;
+          if ((result.score >= mateScore - searching::kMaxDepthHardCutoff && result.score <= mateScore) ||
+              !timeControlPolicy_.shouldContinue(ally)) {
             break;
           }
         }

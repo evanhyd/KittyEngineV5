@@ -27,7 +27,7 @@ namespace {
   using UciSearch = searching::NegamaxSearchPolicy<evaluation::HandCraftEvaluationPolicy>;
   using TestTimePolicy = time_control::EqualPercentageTimeControlPolicy;
   using UciBoard = Board<UciSearch, TestTimePolicy>;
-  constexpr int32_t kMateMagnitude = -evaluation::kCheckmateScore;
+  constexpr int32_t kMateMagnitude = evaluation::kCheckmateWinScore;
   constexpr int32_t kMateWindow = 100;
   constexpr size_t kTestTranspositionEntries = 1024;
   constexpr float kTestTimePercentage = 0.05f;
@@ -420,17 +420,70 @@ TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
 }
 
 TEST(SearchFrame, MateDistanceUsesActualPlyAcrossDepths) {
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16},
-                 TestTimePolicy{kTestTimePercentage}};
-  board.setPosition("7k/8/5KQ1/8/8/8/8/8 w - - 0 1");
+  BoardState state{"7k/8/5KQ1/8/8/8/8/8 w - - 0 1"};
+  UciSearch search{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16};
+  searching::PositionHistory history;
+  history.push(state.getHash());
+  searching::PVLine pvLine;
+  std::optional<MoveList> rootMoves;
 
   for (const int depth : {1, 4}) {
-    const auto result = board.search(depth, std::nullopt, [](const searching::SearchResult&) {});
+    const searching::SearchParam param{depth, 0, history, pvLine, rootMoves};
+    const auto result = search.search<White>(state, param);
     ASSERT_TRUE(result.bestMove.has_value());
-    EXPECT_EQ(result.score, -evaluation::kCheckmateScore - 1);
+    EXPECT_EQ(result.score, evaluation::kCheckmateWinScore - 1);
     ASSERT_FALSE(result.pvLine->empty());
     EXPECT_EQ(result.pvLine->front(), *result.bestMove);
   }
+}
+
+TEST(BoardSearch, StopsAfterWinningMate) {
+  const std::vector<int32_t> scores{kMateMagnitude - 1, 0, 0};
+  Board board{ScoreSequenceSearchPolicy{&scores}, TestTimePolicy{kTestTimePercentage}};
+  int completedDepths = 0;
+
+  const auto result = board.search(3, std::nullopt, [&](const searching::SearchResult&) {
+    ++completedDepths;
+  });
+  EXPECT_EQ(completedDepths, 1);
+  EXPECT_EQ(result.score, scores.front());
+}
+
+TEST(BoardSearch, ContinuesForLosingMateAndScoresOutsideMateRange) {
+  for (const std::vector<int32_t> scores : {
+         std::vector<int32_t>{-kMateMagnitude + 1, -kMateMagnitude, 0},
+         std::vector<int32_t>{kMateMagnitude - searching::kMaxDepthHardCutoff - 1,
+                              kMateMagnitude + 1, 0}}) {
+    Board board{ScoreSequenceSearchPolicy{&scores}, TestTimePolicy{kTestTimePercentage}};
+    int completedDepths = 0;
+    const auto result = board.search(3, std::nullopt, [&](const searching::SearchResult&) {
+      ++completedDepths;
+    });
+    EXPECT_EQ(completedDepths, 3);
+    EXPECT_EQ(result.score, 0);
+  }
+}
+
+TEST(UciIntegration, StopsAfterMateInOneAndReportsBestMove) {
+  std::istringstream input{"position fen 7k/8/5KQ1/8/8/8/8/8 w - - 0 1\ngo depth 4\nquit\n"};
+  std::ostringstream uciOutput;
+  std::ostringstream humanOutput;
+  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16},
+                 TestTimePolicy{kTestTimePercentage}};
+  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+
+  terminal.run();
+  std::istringstream output{uciOutput.str()};
+  std::string line;
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  const auto info = parseInfoLine(line);
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->depth, 1);
+  EXPECT_EQ(info->scoreKind, "mate");
+  EXPECT_EQ(info->score, 1);
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line.find("bestmove "), 0u);
+  EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
 }
 
 TEST(UciIntegration, PassesGoDepthToSearch) {
@@ -535,20 +588,26 @@ TEST(UciIntegration, MoveTimeOverridesClockAndAllowsDepthLimit) {
 
 TEST(UciIntegration, CapsRequestedSearchDepth) {
   const int depthBeyondLimit = searching::kMaxDepthHardCutoff + 1;
+  const std::vector<int32_t> scores(searching::kMaxDepthHardCutoff, 0);
   std::istringstream input{"go depth " + std::to_string(depthBeyondLimit) + "\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  int requestedDepth = 0;
-  std::vector<searching::SearchResult> results;
-  Board board{RecordingSearchPolicy{&requestedDepth, &results}, TestTimePolicy{kTestTimePercentage}};
+  Board board{ScoreSequenceSearchPolicy{&scores}, TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
 
-  EXPECT_EQ(requestedDepth, searching::kMaxDepthHardCutoff);
-  ASSERT_EQ(results.size(), static_cast<size_t>(searching::kMaxDepthHardCutoff));
-  EXPECT_EQ(uciOutput.str().find("info string error:"), std::string::npos);
-  EXPECT_NE(uciOutput.str().find("bestmove "), std::string::npos);
+  std::istringstream output{uciOutput.str()};
+  std::string line;
+  for (int depth = 1; depth <= searching::kMaxDepthHardCutoff; ++depth) {
+    ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+    const auto info = parseInfoLine(line);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->depth, depth);
+  }
+  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+  EXPECT_EQ(line.find("bestmove "), 0u);
+  EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
 }
 
 TEST(BoardPV, DirectMovesConsumeMatchingPrefixAndClearOnDivergence) {
@@ -741,37 +800,34 @@ TEST(UciIntegration, FormatsMateScoresWithinOneHundredPoints) {
     kMateMagnitude - kMateWindow - 1, -(kMateMagnitude - kMateWindow - 1),
     kMateMagnitude + 1, -(kMateMagnitude + 1),
     std::numeric_limits<int32_t>::min()};
-  std::istringstream input{"go depth 9\nquit\n"};
-  std::ostringstream uciOutput;
-  std::ostringstream humanOutput;
-  Board board{ScoreSequenceSearchPolicy{&scores}, TestTimePolicy{kTestTimePercentage}};
-  user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
-
-  terminal.run();
-
-  std::istringstream output{uciOutput.str()};
-  std::string line;
-  uint64_t totalNodes = 0;
-  int64_t previousTimeMs = 0;
   for (size_t i = 0; i < scores.size(); ++i) {
+    SCOPED_TRACE(i);
+    const std::vector<int32_t> singleScore{scores[i]};
+    std::istringstream input{"go depth 1\nquit\n"};
+    std::ostringstream uciOutput;
+    std::ostringstream humanOutput;
+    Board board{ScoreSequenceSearchPolicy{&singleScore}, TestTimePolicy{kTestTimePercentage}};
+    user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
+    terminal.run();
+
+    std::istringstream output{uciOutput.str()};
+    std::string line;
     ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
     const auto info = parseInfoLine(line);
     ASSERT_TRUE(info.has_value());
-    EXPECT_EQ(info->depth, i + 1);
+    EXPECT_EQ(info->depth, 1);
     EXPECT_EQ(info->scoreKind, i < 4 ? "mate" : "cp");
     EXPECT_EQ(info->score, expectedScores[i]);
     EXPECT_TRUE(info->pv.empty());
-    totalNodes += ScoreSequenceSearchPolicy::kNodesPerDepth;
-    EXPECT_GE(info->timeMs, previousTimeMs);
-    EXPECT_EQ(info->nodes, totalNodes);
-    previousTimeMs = info->timeMs;
+    EXPECT_GE(info->timeMs, 0);
+    EXPECT_EQ(info->nodes, ScoreSequenceSearchPolicy::kNodesPerDepth);
+    MoveList moves;
+    board.getState().generateMoves<White>(moves);
+    ASSERT_FALSE(moves.empty());
+    ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
+    EXPECT_EQ(line, "bestmove " + notation::moveToString(moves[0]));
+    EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
   }
-  MoveList moves;
-  board.getState().generateMoves<White>(moves);
-  ASSERT_FALSE(moves.empty());
-  ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
-  EXPECT_EQ(line, "bestmove " + notation::moveToString(moves[0]));
-  EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
 }
 
 TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {

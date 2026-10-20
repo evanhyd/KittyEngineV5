@@ -9,7 +9,8 @@ namespace bb {
 }
 
 namespace bb::evaluation {
-  inline constexpr int32_t kCheckmateScore = -100'000;
+  inline constexpr int32_t kCheckmateLossScore = -100'000;
+  inline constexpr int32_t kCheckmateWinScore = -kCheckmateLossScore;
   inline constexpr int32_t kStalemateScore = 0;
 
   template <typename EvalPolicy>

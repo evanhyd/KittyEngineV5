@@ -180,7 +180,7 @@ namespace bb::user_interface {
             const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
             const uint64_t nps = static_cast<uint64_t>(totalNodes / std::max(elapsedSeconds, 0.001));
 
-            constexpr int64_t mateScore = -static_cast<int64_t>(evaluation::kCheckmateScore);
+            constexpr int64_t mateScore = evaluation::kCheckmateWinScore;
             constexpr int64_t mateWindow = 100;
             const int64_t score = static_cast<int64_t>(result.score);
             const int64_t magnitude = std::abs(score);

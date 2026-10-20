@@ -110,7 +110,7 @@ namespace bb::searching {
     }
 
     bool isCheckmateScore(int32_t score) const noexcept {
-      return -evaluation::kCheckmateScore - std::abs(score) <= kMaxDepthHardCutoff;
+      return evaluation::kCheckmateWinScore - std::abs(score) <= kMaxDepthHardCutoff;
     }
 
     // Convert between root-relative and node-relative checkmate distance penalties.
@@ -385,7 +385,7 @@ namespace bb::searching {
       if constexpr (meta.isInternal() || meta.isNullMove()) {
         context.state.template generateMoves<meta.side>(moves);
         if (moves.empty()) {
-          return Eval(inCheck ? evaluation::kCheckmateScore + ply : evaluation::kStalemateScore, false);
+          return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
         }
 
         // Null Move Pruning: disabled near leaves, on PV, in check, or with low material (zugzwang risk).
@@ -414,7 +414,7 @@ namespace bb::searching {
         if (inCheck) {
           context.state.template generateMoves<meta.side>(moves);
           if (moves.empty()) {
-            return Eval(evaluation::kCheckmateScore + ply, false);
+            return Eval(evaluation::kCheckmateLossScore + ply, false);
           }
         } else {
           const int32_t standPat = evalPolicy_.evaluate(context.state);
@@ -564,7 +564,7 @@ namespace bb::searching {
       MoveList& moves = *param.rootMoves;
       if (moves.empty()) {
         context.pvLine.clear();
-        const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateScore : evaluation::kStalemateScore;
+        const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
         return makeResult(score, std::nullopt);
       }
       sortMoves<meta>(state, moves, ttMove, pvMove, searchStack_[0].killerMoves);
@@ -578,13 +578,13 @@ namespace bb::searching {
         case 2:
           return 10 * window;
         default:
-          return -evaluation::kCheckmateScore;
+          return evaluation::kCheckmateWinScore;
         }
       };
       int failLowCount = 0;
       int failHighCount = 0;
       auto [alpha, beta] = context.maxDepth <= 4
-        ? std::pair{evaluation::kCheckmateScore, -evaluation::kCheckmateScore}
+        ? std::pair{evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore}
         : std::pair{param.pastEval - aspirationWindow_, param.pastEval + aspirationWindow_};
 
       // Search for the best move.
@@ -616,11 +616,11 @@ namespace bb::searching {
 
         if (bestEval.score >= beta) {
           // Fail-high, the position is better than expected, increase beta and re-search.
-          beta = std::min(-evaluation::kCheckmateScore, beta + expandWindow(failHighCount, aspirationWindow_));
+          beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(failHighCount, aspirationWindow_));
           continue;
         } else if (bestEval.score <= alpha) {
           // Fail-low, the position is worse than expected, decrease alpha and re-search.
-          alpha = std::max(evaluation::kCheckmateScore, alpha - expandWindow(failLowCount, aspirationWindow_));
+          alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(failLowCount, aspirationWindow_));
           continue;
         }
 
