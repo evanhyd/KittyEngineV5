@@ -12,7 +12,7 @@ Usage: KittyEngine [options]
 
 Options:
   --type <hce|nnue>                     Evaluation policy: hce, nnue(default)
-  --mode <bullet|blitz|rapid|classical> TT size: bullet=32MB, blitz=256MB, rapid=1GB(default), classical=2GB
+  --mode <bullet|blitz|rapid|classical> TT size: bullet=128MB, blitz=256MB, rapid=1GB(default), classical=2GB
   --help, -h                            Print CLI help and exit
 ```
 

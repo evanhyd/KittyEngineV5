@@ -166,7 +166,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <EnableVectorLength>NotSet</EnableVectorLength>
-      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableParallelCodeGeneration>false</EnableParallelCodeGeneration>
       <CreateHotpatchableImage>false</CreateHotpatchableImage>
       <GuardEHContMetadata>false</GuardEHContMetadata>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
@@ -205,7 +205,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <EnableVectorLength>NotSet</EnableVectorLength>
-      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableParallelCodeGeneration>false</EnableParallelCodeGeneration>
       <CreateHotpatchableImage>false</CreateHotpatchableImage>
       <GuardEHContMetadata>false</GuardEHContMetadata>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
@@ -226,6 +226,8 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/Ob3 /Gw %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release Profiler|x64'">/Ob3 /Gw %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>

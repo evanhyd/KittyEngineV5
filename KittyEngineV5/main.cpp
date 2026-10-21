@@ -20,10 +20,10 @@ consteval size_t ttEntriesForMb(size_t targetMb) noexcept {
 }
 
 constexpr std::optional<size_t> getTTSize(std::string_view mode) noexcept {
-  if (mode == "bullet")    return ttEntriesForMb(32);   //  32 MB -> 1ULL << 20 entries (~24 MB)
-  if (mode == "blitz")     return ttEntriesForMb(256);  // 256 MB -> 1ULL << 23 entries (~192 MB)
-  if (mode == "rapid")     return ttEntriesForMb(1024); //  1 GB  -> 1ULL << 25 entries (~768 MB)
-  if (mode == "classical") return ttEntriesForMb(2048); //  2 GB  -> 1ULL << 26 entries (~1.5 GB)
+  if (mode == "bullet")    return ttEntriesForMb(128);   //    96 MB
+  if (mode == "blitz")     return ttEntriesForMb(256);   //   384 MB
+  if (mode == "rapid")     return ttEntriesForMb(1024);  //   768 MB
+  if (mode == "classical") return ttEntriesForMb(2048);  //  1536 MB
   return std::nullopt;
 }
 
@@ -31,7 +31,7 @@ void printHelp() {
   std::cout << "Usage: KittyEngine [options]\n\n"
             << "Options:\n"
             << "  --type <hce|nnue>                     Evaluation policy: hce, nnue(default)\n"
-            << "  --mode <bullet|blitz|rapid|classical> TT size: bullet=32MB, blitz=256MB, rapid=1GB(default), classical=2GB\n"
+            << "  --mode <bullet|blitz|rapid|classical> TT size: bullet=128MB, blitz=256MB, rapid=1GB(default), classical=2GB\n"
             << "  --help, -h                            Print CLI help and exit\n";
 }
 
@@ -92,3 +92,5 @@ int main(int argc, char* argv[]) {
 
   return 0;
 }
+// 296000
+// 301244
