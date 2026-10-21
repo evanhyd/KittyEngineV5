@@ -5,6 +5,17 @@ A C++ bitboard chess engine with template-meta programming performance optimizat
 The core engine, including bitboards, search, and evaluation, was coded manually.  
 The UCI protocol implementation and terminal UI were done with the assistance from AI.
 
+## CLI Usage
+
+```text
+Usage: KittyEngine [options]
+
+Options:
+  --type <hce|nnue>                     Evaluation policy: hce, nnue(default)
+  --mode <bullet|blitz|rapid|classical> TT size: bullet=32MB, blitz=256MB, rapid=1GB(default), classical=2GB
+  --help, -h                            Print CLI help and exit
+```
+
 ## Searching Policy
 
 ### NegamaxSearchingPolicy
@@ -23,7 +34,7 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 
 ## Evaluation Policy
 
-The executable currently uses the handcrafted evaluation policy; NNUE is available as an alternative in `main.cpp`.
+The executable defaults to NNUE evaluation (`--type nnue`); handcrafted evaluation is available via `--type hce`.
 
 ### Handcrafted evaluation
 
