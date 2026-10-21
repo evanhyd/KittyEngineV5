@@ -23,11 +23,11 @@
     <Filter Include="Cores\TimeControl Policies">
       <UniqueIdentifier>{8420eac7-9598-4f04-964d-2c6fe7786bb8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="MLP">
-      <UniqueIdentifier>{e8489b59-46d5-44a0-b590-a5b438b57d01}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Resources">
       <UniqueIdentifier>{b14b1196-a9ff-4aee-aa02-ee8ad59a0e9a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="NNUE">
+      <UniqueIdentifier>{e8489b59-46d5-44a0-b590-a5b438b57d01}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -100,19 +100,19 @@
       <Filter>Cores\TimeControl Policies</Filter>
     </ClInclude>
     <ClInclude Include="nnue_serializer.h">
-      <Filter>MLP</Filter>
+      <Filter>NNUE</Filter>
     </ClInclude>
     <ClInclude Include="nnue_matrix.h">
-      <Filter>MLP</Filter>
+      <Filter>NNUE</Filter>
     </ClInclude>
     <ClInclude Include="nnue_layer.h">
-      <Filter>MLP</Filter>
+      <Filter>NNUE</Filter>
     </ClInclude>
     <ClInclude Include="nnue_mlp.h">
-      <Filter>MLP</Filter>
+      <Filter>NNUE</Filter>
     </ClInclude>
     <ClInclude Include="nnue_math.h">
-      <Filter>MLP</Filter>
+      <Filter>NNUE</Filter>
     </ClInclude>
     <ClInclude Include="nnue_evaluation_policy.h">
       <Filter>Cores\Evaluation Policies</Filter>

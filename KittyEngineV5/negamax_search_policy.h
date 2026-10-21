@@ -287,6 +287,11 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
+    class StageMoveSelector {
+
+    };
+
+    template <NodeMeta meta>
     void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const noexcept {
       struct PriorityMove {
         int32_t priority;

@@ -2,6 +2,7 @@
 #include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
 #include "nnue_evaluation_policy.h"
+#include "noop_evaluation_policy.h"
 #include "equal_percentage_time_control_policy.h"
 #include "terminal_ui.h"
 #include <algorithm>
@@ -30,7 +31,7 @@ constexpr std::optional<size_t> getTTSize(std::string_view mode) noexcept {
 void printHelp() {
   std::cout << "Usage: KittyEngine [options]\n\n"
             << "Options:\n"
-            << "  --type <hce|nnue>                     Evaluation policy: hce, nnue(default)\n"
+            << "  --type <hce|nnue|noop>                Evaluation policy: hce, nnue(default), noop\n"
             << "  --mode <bullet|blitz|rapid|classical> TT size: bullet=128MB, blitz=256MB, rapid=1GB(default), classical=2GB\n"
             << "  --help, -h                            Print CLI help and exit\n";
 }
@@ -81,6 +82,8 @@ int main(int argc, char* argv[]) {
       runEngine(bb::evaluation::NNUEEvaluationPolicy{"weights.bin"}, *ttCapacity);
     } else if (type == "hce") {
       runEngine(bb::evaluation::HandCraftEvaluationPolicy{}, *ttCapacity);
+    } else if (type == "noop") {
+      runEngine(bb::evaluation::NoopEvaluationPolicy{}, *ttCapacity);
     } else {
       printHelp();
       return 1;

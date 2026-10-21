@@ -227,9 +227,13 @@ namespace bb {
 
     template <Side ally>
     constexpr bool isInCheck() const noexcept {
+      constexpr Side enemy = getOtherSide(ally);
       const Square kingSq = peekPiece(bitboards_[ally][King]);
-      const Bitboard bothOccupancy = getOccupancy(White) | getOccupancy(Black);
-      return isSquareSet(getAttackedMask<ally>(bothOccupancy), kingSq);
+      const Bitboard occup = getOccupancy(White) | getOccupancy(Black);
+      return ((getAttack<Pawn, ally>(kingSq) & bitboards_[enemy][Pawn]) ||
+              (getAttack<Knight>(kingSq) & bitboards_[enemy][Knight]) ||
+              (getAttack<Bishop>(kingSq, occup) & (bitboards_[enemy][Bishop] | bitboards_[enemy][Queen])) ||
+              (getAttack<Rook>(kingSq, occup) & (bitboards_[enemy][Rook] | bitboards_[enemy][Queen])));
     }
 
     template <Side ally, bool violentOnly = false>
