@@ -274,9 +274,11 @@ TEST(UciProtocol, ParsesBothPositionFormsAndMoveLists) {
   };
   protocol.send("position startpos moves e2e4 e7e5");
   protocol.send("position fen 7k/8/8/8/8/8/8/7K b - - 4 12 moves h8g8");
-  ASSERT_EQ(positions.size(), 2u);
+  protocol.send("position kiwipete moves a6b7");
+  ASSERT_EQ(positions.size(), 3u);
   EXPECT_EQ(positions[0], std::string(fen::kStartPosition) + " e2e4 e7e5");
   EXPECT_EQ(positions[1], "7k/8/8/8/8/8/8/7K b - - 4 12 h8g8");
+  EXPECT_EQ(positions[2], std::string(fen::kKiwipete) + " a6b7");
 }
 
 TEST(UciProtocol, PropagatesErrorsToItsCaller) {

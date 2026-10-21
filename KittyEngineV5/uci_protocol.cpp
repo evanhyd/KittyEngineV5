@@ -65,7 +65,7 @@ namespace bb::uci {
       onNewGame_();
     } else if (command == "position") {
       if (args.empty()) {
-        throw std::invalid_argument("position needs startpos or fen");
+        throw std::invalid_argument("position needs startpos, kiwipete, or fen");
       }
 
       std::string fenStorage;
@@ -73,6 +73,9 @@ namespace bb::uci {
       size_t next = 0;
       if (args[0] == "startpos") {
         fen = fen::kStartPosition;
+        next = 1;
+      } else if (args[0] == "kiwipete") {
+        fen = fen::kKiwipete;
         next = 1;
       } else if (args[0] == "fen") {
         if (args.size() < 7) {
@@ -87,7 +90,7 @@ namespace bb::uci {
         fen = fenStorage;
         next = 7;
       } else {
-        throw std::invalid_argument("position needs startpos or fen");
+        throw std::invalid_argument("position needs startpos, kiwipete, or fen");
       }
 
       if (next < args.size()) {
