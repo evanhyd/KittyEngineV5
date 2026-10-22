@@ -133,32 +133,32 @@ namespace bb::searching {
       frame->pvLength = static_cast<uint8_t>(length);
     }
 
-    template <NodeMeta meta>
     void storeTT(const SearchContext& context, SearchStack* frame, int depth, Eval eval,
                  TranspositionTable::ScoreType scoreType, Move bestMove) noexcept {
-      if constexpr (meta.isRoot() || meta.isInternal() || meta.isNullMove()) {
-        if (!eval.historyDependent) {
-          ttTable_.put(TranspositionTable::Entry{
-            .key = context.state.getHash(),
-            .depth = static_cast<int16_t>(depth),
-            .scoreType = scoreType,
-            .bestMove = bestMove,
-            .score = normalizeScore(eval.score, getPly(frame)),
-          });
-        }
+      if (!eval.historyDependent) {
+        ttTable_.put(TranspositionTable::Entry{
+          .key = context.state.getHash(),
+          .depth = static_cast<int16_t>(depth),
+          .scoreType = scoreType,
+          .bestMove = bestMove,
+          .score = normalizeScore(eval.score, getPly(frame)),
+        });
       }
     }
 
     std::optional<Eval> checkDraw(const SearchContext& context, int ply) const noexcept {
+      const auto halfmove = context.state.getHalfmove();
+      if (halfmove < 4) {
+        return std::nullopt;
+      }
+      if (halfmove >= 100) {
+        return Eval(0, true);
+      }
       const auto hBegin = context.positionHistory.rbegin();
-      const auto hEnd = hBegin + std::min(context.positionHistory.size(),
-                                          static_cast<size_t>(context.state.getHalfmoveClock()) + 1);
+      const auto hEnd = hBegin + std::min(context.positionHistory.size(), static_cast<size_t>(halfmove) + 1);
       if (const auto it = std::find(hBegin + 1, hEnd, context.state.getHash()); it != hEnd) {
         const bool inGameHistory = int(std::distance(hBegin, it)) >= ply;
         return Eval(0, !inGameHistory);
-      }
-      if (context.state.getHalfmoveClock() >= 100) {
-        return Eval(0, false);
       }
       return std::nullopt;
     }
@@ -177,6 +177,8 @@ namespace bb::searching {
 
       const int ply = getPly(frame);
       const int32_t score = denormalizeScore(ttEntry->score, ply);
+
+      // Exact hits.
       if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
         if constexpr (meta.isInternal()) {
           if (ttEntry->bestMove == pvMove) {
@@ -190,6 +192,8 @@ namespace bb::searching {
         }
         return Eval(score, false);
       }
+
+      // Lower upper bound hits.
       if ((ttEntry->scoreType == TranspositionTable::ScoreType::UpperBound && score <= alpha) ||
           (ttEntry->scoreType == TranspositionTable::ScoreType::LowerBound && score >= beta)) {
         return Eval(score, false);
@@ -226,15 +230,17 @@ namespace bb::searching {
       }
     }
 
+    template <Side ally>
     int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
+      constexpr Side enemy = getOtherSide(ally);
       const Square square = move.to();
       Bitboard occupancy = moveSquare(state.getOccupancy(White) | state.getOccupancy(Black), move.from(), square);
       if (move.isEnpassant()) {
-        occupancy = unsetSquare(occupancy, state.getSide() == White ? squareDown(square) : squareUp(square));
+        occupancy = unsetSquare(occupancy, ally == White ? squareDown(square) : squareUp(square));
       }
       const Piece promotion = move.getPromotedPieceType();
       const Piece attacker = promotion == NoPiece ? move.getMovedPiece() : promotion;
-      const Piece victim = move.isCapture() ? state.getPieceAt(square).piece :
+      const Piece victim = move.isCapture() ? state.getPieceAt<enemy>(square) :
         (move.isEnpassant() ? Pawn : NoPiece);
       std::array<Piece, kSideSize> pieceIndex{Pawn, Pawn};
 
@@ -267,7 +273,7 @@ namespace bb::searching {
       SmallVec<int32_t, 32> gains;
       gains.push(victim == NoPiece ? 0 : capturePriority(attacker, victim));
       Piece exchangedPiece = attacker;
-      Side side = getOtherSide(state.getSide());
+      Side side = enemy;
 
       while (gains.size() < gains.capacity()) {
         const Piece nextAttacker = popLVA(side);
@@ -286,6 +292,10 @@ namespace bb::searching {
       return gains.front() - reply;
     }
 
+    int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
+      return state.getSide() == White ? staticExchangeEvaluate<White>(state, move) : staticExchangeEvaluate<Black>(state, move);
+    }
+
     template <NodeMeta meta>
     class StageMoveSelector {
 
@@ -293,6 +303,9 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const noexcept {
+      if (moves.size() <= 1) {
+        return;
+      }
       struct PriorityMove {
         int32_t priority;
         Move move;
@@ -308,8 +321,10 @@ namespace bb::searching {
           if (move == ttMove) {
             priority += kTranspositionPriority;
           }
-          if (move == pvMove) {
-            priority += kPrincipalVariationPriority;
+          if constexpr (meta.isInternal()) {
+            if (move == pvMove) {
+              priority += kPrincipalVariationPriority;
+            }
           }
           // A TT or PV move already outranks every ordinary move.
           if (priority != 0) {
@@ -318,23 +333,22 @@ namespace bb::searching {
         }
 
         if (move.isViolentMove()) {
-          priority += staticExchangeEvaluate(state, move);
+          priority += staticExchangeEvaluate<meta.side>(state, move);
           const Piece promotion = move.getPromotedPieceType();
           if (promotion != NoPiece) {
             priority += promotion == Queen ? kPromotionPriority : kUnderpromotionPriority;
           }
-        } else if constexpr (!meta.isQuiescence()) {
-          if constexpr (!meta.isNullMove()) {
-            // Killer move heuristics.
-            for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
-              if (move == killerMoves[i]) {
-                priority += kKillerMovePriority - int32_t(i);
-              }
+        } else if constexpr (meta.isInternal() || meta.isRoot()) {
+          // Killer move heuristics.
+          for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
+            if (move == killerMoves[i]) {
+              priority += kKillerMovePriority - int32_t(i);
             }
-
-            // History heuristics.
-            priority += historyTable_[meta.side][move.from()][move.to()];
           }
+
+          // History heuristics.
+          priority += historyTable_[meta.side][move.from()][move.to()];
+
           if (move.isCastling()) {
             priority += kCastlingPriority;
           }
@@ -356,22 +370,21 @@ namespace bb::searching {
                         const int32_t alpha, const int32_t beta) {
       ++context.searchedNodes;
       const int ply = getPly(frame);
-      frame->pvLength = 0;
       Move pvMove{};
       Move ttMove{};
 
-      // Clear the old PV written by a sibling node and load the expected PV move.
+      // Clear old PV written by sibling node and load expected PV move.
       if constexpr (meta.isInternal()) {
+        frame->pvLength = 0;
         if (frame->isFollowingPV && context.pvLine.size() > ply) {
           pvMove = context.pvLine[ply];
         }
       }
 
-      if (auto drawEval = checkDraw(context, ply)) {
-        return *drawEval;
-      }
-
       if constexpr (!meta.isQuiescence()) {
+        if (auto drawEval = checkDraw(context, ply)) {
+          return *drawEval;
+        }
         if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, pvMove, ttMove); ttEval) {
           return *ttEval;
         }
@@ -379,15 +392,17 @@ namespace bb::searching {
           --context.searchedNodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
         }
-      } else if (ply == kMaxDepthHardCutoff) {
-        return Eval(evalPolicy_.evaluate(context.state), false);
+      } else {
+        if (ply == kMaxDepthHardCutoff) {
+          return Eval(evalPolicy_.evaluate(context.state), false);
+        }
       }
 
       MoveList moves;
       Eval bestEval(alpha, false);
 
       const bool inCheck = context.state.template isInCheck<meta.side>();
-      if constexpr (meta.isInternal() || meta.isNullMove()) {
+      if constexpr (!meta.isQuiescence()) {
         context.state.template generateMoves<meta.side>(moves);
         if (moves.empty()) {
           return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
@@ -408,7 +423,7 @@ namespace bb::searching {
               if (isCheckmateScore(eval.score)) {
                 eval.score = beta;
               }
-              storeTT<meta>(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
+              storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
               return eval;
             }
           }
@@ -435,71 +450,83 @@ namespace bb::searching {
       }
 
       sortMoves<meta>(context.state, moves, ttMove, pvMove, frame->killerMoves);
-      Move bestMove = moves[0];
+      [[maybe_unused]] Move bestMove = moves[0];
 
       // Explore moves.
       for (size_t i = 0; i < moves.size(); ++i) {
-        Move move = moves[i];
-        MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
+        const Move move = moves[i];
+        const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
         context.positionHistory.push(context.state.getHash());
-        (frame + 1)->isFollowingPV = meta.isInternal() && frame->isFollowingPV && move == pvMove;
+        //ttTable_.prefetch(context.state.getHash());
+
+        if constexpr (meta.isInternal()) {
+          (frame + 1)->isFollowingPV = frame->isFollowingPV && move == pvMove;
+        }
 
         const auto searchChild = [&](int childDepth, int32_t childAlpha, int32_t childBeta) {
           Eval result = searchInternal<meta.flip()>(context, frame + 1, childDepth, -childBeta, -childAlpha);
           result.score = -result.score;
           return result;
         };
-        Eval eval = [&]() -> Eval {
-          // The first move and quiescence/null-move must be searched in full.
-          if (!meta.isInternal() || i == 0) {
+
+        const Eval eval = [&] {
+          if constexpr (meta.isInternal()) {
+            if (i == 0) {
+              return searchChild(depth - 1, bestEval.score, beta);
+            }
+            // Late move reduction.
+            // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
+            int reduction = 0;
+            if (depth >= 3 && !inCheck && !move.isViolentMove()) {
+              reduction = int(kLmrReductions[depth][i]);
+            }
+
+            // Scout search (reduced depth + narrow window).
+            Eval result = searchChild(depth - 1 - reduction, bestEval.score, bestEval.score + 1);
+
+            // PV search (narrow window).
+            if (reduction > 0 && result.score > bestEval.score) {
+              result = searchChild(depth - 1, bestEval.score, bestEval.score + 1);
+            }
+
+            // Full window search.
+            if (bestEval.score < result.score && result.score < beta) {
+              result = searchChild(depth - 1, bestEval.score, beta);
+            }
+            return result;
+          } else {
+            // Quiescence search and NullMove: simple alpha-beta search
             return searchChild(depth - 1, bestEval.score, beta);
           }
-
-          // Late move reduction.
-          // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
-          int reduction = 0;
-          if (depth >= 3 && !inCheck && !move.isViolentMove()) {
-            //if (!(historyTable_[meta.side][move.from()][move.to()] == kMaxHistoryPriority && frame->isKillerMove(move))) {
-              reduction = int(kLmrReductions[depth][i]);
-            //}
-          }
-
-          // Scout search (reduced depth + narrow window).
-          Eval result = searchChild(depth - 1 - reduction, bestEval.score, bestEval.score + 1);
-
-          // PV search (narrow window).
-          if (reduction > 0 && result.score > bestEval.score) {
-            result = searchChild(depth - 1, bestEval.score, bestEval.score + 1);
-          }
-
-          // Full window search.
-          if (bestEval.score < result.score && result.score < beta) {
-            result = searchChild(depth - 1, bestEval.score, beta);
-          }
-          return result;
         }();
 
         context.positionHistory.pop();
         context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
 
         if (eval.score >= beta) {
-          storeTT<meta>(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, move);
-          if constexpr (meta.isInternal()) {
-            recordQuietCutoff(meta.side, frame, moves, i, depth);
+          if constexpr (!meta.isQuiescence()) {
+            storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, move);
+            if constexpr (meta.isInternal()) {
+              recordQuietCutoff(meta.side, frame, moves, i, depth);
+            }
           }
           return eval;
         }
         if (eval.score > bestEval.score) {
           bestEval = eval;
-          bestMove = move;
-          if constexpr (meta.isInternal()) {
-            acceptChildPVLine(frame, bestMove);
+          if constexpr (!meta.isQuiescence()) {
+            bestMove = move;
+            if constexpr (meta.isInternal()) {
+              acceptChildPVLine(frame, bestMove);
+            }
           }
         }
       }
       
-      const auto scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact);
-      storeTT<meta>(context, frame, depth, bestEval,  scoreType, bestMove);
+      if constexpr (!meta.isQuiescence()) {
+        const auto scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact);
+        storeTT(context, frame, depth, bestEval, scoreType, bestMove);
+      }
       return bestEval;
     }
 
@@ -630,7 +657,7 @@ namespace bb::searching {
         }
 
         // Update TT and PV.
-        storeTT<meta>(context, searchStack_.data(), context.maxDepth, bestEval, TranspositionTable::ScoreType::Exact, bestMove);
+        storeTT(context, searchStack_.data(), context.maxDepth, bestEval, TranspositionTable::ScoreType::Exact, bestMove);
         param.pvLine.resize(searchStack_[0].pvLength);
         std::copy_n(pvMoves(searchStack_.data()), searchStack_[0].pvLength, param.pvLine.begin());
         return makeResult(bestEval.score, bestMove);

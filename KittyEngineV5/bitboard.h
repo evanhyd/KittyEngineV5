@@ -411,7 +411,7 @@ namespace bb {
   inline constexpr Bitboard getAttack(Square square) noexcept {
     if constexpr (piece == Knight) {
       return internal::kKnightAttackTable[square];
-    } else if constexpr (piece == King) {
+    } else {
       return internal::kKingAttackTable[square];
     }
   }
@@ -423,7 +423,7 @@ namespace bb {
       return internal::sliderAttackTables[square][0].getAttack<Bishop>(occupancy);
     } else if constexpr (piece == Rook) {
       return internal::sliderAttackTables[square][1].getAttack<Rook>(occupancy);
-    } else if constexpr (piece == Queen) {
+    } else {
       return internal::sliderAttackTables[square][0].getAttack<Bishop>(occupancy) |
         internal::sliderAttackTables[square][1].getAttack<Rook>(occupancy);
     }

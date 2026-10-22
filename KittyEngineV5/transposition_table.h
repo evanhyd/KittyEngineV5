@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <xmmintrin.h>
 
 namespace bb {
   class TranspositionTable {
@@ -43,6 +44,10 @@ namespace bb {
 
     void age() noexcept {
       ++currentAge_;
+    }
+
+    void prefetch(ZobristHash::Hash key) noexcept {
+      _mm_prefetch(reinterpret_cast<const char*>(&entries_[getIndex(key)]), _MM_HINT_T0);
     }
 
     void put(const Entry& entry) noexcept {

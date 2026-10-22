@@ -60,8 +60,8 @@ TEST(BoardState, DefaultConstructorZeroInitializesEveryField) {
   EXPECT_EQ(state.getSide(), 0u);
   EXPECT_EQ(state.getCastlingRights(), CastlePermission{});
   EXPECT_EQ(state.getEnpassantSquare(), 0u);
-  EXPECT_EQ(state.getHalfmoveClock(), 0);
-  EXPECT_EQ(state.getFullmoveNumber(), 0);
+  EXPECT_EQ(state.getHalfmove(), 0);
+  EXPECT_EQ(state.getFullmove(), 0);
 }
 
 TEST(BoardState, ParsesFen) {
@@ -75,8 +75,8 @@ TEST(BoardState, ParsesFen) {
   EXPECT_EQ(state.getCastlingRights(),
             WhiteKingCastle | WhiteQueenCastle |
             BlackKingCastle | BlackQueenCastle);
-  EXPECT_EQ(state.getHalfmoveClock(), 4);
-  EXPECT_EQ(state.getFullmoveNumber(), 12);
+  EXPECT_EQ(state.getHalfmove(), 4);
+  EXPECT_EQ(state.getFullmove(), 12);
 }
 
 TEST(BoardState, GettersReportPiecesAndPositionState) {
@@ -91,8 +91,8 @@ TEST(BoardState, GettersReportPiecesAndPositionState) {
             WhiteKingCastle | WhiteQueenCastle |
             BlackKingCastle | BlackQueenCastle);
   EXPECT_EQ(state.getEnpassantSquare(), D6);
-  EXPECT_EQ(state.getHalfmoveClock(), 4);
-  EXPECT_EQ(state.getFullmoveNumber(), 12);
+  EXPECT_EQ(state.getHalfmove(), 4);
+  EXPECT_EQ(state.getFullmove(), 12);
 }
 
 TEST(BoardState, GettersTrackMakeAndUnmake) {
@@ -104,15 +104,15 @@ TEST(BoardState, GettersTrackMakeAndUnmake) {
   EXPECT_EQ(state.getPieceAt(E4).piece, Pawn);
   EXPECT_EQ(state.getSide(), Black);
   EXPECT_EQ(state.getEnpassantSquare(), E3);
-  EXPECT_EQ(state.getHalfmoveClock(), 0);
-  EXPECT_EQ(state.getFullmoveNumber(), 1);
+  EXPECT_EQ(state.getHalfmove(), 0);
+  EXPECT_EQ(state.getFullmove(), 1);
   state.unmakeMove<White>(move, undo, testing_support::NoOpMoveCallback{});
   EXPECT_EQ(state.getPieceAt(E2).side, White);
   EXPECT_EQ(state.getPieceAt(E2).piece, Pawn);
   EXPECT_EQ(state.getPieceAt(E4).piece, NoPiece);
   EXPECT_EQ(state.getSide(), White);
   EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
-  EXPECT_EQ(state.getFullmoveNumber(), 1);
+  EXPECT_EQ(state.getFullmove(), 1);
 }
 
 TEST(Board, StartsAtInitialPosition) {
@@ -122,7 +122,7 @@ TEST(Board, StartsAtInitialPosition) {
   EXPECT_EQ(board.getState().getPieceAt(E1).piece, King);
   EXPECT_EQ(board.getState().getPieceAt(E8).side, Black);
   EXPECT_EQ(board.getState().getPieceAt(E8).piece, King);
-  EXPECT_EQ(board.getState().getFullmoveNumber(), 1);
+  EXPECT_EQ(board.getState().getFullmove(), 1);
 }
 
 TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
@@ -156,8 +156,8 @@ TEST(BoardState, SetPositionReplacesAllFields) {
   EXPECT_EQ(state.getPieceAt(E2).piece, Pawn);
   EXPECT_EQ(state.getCastlingRights(), CastlePermission{});
   EXPECT_EQ(state.getEnpassantSquare(), NoSquare);
-  EXPECT_EQ(state.getHalfmoveClock(), 0);
-  EXPECT_EQ(state.getFullmoveNumber(), 3);
+  EXPECT_EQ(state.getHalfmove(), 0);
+  EXPECT_EQ(state.getFullmove(), 3);
 }
 
 TEST(BoardState, InvalidSetPositionPreservesPreviousState) {
@@ -175,8 +175,8 @@ TEST(BoardState, InvalidSetPositionPreservesPreviousState) {
   EXPECT_EQ(state.getSide(), original.getSide());
   EXPECT_EQ(state.getCastlingRights(), original.getCastlingRights());
   EXPECT_EQ(state.getEnpassantSquare(), original.getEnpassantSquare());
-  EXPECT_EQ(state.getHalfmoveClock(), original.getHalfmoveClock());
-  EXPECT_EQ(state.getFullmoveNumber(), original.getFullmoveNumber());
+  EXPECT_EQ(state.getHalfmove(), original.getHalfmove());
+  EXPECT_EQ(state.getFullmove(), original.getFullmove());
 }
 
 TEST(Notation, ParsesAndFormatsSharedChessNotation) {

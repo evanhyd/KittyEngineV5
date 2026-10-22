@@ -59,7 +59,7 @@ namespace bb::user_interface {
                                   notation::sideToString(state.getSide()),
                                   notation::castleToString(state.getCastlingRights()),
                                   notation::squareToString(state.getEnpassantSquare()),
-                                  state.getHalfmoveClock(), state.getFullmoveNumber());
+                                  state.getHalfmove(), state.getFullmove());
       printBuffer_ += "FEN: ";
       printBuffer_ += notation::boardToFen(state);
       printBuffer_ += '\n';

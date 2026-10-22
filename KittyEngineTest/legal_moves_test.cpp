@@ -239,7 +239,7 @@ TEST(BoardState, CaptureRemovesOpponentPiece) {
   EXPECT_EQ(afterCapture.getPieceAt(E2).side, White);
   EXPECT_EQ(afterCapture.getPieceAt(E2).piece, Rook);
   EXPECT_EQ(afterCapture.getPieceAt(E1).piece, NoPiece);
-  EXPECT_EQ(afterCapture.getHalfmoveClock(), 0);
+  EXPECT_EQ(afterCapture.getHalfmove(), 0);
 }
 
 TEST(BoardState, EnPassantCaptureExpiresImmediately) {
@@ -275,7 +275,7 @@ TEST(BoardState, EnPassantExpiresAfterQuietMove) {
   afterQuietMove.makeMove<White>(Move(H1, G1, King), testing_support::NoOpMoveCallback{});
 
   EXPECT_EQ(afterQuietMove.getEnpassantSquare(), NoSquare);
-  EXPECT_EQ(afterQuietMove.getFullmoveNumber(), 2);
+  EXPECT_EQ(afterQuietMove.getFullmove(), 2);
 }
 
 TEST(LegalMoves, DoubleCheckAllowsOnlyKingMoves) {
@@ -494,8 +494,8 @@ TEST(BoardState, EveryLegalMoveMakesAndUnmakesExactly) {
       EXPECT_EQ(state.getSide(), original.getSide());
       EXPECT_EQ(state.getCastlingRights(), original.getCastlingRights());
       EXPECT_EQ(state.getEnpassantSquare(), original.getEnpassantSquare());
-      EXPECT_EQ(state.getHalfmoveClock(), original.getHalfmoveClock());
-      EXPECT_EQ(state.getFullmoveNumber(), original.getFullmoveNumber());
+      EXPECT_EQ(state.getHalfmove(), original.getHalfmove());
+      EXPECT_EQ(state.getFullmove(), original.getFullmove());
     }
   }
 }

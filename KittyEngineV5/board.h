@@ -158,7 +158,8 @@ namespace bb {
           result = searchingPolicy_.template search<ally>(state_, param);
           resultCallback(result);
 
-          if ((result.score >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff) || !timeControlPolicy_.shouldContinue(ally)) {
+          constexpr int32_t mateScore = evaluation::kCheckmateWinScore;
+          if ((result.score >= mateScore - searching::kMaxDepthHardCutoff && result.score <= mateScore) || !timeControlPolicy_.shouldContinue(ally)) {
             break;
           }
         }

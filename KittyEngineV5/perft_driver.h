@@ -21,32 +21,28 @@ namespace perft {
 
   template <Config config, bb::Side ally>
   inline void countChildren(bb::BoardState& state, uint32_t depth, Result& result) {
-    if (config.isDetailed && depth == 0) {
-      ++result.nodes;
-      return;
-    }
-
     bb::MoveList moves;
     state.generateMoves<ally>(moves);
-
-    if (!config.isDetailed && depth == 1) {
-      result.nodes += moves.size();
+    if (depth == 1) {
+      if constexpr (config.isDetailed) {
+        for (const bb::Move& move : moves) {
+          const bb::MoveUndo undo = state.makeMove<ally>(move);
+          state.unmakeMove<ally>(move, undo);
+          ++result.nodes;
+          result.captures += move.isCapture() || move.isEnpassant();
+          result.enpassants += move.isEnpassant();
+          result.castles += move.isCastling();
+          result.promotions += move.getPromotedPieceType() != bb::NoPiece;
+        }
+      } else {
+        result.nodes += moves.size();
+      }
       return;
     }
-
-    constexpr bb::Side opponent = bb::getOtherSide(ally);
-
     for (const bb::Move& move : moves) {
       const bb::MoveUndo undo = state.makeMove<ally>(move);
-      countChildren<config, opponent>(state, depth - 1, result);
+      countChildren<config, bb::getOtherSide(ally)>(state, depth - 1, result);
       state.unmakeMove<ally>(move, undo);
-
-      if (config.isDetailed && depth == 1) {
-        result.captures += move.isCapture() || move.isEnpassant();
-        result.enpassants += move.isEnpassant();
-        result.castles += move.isCastling();
-        result.promotions += move.getPromotedPieceType() != bb::NoPiece;
-      }
     }
   }
 

@@ -12,11 +12,6 @@
 #include <utility>
 
 namespace bb {
-  // BOARD STATE NODE TYPE //
-  struct NodeType {
-    Side side;
-  };
-
   // BOARD STATE //
   class BoardState {
   private:
@@ -28,29 +23,37 @@ namespace bb {
     int fullmove_;
     ZobristHash zobrist_;
 
-    template <Side ally, bool violentOnly = false>
-    constexpr void addPawnMove(MoveList& moves, Square srce, Square dest, uint32_t flags = 0) const noexcept {
-      if (getSquareRank(dest) == kPromotionRank[ally]) {
+    template <bool isPromotion, bool isCapture = false>
+    static constexpr void addPawnMove(MoveList& moves, Square srce, Square dest) noexcept {
+      constexpr uint32_t flags = isCapture ? Move::kCaptureFlag : 0;
+      if constexpr (isPromotion) {
         moves.push(Move(srce, dest, Pawn, Knight, flags));
         moves.push(Move(srce, dest, Pawn, Bishop, flags));
         moves.push(Move(srce, dest, Pawn, Rook, flags));
         moves.push(Move(srce, dest, Pawn, Queen, flags));
-      } else if (!violentOnly || (flags & Move::kCaptureFlag)) {
+      } else {
         moves.push(Move(srce, dest, Pawn, NoPiece, flags));
+      }
+    }
+
+    template <bool isPromotion, bool isCapture, typename GetSrce>
+    static constexpr void generatePawnMoves(MoveList& moves, Bitboard dbb, Square kingSq, Bitboard pinnedMask, GetSrce&& getSrce) noexcept {
+      for (; dbb; dbb = popPiece(dbb)) {
+        const Square dest = peekPiece(dbb);
+        const Square srce = getSrce(dest);
+        if (!isSquareSet(pinnedMask, srce) || isSquareSet(kLineOfSightMasks[kingSq][srce], dest)) {
+          addPawnMove<isPromotion, isCapture>(moves, srce, dest);
+        }
       }
     }
 
     template <Side ally, bool kingSide>
     constexpr void addCastlingMove(MoveList& moves, Bitboard bothOccupancy, Bitboard attackedMask) const noexcept {
       constexpr Bitboard permission = []() {
-        if constexpr (ally == White && kingSide) {
-          return WhiteKingCastle;
-        } else if constexpr (ally == White && !kingSide) {
-          return WhiteQueenCastle;
-        } else if constexpr (ally == Black && kingSide) {
-          return BlackKingCastle;
+        if constexpr (ally == White) {
+          return kingSide ? WhiteKingCastle : WhiteQueenCastle;
         } else {
-          return BlackQueenCastle;
+          return kingSide ? BlackKingCastle : BlackQueenCastle;
         }
       }();
       constexpr Bitboard blockers = kingSide ? kKingCastleOccupancyMasks[ally] : kQueenCastleOccupancyMasks[ally];
@@ -73,8 +76,8 @@ namespace bb {
     constexpr Side getSide() const noexcept { return side_; }
     constexpr CastlePermission getCastlingRights() const noexcept { return castlePermission_; }
     constexpr Square getEnpassantSquare() const noexcept { return enpassant_; }
-    constexpr auto getHalfmoveClock() const noexcept { return halfmove_; }
-    constexpr auto getFullmoveNumber() const noexcept { return fullmove_; }
+    constexpr auto getHalfmove() const noexcept { return halfmove_; }
+    constexpr auto getFullmove() const noexcept { return fullmove_; }
     constexpr ZobristHash::Hash getHash() const noexcept { return zobrist_.hash(); }
 
     template <Side side>
@@ -89,17 +92,26 @@ namespace bb {
         bitboards_[side][Queen] | bitboards_[side][King];
     }
 
+    template <Side side>
+    constexpr Piece getPieceAt(Square square) const noexcept {
+      for (Piece piece = Pawn; piece < kPieceSize; ++piece) {
+        if (isSquareSet(bitboards_[side][piece], square)) {
+          return piece;
+        }
+      }
+      return NoPiece;
+    }
+
     constexpr auto getPieceAt(Square square) const noexcept {
       struct SidePiece {
         Side side;
         Piece piece;
       };
-      for (Side side = White; side < kSideSize; ++side) {
-        for (Piece piece = Pawn; piece < kPieceSize; ++piece) {
-          if (isSquareSet(bitboards_[side][piece], square)) {
-            return SidePiece{ side, piece};
-          }
-        }
+      if (const Piece piece = getPieceAt<White>(square); piece != NoPiece) {
+        return SidePiece{ White, piece };
+      }
+      if (const Piece piece = getPieceAt<Black>(square); piece != NoPiece) {
+        return SidePiece{ Black, piece };
       }
       return SidePiece{ .piece = NoPiece };
     }
@@ -114,9 +126,12 @@ namespace bb {
       const Bitboard occupancy = bothOccupancy & ~bitboards_[ally][King];
 
       // Calculate the attack masks.
-      Bitboard attackedMask = (enemy == White ?
-                           shiftUpLeft(bitboards_[enemy][Pawn]) | shiftUpRight(bitboards_[enemy][Pawn]) :
-                           shiftDownLeft(bitboards_[enemy][Pawn]) | shiftDownRight(bitboards_[enemy][Pawn]));
+      Bitboard attackedMask;
+      if constexpr (enemy == White) {
+        attackedMask = shiftUpLeft(bitboards_[enemy][Pawn]) | shiftUpRight(bitboards_[enemy][Pawn]);
+      } else {
+        attackedMask = shiftDownLeft(bitboards_[enemy][Pawn]) | shiftDownRight(bitboards_[enemy][Pawn]);
+      }
 
       attackedMask |= getAttack<King>(peekPiece(bitboards_[enemy][King]));
 
@@ -196,16 +211,14 @@ namespace bb {
         // Must block or capture checker if there's any.
         // Restrict the piece movement in the pinned direction.
         Bitboard dbb = ~occupancy[ally] & evasionMask;
-        if constexpr (piece == Bishop || piece == Rook || piece == Queen) {
-          if (isSquareSet(pinnedMask, srce)) {
-            dbb &= kLineOfSightMasks[kingSq][srce];
-          }
-        }
-
         // Combine the filter mask with the piece attack mask.
         if constexpr (piece == Knight) {
           dbb &= getAttack<Knight>(srce);
         } else {
+          // Bishop, Rook, Queen.
+          if (isSquareSet(pinnedMask, srce)) {
+            dbb &= kLineOfSightMasks[kingSq][srce];
+          }
           dbb &= getAttack<piece>(srce, bothOccupancy);
         }
 
@@ -254,39 +267,28 @@ namespace bb {
 
       // Pawn Moves
       {
+        constexpr Bitboard promoRank = (ally == White ? kRank8Mask : kRank1Mask);
+
         // Left capture
-        for (Bitboard dbb = (ally == White ? shiftUpLeft(bitboards_[ally][Pawn]) : shiftDownLeft(bitboards_[ally][Pawn])) & occupancy[enemy] & evasionMask;
-             dbb;
-             dbb = popPiece(dbb)) {
-          const Square dest = peekPiece(dbb);
-          const Square srce = (ally == White ? squareDownRight(dest) : squareUpRight(dest));
-          if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
-            addPawnMove<ally, violentOnly>(moves, srce, dest, Move::kCaptureFlag);
-          }
-        }
+        const Bitboard leftCaptureDbb = (ally == White ? shiftUpLeft(bitboards_[ally][Pawn]) : shiftDownLeft(bitboards_[ally][Pawn])) & occupancy[enemy] & evasionMask;
+        const auto getLeftSrce = [](Square dest) constexpr noexcept { return ally == White ? squareDownRight(dest) : squareUpRight(dest); };
+        generatePawnMoves<false, true>(moves, leftCaptureDbb & ~promoRank, kingSq, pinnedMask, getLeftSrce);
+        generatePawnMoves<true, true>(moves, leftCaptureDbb & promoRank, kingSq, pinnedMask, getLeftSrce);
 
         // Right capture
-        for (Bitboard dbb = (ally == White ? shiftUpRight(bitboards_[ally][Pawn]) : shiftDownRight(bitboards_[ally][Pawn])) & occupancy[enemy] & evasionMask;
-             dbb;
-             dbb = popPiece(dbb)) {
-          const Square dest = peekPiece(dbb);
-          const Square srce = (ally == White ? squareDownLeft(dest) : squareUpLeft(dest));
-          if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
-            addPawnMove<ally, violentOnly>(moves, srce, dest, Move::kCaptureFlag);
-          }
-        }
+        const Bitboard rightCaptureDbb = (ally == White ? shiftUpRight(bitboards_[ally][Pawn]) : shiftDownRight(bitboards_[ally][Pawn])) & occupancy[enemy] & evasionMask;
+        const auto getRightSrce = [](Square dest) constexpr noexcept { return ally == White ? squareDownLeft(dest) : squareUpLeft(dest); };
+        generatePawnMoves<false, true>(moves, rightCaptureDbb & ~promoRank, kingSq, pinnedMask, getRightSrce);
+        generatePawnMoves<true, true>(moves, rightCaptureDbb & promoRank, kingSq, pinnedMask, getRightSrce);
 
         // Push Forward
         const Bitboard singlePushBB = (ally == White ? shiftUp(bitboards_[ally][Pawn]) : shiftDown(bitboards_[ally][Pawn])) & ~bothOccupancy;
-        for (Bitboard dbb = singlePushBB & evasionMask;
-             dbb;
-             dbb = popPiece(dbb)) {
-          const Square dest = peekPiece(dbb);
-          const Square srce = (ally == White ? squareDown(dest) : squareUp(dest));
-          if (!isSquareSet(pinnedMask, srce) || kLineOfSightMasks[kingSq][srce] == kLineOfSightMasks[kingSq][dest]) {
-            addPawnMove<ally, violentOnly>(moves, srce, dest);
-          }
+        const Bitboard pushDbb = singlePushBB & evasionMask;
+        const auto getPushSrce = [](Square dest) constexpr noexcept { return ally == White ? squareDown(dest) : squareUp(dest); };
+        if constexpr (!violentOnly) {
+          generatePawnMoves<false, false>(moves, pushDbb & ~promoRank, kingSq, pinnedMask, getPushSrce);
         }
+        generatePawnMoves<true, false>(moves, pushDbb & promoRank, kingSq, pinnedMask, getPushSrce);
 
         // Push Twice
         if constexpr (!violentOnly) {
@@ -327,20 +329,24 @@ namespace bb {
       const Bitboard attackedMask = getAttackedMask<ally>(bothOccupancy);
 
       // King Walk
-      for (Bitboard bb = getAttack<King>(kingSq) & ~occupancy[ally] & ~attackedMask;
-            bb;
-            bb = popPiece(bb)) {
-        Square dest = peekPiece(bb);
-        if (isSquareSet(occupancy[enemy], dest)) {
+      if constexpr (violentOnly) {
+        for (Bitboard bb = getAttack<King>(kingSq) & occupancy[enemy] & ~attackedMask;
+             bb;
+             bb = popPiece(bb)) {
+          const Square dest = peekPiece(bb);
           moves.push(Move(kingSq, dest, King, NoPiece, Move::kCaptureFlag));
-        } else {
-          if constexpr (!violentOnly) {
+        }
+      } else {
+        for (Bitboard bb = getAttack<King>(kingSq) & ~occupancy[ally] & ~attackedMask;
+             bb;
+             bb = popPiece(bb)) {
+          const Square dest = peekPiece(bb);
+          if (isSquareSet(occupancy[enemy], dest)) {
+            moves.push(Move(kingSq, dest, King, NoPiece, Move::kCaptureFlag));
+          } else {
             moves.push(Move(kingSq, dest, King));
           }
         }
-      }
-
-      if constexpr (!violentOnly) {
         addCastlingMove<ally, true>(moves, bothOccupancy, attackedMask);
         addCastlingMove<ally, false>(moves, bothOccupancy, attackedMask);
       }
@@ -383,15 +389,12 @@ namespace bb {
 
         } else if (move.isCapture()) {
           // Perform capturing.
-          for (Piece piece = Pawn; piece <= Queen; ++piece) {
-            if (isSquareSet(bitboards_[enemy][piece], dest)) {
-              bitboards_[enemy][piece] = unsetSquare(bitboards_[enemy][piece], dest);
-              undo.capturedPiece = piece;
-              zobrist_.markPiece(enemy, piece, dest);
-              moveCallback.template markPiece<false>(enemy, piece, dest);
-              break;
-            }
-          }
+          const Piece capturedPiece = getPieceAt<enemy>(dest);
+          assert(capturedPiece != NoPiece);
+          bitboards_[enemy][capturedPiece] = unsetSquare(bitboards_[enemy][capturedPiece], dest);
+          undo.capturedPiece = capturedPiece;
+          zobrist_.markPiece(enemy, capturedPiece, dest);
+          moveCallback.template markPiece<false>(enemy, capturedPiece, dest);
         }
 
         // Move the piece.

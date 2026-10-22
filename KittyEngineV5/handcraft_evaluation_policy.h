@@ -154,7 +154,7 @@ namespace bb::evaluation {
 
     template <Side side>
     static constexpr Square orient(Square sq) noexcept {
-      return side == White ? sq : sq ^ 56;
+      if constexpr (side == White) return sq; else return sq ^ 56;
     }
 
     static constexpr int32_t blend(int32_t early, int32_t late, int32_t phase) noexcept {
@@ -288,8 +288,15 @@ namespace bb::evaluation {
       const Square kingSquare = peekPiece(state.getPieces(side, King));
       const int kingRank = static_cast<int>(getSquareRank(kingSquare));
       const int kingFile = static_cast<int>(getSquareFile(kingSquare));
-      const int ahead1 = (side == White ? kingRank - 1 : kingRank + 1);
-      const int ahead2 = (side == White ? kingRank - 2 : kingRank + 2);
+      int ahead1;
+      int ahead2;
+      if constexpr (side == White) {
+        ahead1 = kingRank - 1;
+        ahead2 = kingRank - 2;
+      } else {
+        ahead1 = kingRank + 1;
+        ahead2 = kingRank + 2;
+      }
       const Bitboard ownPawns = state.getPieces(side, Pawn);
       const Bitboard enemyPawns = state.getPieces(getOtherSide(side), Pawn);
       int32_t penalty = 0;

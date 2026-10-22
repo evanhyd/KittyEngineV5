@@ -162,9 +162,9 @@ namespace bb::notation {
     placement += ' ';
     placement += squareToString(state.getEnpassantSquare());
     placement += ' ';
-    placement += std::to_string(state.getHalfmoveClock());
+    placement += std::to_string(state.getHalfmove());
     placement += ' ';
-    placement += std::to_string(state.getFullmoveNumber());
+    placement += std::to_string(state.getFullmove());
     return placement;
   }
 
