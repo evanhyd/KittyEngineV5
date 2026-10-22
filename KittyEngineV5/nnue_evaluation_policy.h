@@ -14,10 +14,10 @@
 
 namespace bb::evaluation {
   struct NnueLayout {
-    static constexpr uint32_t kPieceTypes = King; // 5 non-king piece types (Pawn, Knight, Bishop, Rook, Queen)
-    static constexpr uint32_t kKingPlaneStride = 2 * kPieceTypes * kSquareSize; // 640 inputs per king square
+    static constexpr uint32_t kPieceTypes = 6; // 6 piece types (Pawn, Knight, Bishop, Rook, Queen, King)
+    static constexpr uint32_t kKingPlaneStride = 2 * kPieceTypes * kSquareSize; // 768 inputs per king square
     static constexpr uint32_t kPiecePlaneStride = kSquareSize;                  // 64 squares per piece plane
-    static constexpr uint32_t kInputSize = nnue::NnueModel::kInputSize;         // 40,960 total sparse inputs
+    static constexpr uint32_t kInputSize = nnue::NnueModel::kInputSize;         // 49,152 total sparse inputs
     using FeatureList = SmallVec<uint32_t, kSquareSize>;
 
     static constexpr Square orient(Side perspective, Square square) noexcept {
@@ -39,7 +39,7 @@ namespace bb::evaluation {
       return pieceIdx * kPiecePlaneStride + orientedPiece;
     }
 
-    // Input Index: [own king square: 64] * 640 + [piece index: 10] * 64 + [piece square: 64]
+    // Input Index: [own king square: 64] * 768 + [piece index: 12] * 64 + [piece square: 64]
     static constexpr uint32_t pieceIndex(Side perspective, Side pieceSide, Piece piece, Square kingSquare, Square pieceSquare) noexcept {
       return kingBase(perspective, kingSquare) + pieceOffset(perspective, pieceSide, piece, pieceSquare);
     }
@@ -53,7 +53,7 @@ namespace bb::evaluation {
       FeatureList features;
       for (Side relativeSide = White; relativeSide <= Black; ++relativeSide) {
         const Side pieceSide = perspective ^ relativeSide;
-        for (Piece piece = Pawn; piece < King; ++piece) {
+        for (Piece piece = Pawn; piece <= King; ++piece) {
           for (Bitboard pieces = state.getPieces(pieceSide, piece);
                pieces != 0;
                pieces = popPiece(pieces)) {
@@ -68,8 +68,8 @@ namespace bb::evaluation {
 
 
   class NNUEEvaluationPolicy {
-    // A capture with promotion changes at most three non-king features per ply.
-    static constexpr size_t kHistoryCapacity = 3 * searching::kMaxDepthHardCutoff;
+    // A move changes at most four features per ply (e.g. castling moves both king and rook).
+    static constexpr size_t kHistoryCapacity = 4 * searching::kMaxDepthHardCutoff;
 
     struct PieceChange {
       Side side;
@@ -115,7 +115,6 @@ namespace bb::evaluation {
 
       if (piece == King) {
         cachedKingSquares_[side] = NoSquare;
-        return;
       }
 
       if (!history_.empty()) {

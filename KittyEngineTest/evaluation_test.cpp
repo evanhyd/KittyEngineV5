@@ -144,17 +144,20 @@ TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {
   const auto black = evaluation::NnueLayout::encode(
     state, Black, evaluation::NnueLayout::kingSquare(state, Black));
 
-  ASSERT_EQ(white.size(), 1u);
-  ASSERT_EQ(black.size(), 1u);
-  EXPECT_EQ(white.front(), 38'452u);
-  EXPECT_EQ(black.front(), 38'732u);
-  EXPECT_EQ(white.front(), evaluation::NnueLayout::pieceIndex(White, White, Pawn, E1, E2));
-  EXPECT_EQ(black.front(), evaluation::NnueLayout::pieceIndex(Black, White, Pawn, E8, E2));
+  ASSERT_EQ(white.size(), 3u);
+  ASSERT_EQ(black.size(), 3u);
+  EXPECT_EQ(white[0], 46'132u);
+  EXPECT_EQ(black[1], 46'476u);
+  EXPECT_EQ(white[0], evaluation::NnueLayout::pieceIndex(White, White, Pawn, E1, E2));
+  EXPECT_EQ(black[1], evaluation::NnueLayout::pieceIndex(Black, White, Pawn, E8, E2));
 
   const BoardState differentRights{"4k3/8/8/8/8/8/4P3/4K3 w Kq e3 0 1"};
   const auto sameWhite = evaluation::NnueLayout::encode(
     differentRights, White, evaluation::NnueLayout::kingSquare(differentRights, White));
-  EXPECT_EQ(sameWhite.front(), white.front());
+  ASSERT_EQ(sameWhite.size(), 3u);
+  EXPECT_EQ(sameWhite[0], white[0]);
+  EXPECT_EQ(sameWhite[1], white[1]);
+  EXPECT_EQ(sameWhite[2], white[2]);
 }
 
 TEST(Nnue, DenseInputPutsMoverBeforeOpponent) {
@@ -205,7 +208,7 @@ TEST(Nnue, CheckpointRequiresSCReLUVersion) {
     std::ofstream out(legacyCheckpoint.path, std::ios::binary);
     constexpr std::string_view legacyMagic = "NNUESGD4";
     out.write(legacyMagic.data(), legacyMagic.size());
-    std::vector<char> dummy(42'014'148 - legacyMagic.size(), 0);
+    std::vector<char> dummy(50'402'756 - legacyMagic.size(), 0);
     out.write(dummy.data(), dummy.size());
   }
   EXPECT_THROW((void)nnue::NnueSerializer::load(legacyCheckpoint.path), std::runtime_error);
@@ -223,7 +226,7 @@ TEST(Nnue, CheckpointRequiresSCReLUVersion) {
 TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
   const auto trainedWeights = testWeightsPath();
   ASSERT_TRUE(std::filesystem::exists(trainedWeights));
-  EXPECT_EQ(std::filesystem::file_size(trainedWeights), 42'014'148u);
+  EXPECT_EQ(std::filesystem::file_size(trainedWeights), 50'402'756u);
   EXPECT_NO_THROW((void)nnue::NnueSerializer::load(trainedWeights));
 
   TemporaryFile malformed;

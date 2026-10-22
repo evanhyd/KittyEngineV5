@@ -15,6 +15,11 @@
 namespace bb::searching {
   template <evaluation::EvaluationPolicy EvalPolicy>
   class NegamaxSearchPolicy {
+
+    // Data Structures Magic.
+    static constexpr size_t kMaxKillers = 3;
+    static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
+
     struct NodeMeta {
       enum class NodeType {
         Root,
@@ -38,9 +43,9 @@ namespace bb::searching {
 
     struct Eval {
       int32_t score;
-      bool historyDependent;
-      explicit constexpr Eval(int32_t score, bool historyDependent) noexcept
-        : score(score), historyDependent(historyDependent) {}
+      bool isUnreliable;
+      explicit constexpr Eval(int32_t score, bool isUnreliable) noexcept
+        : score(score), isUnreliable(isUnreliable) {}
     };
 
     struct SearchContext {
@@ -51,7 +56,6 @@ namespace bb::searching {
       uint64_t searchedNodes = 1;
     };
 
-    static constexpr size_t kMaxKillers = 3;
     struct SearchStack {
       std::array<Move, kMaxKillers> killerMoves;
       uint8_t pvLength;
@@ -61,10 +65,11 @@ namespace bb::searching {
         return std::find(killerMoves.begin(), killerMoves.end(), move) != killerMoves.end();
       }
     };
-    static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
 
-    // Magic constant.
-    // static constexpr int32_t kFutilityMovePriority = 0;
+    // Pruning Magic.
+    static constexpr int32_t kReverseFutilityMarginPerDepth = 100;
+
+    // Move Ordering Priorities Magic.
     static constexpr int32_t kPrincipalVariationPriority = 10000;
     static constexpr int32_t kTranspositionPriority = 20000;
     static constexpr int32_t kPromotionPriority = 3000;
@@ -82,7 +87,6 @@ namespace bb::searching {
       }
       return table;
     }();
-    // 1000 + victim value - attacker index; the king uses a 4000-point SEE sentinel.
     static constexpr std::array<int32_t, kPieceSize> kVictimPriority{1100, 1320, 1330, 1500, 1900, 5000};
 
     static constexpr int32_t capturePriority(Piece attacker, Piece victim) noexcept {
@@ -135,7 +139,7 @@ namespace bb::searching {
 
     void storeTT(const SearchContext& context, SearchStack* frame, int depth, Eval eval,
                  TranspositionTable::ScoreType scoreType, Move bestMove) noexcept {
-      if (!eval.historyDependent) {
+      if (!eval.isUnreliable) {
         ttTable_.put(TranspositionTable::Entry{
           .key = context.state.getHash(),
           .depth = static_cast<int16_t>(depth),
@@ -408,23 +412,38 @@ namespace bb::searching {
           return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
         }
 
-        // Null Move Pruning: disabled near leaves, on PV, in check, or with low material (zugzwang risk).
+        // Must be internal node. Disable on PV, in check, or with low material (zugzwang risk).
         if constexpr (meta.isInternal()) {
-          if (depth > 1 && !frame->isFollowingPV && !inCheck && context.state.template countMMPiece<meta.side>() >= 2) {
-            const int skipped = std::max(1, depth / 2);
-            MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
-            context.positionHistory.push(context.state.getHash());
-            (frame + 1)->isFollowingPV = false;
-            Eval eval = searchInternal<meta.flip().toNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
-            context.positionHistory.pop();
-            context.state.template unmakeMove<meta.side, true>(Move{}, undo, evalPolicy_);
-            eval.score = -eval.score;
-            if (eval.score >= beta) {
-              if (isCheckmateScore(eval.score)) {
-                eval.score = beta;
+          if (!frame->isFollowingPV && !inCheck && context.state.template countMMPiece<meta.side>() >= 2) {
+
+            // Reverse Futility Pruning (Static Null Move Pruning).
+            if (depth <= 3 && !isCheckmateScore(beta)) {
+              const int32_t score = evalPolicy_.evaluate(context.state);
+              if (score - depth * kReverseFutilityMarginPerDepth >= beta) {
+                const Eval eval(beta, false);
+                storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
+                return eval;
               }
-              storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
-              return eval;
+            }
+
+            // Null Move Pruning. Disable near leaves.
+            if (depth > 1) {
+              const int skipped = std::max(1, depth / 2);
+              MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
+              context.positionHistory.push(context.state.getHash());
+              (frame + 1)->isFollowingPV = false;
+              Eval eval = searchInternal<meta.flip().toNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
+              eval.score = -eval.score;
+              context.positionHistory.pop();
+              context.state.template unmakeMove<meta.side, true>(Move{}, undo, evalPolicy_);
+
+              if (eval.score >= beta) {
+                if (isCheckmateScore(eval.score)) {
+                  eval.score = beta;
+                }
+                storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
+                return eval;
+              }
             }
           }
         }
