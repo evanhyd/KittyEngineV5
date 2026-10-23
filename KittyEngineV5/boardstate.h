@@ -251,7 +251,6 @@ namespace bb {
 
     template <Side ally, bool violentOnly = false>
     constexpr void generateMoves(MoveList& moves) const noexcept {
-      assert(side_ == ally);
       constexpr Side enemy = getOtherSide(ally);
       const Square kingSq = peekPiece(bitboards_[ally][King]);
       const std::array<Bitboard, kSideSize> occupancy = {getOccupancy(White), getOccupancy(Black)};

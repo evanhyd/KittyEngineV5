@@ -40,7 +40,6 @@ namespace bb::searching {
       consteval NodeMeta setPV(bool pv) const noexcept { return NodeMeta{ side, type, pv, canNullMove }; }
       consteval bool isInternal() const noexcept { return type == NodeType::Internal; }
       consteval bool isQuiescence() const noexcept { return type == NodeType::Quiescence; }
-      consteval bool isPvNode() const noexcept { return isPV; }
     };
 
     struct Eval {
@@ -69,20 +68,14 @@ namespace bb::searching {
     };
 
     // Pruning Magic.
+    static constexpr int kFutilityRequiredDepth = 3;
+    static constexpr int32_t kFutilityMarginPerDepth = 100;
+    static constexpr int kReverseFutilityRequiredDepth = 3;
     static constexpr int32_t kReverseFutilityMarginPerDepth = 100;
-
-    // Move Ordering Priorities Magic.
-    static constexpr int32_t kPrincipalVariationPriority = 10000;
-    static constexpr int32_t kTranspositionPriority = 20000;
-    static constexpr int32_t kPromotionPriority = 3000;
-    static constexpr int32_t kUnderpromotionPriority = 50;
-    static constexpr int32_t kCastlingPriority = 151;
-    static constexpr int32_t kKillerMovePriority = 99;
-    static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
 
     // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
     static inline const auto kLmrReductions = [] {
-      std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> table{};
+      std::array < std::array < uint8_t, MoveList{}.capacity() > , kMaxDepthHardCutoff + 1 > table{};
       for (size_t depth = 1; depth < table.size(); ++depth) {
         const double lnDepth = std::log(double(depth));
         for (size_t i = 1; i < table[depth].size(); ++i) {
@@ -91,6 +84,19 @@ namespace bb::searching {
       }
       return table;
     }();
+
+    constexpr int lateMovePruningThreshold(int depth) noexcept {
+      return 3 + 2 * depth * depth;
+    }
+
+    // Move Ordering Priorities Magic.
+    static constexpr int32_t kPrincipalVariationPriority = 30000;
+    static constexpr int32_t kTranspositionPriority = 20000;
+    static constexpr int32_t kPromotionPriority = 3000;
+    static constexpr int32_t kUnderpromotionPriority = -1;
+    static constexpr int32_t kCastlingPriority = 151;
+    static constexpr int32_t kKillerMovePriority = 99;
+    static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
     static constexpr std::array<int32_t, kPieceSize> kVictimPriority{1100, 1320, 1330, 1500, 1900, 5000};
 
     static constexpr int32_t capturePriority(Piece attacker, Piece victim) noexcept {
@@ -117,6 +123,14 @@ namespace bb::searching {
       return pvTable_.data() + pvOffset(static_cast<size_t>(getPly(frame)));
     }
 
+    void acceptChildPVLine(SearchStack* frame, Move move) noexcept {
+      const size_t length = static_cast<size_t>((frame + 1)->pvLength) + 1;
+      Move* line = pvMoves(frame);
+      line[0] = move;
+      std::copy_n(pvMoves(frame + 1), (frame + 1)->pvLength, line + 1);
+      frame->pvLength = static_cast<uint8_t>(length);
+    }
+
     bool isCheckmateScore(int32_t score) const noexcept {
       return evaluation::kCheckmateWinScore - std::abs(score) <= kMaxDepthHardCutoff;
     }
@@ -131,14 +145,6 @@ namespace bb::searching {
 
     int32_t denormalizeScore(int32_t score, int ply) const noexcept {
       return normalizeScore(score, -ply);
-    }
-
-    void acceptChildPVLine(SearchStack* frame, Move move) noexcept {
-      const size_t length = static_cast<size_t>((frame + 1)->pvLength) + 1;
-      Move* line = pvMoves(frame);
-      line[0] = move;
-      std::copy_n(pvMoves(frame + 1), (frame + 1)->pvLength, line + 1);
-      frame->pvLength = static_cast<uint8_t>(length);
     }
 
     void storeTT(const SearchContext& context, SearchStack* frame, int depth, Eval eval,
@@ -173,7 +179,7 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     std::optional<Eval> probeTT(const SearchContext& context, SearchStack* frame, int depth,
-                                int32_t alpha, int32_t beta, Move pvMove, Move& ttMove) noexcept {
+                                int32_t alpha, int32_t beta, Move& ttMove) noexcept {
       auto ttEntry = ttTable_.get(context.state.getHash());
       if (!ttEntry) {
         return std::nullopt;
@@ -396,7 +402,7 @@ namespace bb::searching {
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
         }
-        if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, pvMove, ttMove); ttEval) {
+        if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove); ttEval) {
           return *ttEval;
         }
         if (depth == 0) {
@@ -412,21 +418,24 @@ namespace bb::searching {
       MoveList moves;
       Eval bestEval(alpha, false);
 
+      // Must be internal node. Disable on PV, in check, or with low material (zugzwang risk).
+      std::optional<int32_t> staticEvalScore;
+
       const bool inCheck = context.state.template isInCheck<meta.side>();
-      if constexpr (!meta.isQuiescence()) {
+      if constexpr (meta.isInternal()) {
+        // Checkmate or draw.
         context.state.template generateMoves<meta.side>(moves);
         if (moves.empty()) {
           return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
         }
 
-        // Must be internal node. Disable on PV, in check, or with low material (zugzwang risk).
-        if constexpr (meta.isInternal() && !meta.isPV) {
+        if constexpr (!meta.isPV) {
           if (!inCheck && context.state.template countMMPiece<meta.side>() >= 2) {
+            if (depth <= kReverseFutilityRequiredDepth && !isCheckmateScore(beta)) {
+              staticEvalScore = evalPolicy_.evaluate(context.state);
 
-            // Reverse Futility Pruning (Static Null Move Pruning).
-            if (depth <= 3 && !isCheckmateScore(beta)) {
-              const int32_t score = evalPolicy_.evaluate(context.state);
-              if (score - depth * kReverseFutilityMarginPerDepth >= beta) {
+              // Reverse Futility Pruning (Static Null Move Pruning).
+              if (*staticEvalScore - depth * kReverseFutilityMarginPerDepth >= beta) {
                 const Eval eval(beta, false);
                 storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
                 return eval;
@@ -434,7 +443,7 @@ namespace bb::searching {
             }
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
-            if (depth > 1 && meta.canNullMove) {
+            if (depth >= 2 && meta.canNullMove) {
               const int skipped = std::max(1, depth / 2);
               MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
               context.positionHistory.push(context.state.getHash());
@@ -477,11 +486,48 @@ namespace bb::searching {
 
       sortMoves<meta>(context.state, moves, ttMove, pvMove, frame->killerMoves);
       [[maybe_unused]] Move bestMove = moves[0];
+      int deadQuietMoveCount = 0;
+      const int lateMovePruningRequiredMove = lateMovePruningThreshold(depth);
 
       // Explore moves.
       for (size_t i = 0; i < moves.size(); ++i) {
         const Move move = moves[i];
         const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
+
+        if constexpr (meta.isInternal() && !meta.isPV) {
+          const bool isDeadQuiet = (
+            i != 0 &&
+            !inCheck && 
+            !move.isViolentMove() && 
+            !frame->isKillerMove(move) && 
+            context.state.template countMMPiece<meta.side>() >= 2 && 
+            !context.state.template isInCheck<getOtherSide(meta.side)>());
+
+          if (isDeadQuiet) {
+            // Late Move Pruning
+            ++deadQuietMoveCount;
+            if (deadQuietMoveCount >= lateMovePruningRequiredMove) {
+              context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+              continue;
+            }
+
+            // Futility Pruning. 
+            if (depth <= kFutilityRequiredDepth) { // 100 cycles
+
+              // Lazy-init the static evaluation.
+              if (!staticEvalScore) {
+                staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
+              }
+
+              // Prune away hopeless quiet move.
+              if (*staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score) {
+                context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+                continue;
+              }
+            }
+          }
+        }
+
         context.positionHistory.push(context.state.getHash());
         //ttTable_.prefetch(context.state.getHash());
 
