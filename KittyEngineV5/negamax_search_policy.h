@@ -22,26 +22,23 @@ namespace bb::searching {
 
     struct NodeMeta {
       enum class NodeType {
-        Root,
         Internal,
-        NullMove,
         Quiescence,
       };
 
       const Side side;
       const NodeType type;
-      const bool isPV = false;
+      const bool isPV;
+      const bool canNullMove;
 
-      consteval NodeMeta(Side side, NodeType type, bool isPV = false) noexcept
-        : side(side), type(type), isPV(isPV) {}
-      consteval NodeMeta flip() const noexcept { return NodeMeta{ getOtherSide(side), type, isPV }; }
-      consteval NodeMeta toInternal() const noexcept { return NodeMeta{ side, NodeType::Internal, isPV }; }
-      consteval NodeMeta toNullMove() const noexcept { return NodeMeta{ side, NodeType::NullMove, false }; }
-      consteval NodeMeta toQuiescence() const noexcept { return NodeMeta{ side, NodeType::Quiescence, false }; }
-      consteval NodeMeta setPV(bool pv) const noexcept { return NodeMeta{ side, type, pv }; }
-      consteval bool isRoot() const noexcept { return type == NodeType::Root; }
+      consteval NodeMeta(Side side, NodeType type, bool isPV, bool canNullMove) noexcept
+        : side(side), type(type), isPV(isPV), canNullMove(canNullMove) {}
+      consteval NodeMeta flip() const noexcept { return NodeMeta{ getOtherSide(side), type, isPV, canNullMove }; }
+      consteval NodeMeta enableNullMove() const noexcept { return NodeMeta{ side, type, isPV, true }; }
+      consteval NodeMeta disableNullMove() const noexcept { return NodeMeta{ side, type, isPV, false }; }
+      consteval NodeMeta toQuiescence() const noexcept { return NodeMeta{ side, NodeType::Quiescence, false, false }; }
+      consteval NodeMeta setPV(bool pv) const noexcept { return NodeMeta{ side, type, pv, canNullMove }; }
       consteval bool isInternal() const noexcept { return type == NodeType::Internal; }
-      consteval bool isNullMove() const noexcept { return type == NodeType::NullMove; }
       consteval bool isQuiescence() const noexcept { return type == NodeType::Quiescence; }
       consteval bool isPvNode() const noexcept { return isPV; }
     };
@@ -82,6 +79,8 @@ namespace bb::searching {
     static constexpr int32_t kCastlingPriority = 151;
     static constexpr int32_t kKillerMovePriority = 99;
     static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
+
+    // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
     static inline const auto kLmrReductions = [] {
       std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> table{};
       for (size_t depth = 1; depth < table.size(); ++depth) {
@@ -343,7 +342,7 @@ namespace bb::searching {
           if (promotion != NoPiece) {
             priority += promotion == Queen ? kPromotionPriority : kUnderpromotionPriority;
           }
-        } else if constexpr (meta.isInternal() || meta.isRoot()) {
+        } else if constexpr (meta.isInternal()) {
           // Killer move heuristics.
           for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
             if (move == killerMoves[i]) {
@@ -367,9 +366,16 @@ namespace bb::searching {
       std::ranges::transform(scoredMoves, moves.begin(), &PriorityMove::move);
     }
 
-    /////////////////////
-    // SEARCH INTERNAL //
-    /////////////////////
+    //////////////////
+    // SEARCH CHILD //
+    //////////////////
+    template <NodeMeta meta>
+    Eval searchChild(SearchContext& context, SearchStack* childFrame, const int childDepth, const int32_t childAlpha, const int32_t childBeta) {
+      Eval result = searchInternal<meta>(context, childFrame, childDepth, -childBeta, -childAlpha);
+      result.score = -result.score;
+      return result;
+    }
+
     template <NodeMeta meta>
     Eval searchInternal(SearchContext& context, SearchStack* frame, const int depth,
                         const int32_t alpha, const int32_t beta) {
@@ -427,13 +433,13 @@ namespace bb::searching {
               }
             }
 
-            // Null Move Pruning. Disable near leaves.
-            if (depth > 1) {
+            // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
+            if (depth > 1 && meta.canNullMove) {
               const int skipped = std::max(1, depth / 2);
               MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
               context.positionHistory.push(context.state.getHash());
               (frame + 1)->isFollowingPV = false;
-              Eval eval = searchInternal<meta.flip().toNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
+              Eval eval = searchInternal<meta.flip().disableNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
               eval.score = -eval.score;
               context.positionHistory.pop();
               context.state.template unmakeMove<meta.side, true>(Move{}, undo, evalPolicy_);
@@ -483,40 +489,36 @@ namespace bb::searching {
           (frame + 1)->isFollowingPV = frame->isFollowingPV && move == pvMove;
         }
 
-        const auto searchChild = [&]<bool childPV>(int childDepth, int32_t childAlpha, int32_t childBeta) {
-          Eval result = searchInternal<meta.flip().setPV(childPV)>(context, frame + 1, childDepth, -childBeta, -childAlpha);
-          result.score = -result.score;
-          return result;
-        };
-
         const Eval eval = [&] {
           if constexpr (meta.isInternal()) {
-            if (i == 0) {
-              return searchChild.template operator()<meta.isPV>(depth - 1, bestEval.score, beta);
+            constexpr auto childMeta = meta.flip().enableNullMove();
+
+            // Disable narrow window on PV and near leaf.
+            if (i == 0 || depth == 1) {
+              return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, depth - 1, bestEval.score, beta);
             }
+
             // Late move reduction.
-            // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
             int reduction = 0;
             if (depth >= 3 && !inCheck && !move.isViolentMove()) {
               reduction = int(kLmrReductions[depth][i]);
             }
 
-            // Scout search (reduced depth + narrow window).
-            Eval result = searchChild.template operator()<false>(depth - 1 - reduction, bestEval.score, bestEval.score + 1);
+            // LMR search (narrow window + reduced depth).
+            Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
 
-            // PV search (narrow window).
+            // PV search if alpha improves (narrow window).
             if (reduction > 0 && result.score > bestEval.score) {
-              result = searchChild.template operator()<false>(depth - 1, bestEval.score, bestEval.score + 1);
+              result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1, bestEval.score, bestEval.score + 1);
             }
 
-            // Full window search.
+            // Full window search if within window.
             if (bestEval.score < result.score && result.score < beta) {
-              result = searchChild.template operator()<true>(depth - 1, bestEval.score, beta);
+              result = searchChild<childMeta.setPV(true)>(context, frame + 1, depth - 1, bestEval.score, beta);
             }
             return result;
           } else {
-            // Quiescence search and NullMove: simple alpha-beta search
-            return searchChild.template operator()<false>(depth - 1, bestEval.score, beta);
+            return searchChild<meta.flip().setPV(false)>(context, frame + 1, depth - 1, bestEval.score, beta);
           }
         }();
 
@@ -572,7 +574,7 @@ namespace bb::searching {
 
     template <Side ally>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      constexpr NodeMeta meta(ally, NodeMeta::NodeType::Root, true);
+      constexpr NodeMeta meta(ally, NodeMeta::NodeType::Internal, true, true);
       // Result statistics.
       SearchContext context{state, param.positionHistory, param.pvLine,
                             std::clamp(param.maxDepth, 1, kMaxDepthHardCutoff)};
@@ -617,12 +619,9 @@ namespace bb::searching {
       const auto expandWindow = [](int& failTime, int32_t window) noexcept {
         ++failTime;
         switch (failTime) {
-        case 1:
-          return 3 * window;
-        case 2:
-          return 10 * window;
-        default:
-          return evaluation::kCheckmateWinScore;
+        case 1: return 3 * window;
+        case 2: return 10 * window;
+        default: return evaluation::kCheckmateWinScore;
         }
       };
       int failLowCount = 0;
@@ -630,6 +629,8 @@ namespace bb::searching {
       auto [alpha, beta] = context.maxDepth <= 4
         ? std::pair{evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore}
         : std::pair{param.pastEval - aspirationWindow_, param.pastEval + aspirationWindow_};
+
+      const bool inCheck = state.isInCheck<ally>();
 
       // Search for the best move.
       for (;;) {
@@ -641,12 +642,38 @@ namespace bb::searching {
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
           searchStack_[1].isFollowingPV = move == pvMove;
-          Eval eval = (i == 0)
-            ? searchInternal<meta.flip().toInternal().setPV(true)>(context, searchStack_.data() + 1,
-                                                                  context.maxDepth - 1, -beta, -bestEval.score)
-            : searchInternal<meta.flip().toInternal().setPV(false)>(context, searchStack_.data() + 1,
-                                                                   context.maxDepth - 1, -beta, -bestEval.score);
-          eval.score = -eval.score;
+
+          const int depth = context.maxDepth;
+
+          const Eval eval = [&] {
+            constexpr auto childMeta = meta.flip().enableNullMove();
+
+            // Disable narrow window on PV and near leaf.
+            if (i == 0 || depth == 1) {
+              return searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, beta);
+            }
+
+            // Late move reduction.
+            int reduction = 0;
+            if (depth >= 3 && !inCheck && !move.isViolentMove()) {
+              reduction = int(kLmrReductions[depth][i]);
+            }
+
+            // LMR search (narrow window + reduced depth).
+            Eval result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
+
+            // PV search (narrow window).
+            if (reduction > 0 && result.score > bestEval.score) {
+              result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, bestEval.score + 1);
+            }
+
+            // Full window search.
+            if (bestEval.score < result.score && result.score < beta) {
+              result = searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, beta);
+            }
+            return result;
+          }();
+
           param.positionHistory.pop();
           state.unmakeMove<ally>(move, undo, evalPolicy_);
           if (eval.score > bestEval.score) {
