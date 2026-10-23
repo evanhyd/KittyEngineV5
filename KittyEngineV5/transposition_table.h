@@ -1,12 +1,13 @@
 #pragma once
-#include "zobrist_hash.h"
 #include "move.h"
+#include "zobrist_hash.h"
 #include <algorithm>
 #include <bit>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <new>
 #include <stdexcept>
+#include <type_traits>
 #include <xmmintrin.h>
 
 namespace bb {
@@ -19,21 +20,32 @@ namespace bb {
       UpperBound = 3,
     };
 
-    struct Entry {
+    struct alignas(32) Entry {
       ZobristHash::Hash key = 0;                   // 8 bytes (offset 0..7)
-      int16_t depth = 0;                           // 2 bytes (offset 8..9)
-      int16_t age = 0;                             // 2 bytes (offset 10..11)
+      int32_t depth = 0;                           // 4 bytes (offset 8..9)
+      int32_t age = 0;                             // 4 bytes (offset 10..11)
       ScoreType scoreType = ScoreType::None;       // 1 byte  (offset 12)
-      Move bestMove{};                             // 4 bytes (offset 16..19)
       int32_t score = 0;                           // 4 bytes (offset 20..23)
+      Move bestMove{};                             // 4 bytes (offset 16..19)
 
       constexpr bool isValid() const noexcept {
         return scoreType != ScoreType::None;
       }
     };
-    static_assert(sizeof(Entry) == 24, "TranspositionTable::Entry must be 24 bytes");
-    static_assert(std::is_trivially_copyable_v<Entry>, "TranspositionTable::Entry must be trivially copyable for SIMD operations");
 
+    static_assert(std::is_trivially_copyable_v<Entry>, "entry must be trivially copyable for SIMD");
+    static_assert(std::hardware_constructive_interference_size % sizeof(Entry) == 0, "entry must be fit into a cache line");
+
+  private:
+    std::unique_ptr<Entry[]> entries_;
+    size_t capacity_;
+    int16_t currentAge_ = 0;
+
+    [[nodiscard]] constexpr size_t getIndex(ZobristHash::Hash key) const noexcept {
+      return key & (capacity_ - 1);
+    }
+
+  public:
     explicit TranspositionTable(size_t capacity)
       : entries_(std::make_unique<Entry[]>(capacity)),
         capacity_(capacity) {
@@ -96,14 +108,5 @@ namespace bb {
       currentAge_ = 0;
       std::fill_n(entries_.get(), capacity_, Entry{});
     }
-
-  private:
-    [[nodiscard]] constexpr size_t getIndex(ZobristHash::Hash key) const noexcept {
-      return key & (capacity_ - 1);
-    }
-
-    std::unique_ptr<Entry[]> entries_;
-    size_t capacity_;
-    int16_t currentAge_ = 0;
   };
 }

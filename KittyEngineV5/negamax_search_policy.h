@@ -152,10 +152,11 @@ namespace bb::searching {
       if (!eval.isUnreliable) {
         ttTable_.put(TranspositionTable::Entry{
           .key = context.state.getHash(),
-          .depth = static_cast<int16_t>(depth),
+          .depth = int32_t(depth),
+          .age = 0,
           .scoreType = scoreType,
-          .bestMove = bestMove,
           .score = normalizeScore(eval.score, getPly(frame)),
+          .bestMove = bestMove,
         });
       }
     }
@@ -431,10 +432,10 @@ namespace bb::searching {
 
         if constexpr (!meta.isPV) {
           if (!inCheck && context.state.template countMMPiece<meta.side>() >= 2) {
+
+            // Reverse Futility Pruning (Static Null Move Pruning).
             if (depth <= kReverseFutilityRequiredDepth && !isCheckmateScore(beta)) {
               staticEvalScore = evalPolicy_.evaluate(context.state);
-
-              // Reverse Futility Pruning (Static Null Move Pruning).
               if (*staticEvalScore - depth * kReverseFutilityMarginPerDepth >= beta) {
                 const Eval eval(beta, false);
                 storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
@@ -486,8 +487,6 @@ namespace bb::searching {
 
       sortMoves<meta>(context.state, moves, ttMove, pvMove, frame->killerMoves);
       [[maybe_unused]] Move bestMove = moves[0];
-      int deadQuietMoveCount = 0;
-      const int lateMovePruningRequiredMove = lateMovePruningThreshold(depth);
 
       // Explore moves.
       for (size_t i = 0; i < moves.size(); ++i) {
@@ -497,33 +496,24 @@ namespace bb::searching {
         if constexpr (meta.isInternal() && !meta.isPV) {
           const bool isDeadQuiet = (
             i != 0 &&
+            depth <= kFutilityRequiredDepth &&
             !inCheck && 
             !move.isViolentMove() && 
             !frame->isKillerMove(move) && 
             context.state.template countMMPiece<meta.side>() >= 2 && 
             !context.state.template isInCheck<getOtherSide(meta.side)>());
 
+          // Futility Pruning.
           if (isDeadQuiet) {
-            // Late Move Pruning
-            ++deadQuietMoveCount;
-            if (deadQuietMoveCount >= lateMovePruningRequiredMove) {
-              context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
-              continue;
+            // Lazy-init the static evaluation.
+            if (!staticEvalScore) {
+              staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
             }
 
-            // Futility Pruning. 
-            if (depth <= kFutilityRequiredDepth) { // 100 cycles
-
-              // Lazy-init the static evaluation.
-              if (!staticEvalScore) {
-                staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
-              }
-
-              // Prune away hopeless quiet move.
-              if (*staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score) {
-                context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
-                continue;
-              }
+            // Prune away hopeless quiet move.
+            if (*staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score) {
+              context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+              continue;
             }
           }
         }

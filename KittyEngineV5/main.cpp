@@ -21,10 +21,10 @@ consteval size_t ttEntriesForMb(size_t targetMb) noexcept {
 }
 
 constexpr std::optional<size_t> getTTSize(std::string_view mode) noexcept {
-  if (mode == "bullet")    return ttEntriesForMb(64);   //    96 MB
-  if (mode == "blitz")     return ttEntriesForMb(256);   //   384 MB
-  if (mode == "rapid")     return ttEntriesForMb(1024);  //   768 MB
-  if (mode == "classical") return ttEntriesForMb(2048);  //  1536 MB
+  if (mode == "bullet")    return ttEntriesForMb(64);
+  if (mode == "blitz")     return ttEntriesForMb(256);
+  if (mode == "rapid")     return ttEntriesForMb(1024);
+  if (mode == "classical") return ttEntriesForMb(2048);
   return std::nullopt;
 }
 
