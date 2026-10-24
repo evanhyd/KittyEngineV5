@@ -120,6 +120,12 @@
     <ClInclude Include="noop_evaluation_policy.h">
       <Filter>Cores\Evaluation Policies</Filter>
     </ClInclude>
+    <ClInclude Include="staged_move_picker.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
+    <ClInclude Include="node_meta.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="weights.bin">

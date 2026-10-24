@@ -51,6 +51,10 @@ namespace bb {
       return !(*this == rhs);
     }
 
+    operator bool() const noexcept {
+      return rawMove != 0;
+    }
+
     // Getters.
     constexpr Square from() const noexcept {
       return rawMove & kGetSquareMask;

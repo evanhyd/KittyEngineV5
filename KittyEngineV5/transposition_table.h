@@ -98,10 +98,10 @@ namespace bb {
 
     const Entry* get(ZobristHash::Hash key) const noexcept {
       const auto& entry = entries_[getIndex(key)];
-      if (!entry.isValid() || entry.key != key) {
-        return nullptr;
+      if (entry.isValid() && entry.key == key) {
+        return &entry;
       }
-      return &entry;
+      return nullptr;
     }
 
     void clear() noexcept {

@@ -243,6 +243,7 @@
     <ClInclude Include="equal_percentage_time_control_policy.h" />
     <ClInclude Include="evaluation_policy.h" />
     <ClInclude Include="handcraft_evaluation_policy.h" />
+    <ClInclude Include="node_meta.h" />
     <ClInclude Include="noop_evaluation_policy.h" />
     <ClInclude Include="nnue_math.h" />
     <ClInclude Include="nnue_matrix.h" />
@@ -257,6 +258,7 @@
     <ClInclude Include="position_fens.h" />
     <ClInclude Include="small_vec.h" />
     <ClInclude Include="searching_policy.h" />
+    <ClInclude Include="staged_move_picker.h" />
     <ClInclude Include="terminal_ui.h" />
     <ClInclude Include="time_control_policy.h" />
     <ClInclude Include="transposition_table.h" />

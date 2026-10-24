@@ -31,6 +31,8 @@ namespace bb {
       const PVLine* pvLine;
     };
 
+
+
     template <typename SearchPolicy>
     concept SearchingPolicy = requires(SearchPolicy policy, BoardState& state, const SearchParam& param) {
       { policy.search<White>(state, param) } -> std::same_as<SearchResult>;

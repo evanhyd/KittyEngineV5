@@ -1,8 +1,10 @@
 #pragma once
-#include "boardstate.h"
 #include "evaluation_policy.h"
 #include "searching_policy.h"
+#include "boardstate.h"
 #include "transposition_table.h"
+#include "node_meta.h"
+#include "staged_move_picker.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -19,28 +21,6 @@ namespace bb::searching {
     // Data Structures Magic.
     static constexpr size_t kMaxKillers = 3;
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
-
-    struct NodeMeta {
-      enum class NodeType {
-        Internal,
-        Quiescence,
-      };
-
-      const Side side;
-      const NodeType type;
-      const bool isPV;
-      const bool canNullMove;
-
-      consteval NodeMeta(Side side, NodeType type, bool isPV, bool canNullMove) noexcept
-        : side(side), type(type), isPV(isPV), canNullMove(canNullMove) {}
-      consteval NodeMeta flip() const noexcept { return NodeMeta{ getOtherSide(side), type, isPV, canNullMove }; }
-      consteval NodeMeta enableNullMove() const noexcept { return NodeMeta{ side, type, isPV, true }; }
-      consteval NodeMeta disableNullMove() const noexcept { return NodeMeta{ side, type, isPV, false }; }
-      consteval NodeMeta toQuiescence() const noexcept { return NodeMeta{ side, NodeType::Quiescence, false, false }; }
-      consteval NodeMeta setPV(bool pv) const noexcept { return NodeMeta{ side, type, pv, canNullMove }; }
-      consteval bool isInternal() const noexcept { return type == NodeType::Internal; }
-      consteval bool isQuiescence() const noexcept { return type == NodeType::Quiescence; }
-    };
 
     struct Eval {
       int32_t score;
@@ -59,7 +39,7 @@ namespace bb::searching {
 
     struct SearchStack {
       std::array<Move, kMaxKillers> killerMoves;
-      uint8_t pvLength;
+      uint32_t pvLength;
       bool isFollowingPV;
 
       bool isKillerMove(Move move) const noexcept {
@@ -89,20 +69,8 @@ namespace bb::searching {
       return 3 + 2 * depth * depth;
     }
 
-    // Move Ordering Priorities Magic.
-    static constexpr int32_t kPrincipalVariationPriority = 30000;
-    static constexpr int32_t kTranspositionPriority = 20000;
-    static constexpr int32_t kPromotionPriority = 3000;
-    static constexpr int32_t kUnderpromotionPriority = -1;
-    static constexpr int32_t kCastlingPriority = 151;
-    static constexpr int32_t kKillerMovePriority = 99;
-    static constexpr int32_t kMaxHistoryPriority = kKillerMovePriority - kMaxKillers;
-    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{1100, 1320, 1330, 1500, 1900, 5000};
 
-    static constexpr int32_t capturePriority(Piece attacker, Piece victim) noexcept {
-      return kVictimPriority[victim] - attacker;
-    }
-
+    // PRIVATE MEMBERS
     EvalPolicy evalPolicy_;
     const int32_t aspirationWindow_;
     std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
@@ -124,44 +92,30 @@ namespace bb::searching {
     }
 
     void acceptChildPVLine(SearchStack* frame, Move move) noexcept {
-      const size_t length = static_cast<size_t>((frame + 1)->pvLength) + 1;
+      const uint32_t length = (frame + 1)->pvLength + 1;
       Move* line = pvMoves(frame);
       line[0] = move;
       std::copy_n(pvMoves(frame + 1), (frame + 1)->pvLength, line + 1);
-      frame->pvLength = static_cast<uint8_t>(length);
+      frame->pvLength = length;
     }
 
-    bool isCheckmateScore(int32_t score) const noexcept {
+    static bool isCheckmateScore(int32_t score) noexcept {
       return evaluation::kCheckmateWinScore - std::abs(score) <= kMaxDepthHardCutoff;
     }
 
     // Convert between root-relative and node-relative checkmate distance penalties.
-    int32_t normalizeScore(int32_t score, int ply) const noexcept {
+    static int32_t normalizeScore(int32_t score, int ply) noexcept {
       if (!isCheckmateScore(score)) {
         return score;
       }
       return score < 0 ? score - ply : score + ply;
     }
 
-    int32_t denormalizeScore(int32_t score, int ply) const noexcept {
+    static int32_t denormalizeScore(int32_t score, int ply) noexcept {
       return normalizeScore(score, -ply);
     }
 
-    void storeTT(const SearchContext& context, SearchStack* frame, int depth, Eval eval,
-                 TranspositionTable::ScoreType scoreType, Move bestMove) noexcept {
-      if (!eval.isUnreliable) {
-        ttTable_.put(TranspositionTable::Entry{
-          .key = context.state.getHash(),
-          .depth = int32_t(depth),
-          .age = 0,
-          .scoreType = scoreType,
-          .score = normalizeScore(eval.score, getPly(frame)),
-          .bestMove = bestMove,
-        });
-      }
-    }
-
-    std::optional<Eval> checkDraw(const SearchContext& context, int ply) const noexcept {
+    static std::optional<Eval> checkDraw(const SearchContext& context, int ply) noexcept {
       const auto halfmove = context.state.getHalfmove();
       if (halfmove < 4) {
         return std::nullopt;
@@ -176,6 +130,20 @@ namespace bb::searching {
         return Eval(0, !inGameHistory);
       }
       return std::nullopt;
+    }
+
+    void storeTT(const SearchContext& context, SearchStack* frame, int depth, Eval eval,
+                 TranspositionTable::ScoreType scoreType, Move bestMove) noexcept {
+      if (!eval.isUnreliable) {
+        ttTable_.put(TranspositionTable::Entry{
+          .key = context.state.getHash(),
+          .depth = int32_t(depth),
+          .age = 0,
+          .scoreType = scoreType,
+          .score = normalizeScore(eval.score, getPly(frame)),
+          .bestMove = bestMove,
+        });
+      }
     }
 
     template <NodeMeta meta>
@@ -222,8 +190,10 @@ namespace bb::searching {
     }
 
     void recordHistory(Side side, Move move, int32_t reward) noexcept {
+      constexpr int32_t kMaxHistoryPriority = 95; // Reserve up-to 5 killer moves
+      constexpr int32_t kMinHistoryPriority = -kMaxHistoryPriority;
       int32_t& score = historyTable_[side][move.from()][move.to()];
-      score = std::clamp(score + reward, 0, kMaxHistoryPriority);
+      score = std::clamp(score + reward, kMinHistoryPriority, kMaxHistoryPriority);
     }
 
     void recordQuietCutoff(Side side, SearchStack* frame, const MoveList& moves, size_t index, int depth) noexcept {
@@ -241,137 +211,7 @@ namespace bb::searching {
       }
     }
 
-    template <Side ally>
-    int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
-      constexpr Side enemy = getOtherSide(ally);
-      const Square square = move.to();
-      Bitboard occupancy = moveSquare(state.getOccupancy(White) | state.getOccupancy(Black), move.from(), square);
-      if (move.isEnpassant()) {
-        occupancy = unsetSquare(occupancy, ally == White ? squareDown(square) : squareUp(square));
-      }
-      const Piece promotion = move.getPromotedPieceType();
-      const Piece attacker = promotion == NoPiece ? move.getMovedPiece() : promotion;
-      const Piece victim = move.isCapture() ? state.getPieceAt<enemy>(square) :
-        (move.isEnpassant() ? Pawn : NoPiece);
-      std::array<Piece, kSideSize> pieceIndex{Pawn, Pawn};
-
-      auto popLVA = [&](Side side) -> Piece {
-        for (Piece piece = pieceIndex[side]; piece < kPieceSize; ++piece) {
-          Bitboard attackers = 0;
-          switch (piece) {
-          case Pawn: attackers = (side == White ? getAttack<Pawn, Black>(square) : getAttack<Pawn, White>(square)) & state.getPieces(side, Pawn); break;
-          case Knight: attackers = getAttack<Knight>(square) & state.getPieces(side, Knight); break;
-          case Bishop: attackers = getAttack<Bishop>(square, occupancy) & state.getPieces(side, Bishop); break;
-          case Rook: attackers = getAttack<Rook>(square, occupancy) & state.getPieces(side, Rook); break;
-          case Queen: attackers = getAttack<Queen>(square, occupancy) & state.getPieces(side, Queen); break;
-          case King: attackers = getAttack<King>(square) & state.getPieces(side, King); break;
-          default: break;
-          }
-          attackers &= occupancy;
-          if (attackers) {
-            occupancy = unsetSquare(occupancy, peekPiece(attackers));
-            return piece;
-          }
-          // Pawn and knight attacks cannot be uncovered by removing blockers.
-          if (piece < Bishop) {
-            pieceIndex[side] = piece + 1;
-          }
-        }
-        return NoPiece;
-      };
-
-      // https://chess.stackexchange.com/questions/44853/whats-the-maximum-number-of-pieces-attacking-a-single-square
-      SmallVec<int32_t, 32> gains;
-      gains.push(victim == NoPiece ? 0 : capturePriority(attacker, victim));
-      Piece exchangedPiece = attacker;
-      Side side = enemy;
-
-      while (gains.size() < gains.capacity()) {
-        const Piece nextAttacker = popLVA(side);
-        if (nextAttacker == NoPiece) {
-          break;
-        }
-        gains.push(capturePriority(nextAttacker, exchangedPiece));
-        exchangedPiece = nextAttacker;
-        side = getOtherSide(side);
-      }
-
-      int32_t reply = 0;
-      for (size_t i = gains.size() - 1; i > 0; --i) {
-        reply = std::max(0, gains[i] - reply); // Each side may decline to recapture.
-      }
-      return gains.front() - reply;
-    }
-
-    int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
-      return state.getSide() == White ? staticExchangeEvaluate<White>(state, move) : staticExchangeEvaluate<Black>(state, move);
-    }
-
-    template <NodeMeta meta>
-    class StageMoveSelector {
-
-    };
-
-    template <NodeMeta meta>
-    void sortMoves(const BoardState& state, MoveList& moves, Move ttMove, Move pvMove, const decltype(SearchStack::killerMoves)& killerMoves) const noexcept {
-      if (moves.size() <= 1) {
-        return;
-      }
-      struct PriorityMove {
-        int32_t priority;
-        Move move;
-      };
-      static SmallVec<PriorityMove> scoredMoves{};
-      scoredMoves.resize(moves.size());
-
-      // Calculate the priority.
-      std::ranges::transform(moves, scoredMoves.begin(), [&](const Move& move) {
-        int32_t priority = 0;
-
-        if constexpr (!meta.isQuiescence()) {
-          if (move == ttMove) {
-            priority += kTranspositionPriority;
-          }
-          if constexpr (meta.isInternal()) {
-            if (move == pvMove) {
-              priority += kPrincipalVariationPriority;
-            }
-          }
-          // A TT or PV move already outranks every ordinary move.
-          if (priority != 0) {
-            return PriorityMove{priority, move};
-          }
-        }
-
-        if (move.isViolentMove()) {
-          priority += staticExchangeEvaluate<meta.side>(state, move);
-          const Piece promotion = move.getPromotedPieceType();
-          if (promotion != NoPiece) {
-            priority += promotion == Queen ? kPromotionPriority : kUnderpromotionPriority;
-          }
-        } else if constexpr (meta.isInternal()) {
-          // Killer move heuristics.
-          for (size_t i = 0; i < killerMoves.size() && killerMoves[i] != Move{}; ++i) {
-            if (move == killerMoves[i]) {
-              priority += kKillerMovePriority - int32_t(i);
-            }
-          }
-
-          // History heuristics.
-          priority += historyTable_[meta.side][move.from()][move.to()];
-
-          if (move.isCastling()) {
-            priority += kCastlingPriority;
-          }
-        }
-
-        return PriorityMove{ priority, move };
-      });
-
-      // Sort the moves based on priority, then map back to the original moves list.
-      std::ranges::sort(scoredMoves, std::greater<>{}, &PriorityMove::priority);
-      std::ranges::transform(scoredMoves, moves.begin(), &PriorityMove::move);
-    }
+    
 
     //////////////////
     // SEARCH CHILD //
@@ -384,22 +224,20 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    Eval searchInternal(SearchContext& context, SearchStack* frame, const int depth,
-                        const int32_t alpha, const int32_t beta) {
+    Eval searchInternal(SearchContext& context, SearchStack* frame, const int depth, const int32_t alpha, const int32_t beta) {
       ++context.searchedNodes;
       const int ply = getPly(frame);
       Move pvMove{};
       Move ttMove{};
 
-      // Clear old PV written by sibling node and load expected PV move.
+      
       if constexpr (meta.isInternal()) {
+        // Clear old PV written by sibling node and load expected PV move.
         frame->pvLength = 0;
         if (frame->isFollowingPV && context.pvLine.size() > ply) {
           pvMove = context.pvLine[ply];
         }
-      }
 
-      if constexpr (!meta.isQuiescence()) {
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
         }
@@ -485,12 +323,12 @@ namespace bb::searching {
         }
       }
 
-      sortMoves<meta>(context.state, moves, ttMove, pvMove, frame->killerMoves);
-      [[maybe_unused]] Move bestMove = moves[0];
+      Move bestMove{};
 
       // Explore moves.
+      StagedMovePicker movePicker;
       for (size_t i = 0; i < moves.size(); ++i) {
-        const Move move = moves[i];
+        const Move move = movePicker.pick<meta>(moves, ttMove, pvMove, context.state, frame->killerMoves, historyTable_);
         const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
 
         if constexpr (meta.isInternal() && !meta.isPV) {
@@ -581,8 +419,12 @@ namespace bb::searching {
         }
       }
       
-      if constexpr (!meta.isQuiescence()) {
+      if constexpr (meta.isInternal()) {
         const auto scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact);
+        // This happen is every move does not improve the position.
+        if (!bestMove) {
+          bestMove = moves[0];
+        }
         storeTT(context, frame, depth, bestEval, scoreType, bestMove);
       }
       return bestEval;
@@ -649,7 +491,6 @@ namespace bb::searching {
         const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
         return makeResult(score, std::nullopt);
       }
-      sortMoves<meta>(state, moves, ttMove, pvMove, searchStack_[0].killerMoves);
 
       // Set up aspiration window.
       const auto expandWindow = [](int& failTime, int32_t window) noexcept {
@@ -671,10 +512,11 @@ namespace bb::searching {
       // Search for the best move.
       for (;;) {
         Eval bestEval(alpha, false);
-        Move bestMove = moves[0];
+        Move bestMove{};
 
+        StagedMovePicker movePicker;
         for (size_t i = 0; i < moves.size(); ++i) {
-          const Move move = moves[i];
+          const Move move = movePicker.pick<meta>(moves, ttMove, pvMove, state, searchStack_[0].killerMoves, historyTable_);
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
           searchStack_[1].isFollowingPV = move == pvMove;
