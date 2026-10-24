@@ -47,18 +47,20 @@ namespace bb::searching {
     };
 
     // Pruning Magic.
-    static constexpr int kFutilityRequiredDepth = 3;
+    static constexpr int kFutilityDepth = 3;
     static constexpr int32_t kFutilityMarginPerDepth = 100;
-    static constexpr int kReverseFutilityRequiredDepth = 3;
+    static constexpr int kReverseFutilityDepth = 3;
     static constexpr int32_t kReverseFutilityMarginPerDepth = 100;
+    static_assert(kFutilityDepth == kReverseFutilityDepth, "allow for lazy static eval optimization");
 
     // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
+    static constexpr int kLateMoveReductionDepth = 3;
     static inline const auto kLmrReductions = [] {
-      std::array < std::array < uint8_t, MoveList{}.capacity() > , kMaxDepthHardCutoff + 1 > table{};
-      for (size_t depth = 1; depth < table.size(); ++depth) {
+      std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff+1> table{};
+      for (size_t depth = kLateMoveReductionDepth; depth < table.size(); ++depth) {
         const double lnDepth = std::log(double(depth));
         for (size_t i = 1; i < table[depth].size(); ++i) {
-          table[depth][i] = static_cast<uint8_t>(0.7844 + lnDepth * std::log(double(i)) / 2.4696);
+          table[depth][i] = uint8_t(std::min(double(depth - 2 + 0.1), 0.7844 + lnDepth * std::log(double(i)) / 2.4696));
         }
       }
       return table;
@@ -243,6 +245,7 @@ namespace bb::searching {
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
         }
       } else {
+        // TOOD: move to the top if our search depth indeed reach 64 in the future.
         if (ply == kMaxDepthHardCutoff) {
           return Eval(evalPolicy_.evaluate(context.state), false);
         }
@@ -266,7 +269,7 @@ namespace bb::searching {
           if (!inCheck && context.state.template countMMPiece<meta.side>() >= 2) {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
-            if (depth <= kReverseFutilityRequiredDepth && !isCheckmateScore(beta)) {
+            if (depth <= kReverseFutilityDepth && !isCheckmateScore(beta)) {
               staticEvalScore = evalPolicy_.evaluate(context.state);
               if (*staticEvalScore - depth * kReverseFutilityMarginPerDepth >= beta) {
                 const Eval eval(beta, false);
@@ -322,36 +325,32 @@ namespace bb::searching {
       StagedMovePicker movePicker;
       for (size_t i = 0; i < moves.size(); ++i) {
         const Move move = movePicker.pick<meta>(moves, ttMove, context.state, frame->killerMoves, historyTable_);
+
+        bool isQuiet;
+        if constexpr (meta.isInternal() && !meta.isPV) {
+          isQuiet = (i > 0 && depth <= kFutilityDepth) &&
+            (!inCheck && !move.isViolentMove() && !frame->isKillerMove(move) && context.state.template countMMPiece<meta.side>() >= 2);
+
+          // Lazy-init the static evaluation.
+          // It is rare to contains check-only quiet moves, so it is fine to always initialize it.
+          if (isQuiet && !staticEvalScore) {
+            staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
+          }
+        }
+
         const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
 
         if constexpr (meta.isInternal() && !meta.isPV) {
-          const bool isDeadQuiet = (
-            i != 0 &&
-            depth <= kFutilityRequiredDepth &&
-            !inCheck && 
-            !move.isViolentMove() && 
-            !frame->isKillerMove(move) && 
-            context.state.template countMMPiece<meta.side>() >= 2 && 
-            !context.state.template isInCheck<getOtherSide(meta.side)>());
-
           // Futility Pruning.
-          if (isDeadQuiet) {
-            // Lazy-init the static evaluation.
-            if (!staticEvalScore) {
-              staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
-            }
-
-            // Prune away hopeless quiet move.
-            if (*staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score) {
-              context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
-              continue;
-            }
+          if (isQuiet && *staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score
+              && !context.state.template isInCheck<getOtherSide(meta.side)>()) {
+            context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+            continue;
           }
         }
 
         context.positionHistory.push(context.state.getHash());
         //ttTable_.prefetch(context.state.getHash());
-
 
         const Eval eval = [&] {
           if constexpr (meta.isInternal()) {
@@ -362,13 +361,11 @@ namespace bb::searching {
               return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, depth - 1, bestEval.score, beta);
             }
 
-            // Late move reduction.
+            // Late move reduction (narrow window + reduced depth).
             int reduction = 0;
-            if (depth >= 3 && !inCheck && !move.isViolentMove()) {
+            if (!inCheck && !move.isViolentMove()) {
               reduction = int(kLmrReductions[depth][i]);
             }
-
-            // LMR search (narrow window + reduced depth).
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
 
             // PV search if alpha improves (narrow window).
@@ -513,7 +510,7 @@ namespace bb::searching {
 
             // Late move reduction.
             int reduction = 0;
-            if (depth >= 3 && !inCheck && !move.isViolentMove()) {
+            if (!inCheck && !move.isViolentMove()) {
               reduction = int(kLmrReductions[depth][i]);
             }
 
@@ -557,6 +554,9 @@ namespace bb::searching {
         }
 
         // Update TT and PV.
+        if (!bestMove) {
+          bestMove = moves[0];
+        }
         storeTT(context, searchStack_.data(), context.maxDepth, bestEval, TranspositionTable::ScoreType::Exact, bestMove);
         param.pvLine.resize(searchStack_[0].pvLength);
         std::copy_n(pvMoves(searchStack_.data()), searchStack_[0].pvLength, param.pvLine.begin());

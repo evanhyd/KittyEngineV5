@@ -373,6 +373,7 @@ namespace bb {
       };
 
       if constexpr (!isNullMove) {
+        assert(move);
         const Square srce = move.from();
         const Square dest = move.to();
         const Piece movedPiece = move.getMovedPiece();

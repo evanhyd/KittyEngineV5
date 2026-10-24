@@ -8,7 +8,8 @@
 
 namespace bb::searching {
 
-  // Pick moves for diff stages.
+  // Pick moves with different stages to minimize the sorting cost.
+  // TT Move -> Violent Move -> Killer Move -> Remaining Quiet Move
   class StagedMovePicker {
     enum class Stage {
       TTMove,
@@ -93,6 +94,9 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     void sortMoves(auto begin, auto end, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
+      if (begin == end) {
+        return;
+      }
       struct PriorityMove {
         int32_t priority;
         Move move;
