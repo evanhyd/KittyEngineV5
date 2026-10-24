@@ -2,16 +2,16 @@
 #include "bitboard.h"
 #include "boardstate.h"
 #include "node_meta.h"
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 
 namespace bb::searching {
 
-  // Pick moves for dif
+  // Pick moves for diff stages.
   class StagedMovePicker {
     enum class Stage {
       TTMove,
-      PVMove,
       UnsortedViolentMove,
       SortedViolentMove,
       UnsortedNonViolentMove,
@@ -19,8 +19,6 @@ namespace bb::searching {
     };
 
     // Move Ordering Priorities Magic.
-    static constexpr int32_t kTranspositionPriority = 100'000'000;
-    static constexpr int32_t kPrincipalVariationPriority = 10'000'000;
     static constexpr int32_t kPromotionPriority = 1'000'000;
     static constexpr int32_t kUnderpromotionPriority = -2'000'000;
     static constexpr int32_t kViolentMovePriority = 100'000;
@@ -140,28 +138,16 @@ namespace bb::searching {
 
   public:
     template <NodeMeta meta>
-    Move pick(MoveList& moves, Move ttMove, Move pvMove, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
+    Move pick(MoveList& moves, Move ttMove, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
       switch (stage) {
       case Stage::TTMove: {
-        stage = Stage::PVMove;
+        stage = Stage::UnsortedViolentMove;
         if constexpr (meta.isInternal()) {
           if (ttMove) {
             auto it = std::find(moves.begin(), moves.end(), ttMove);
-            std::swap(moves.front(), *it);
-            ++index;
-            return ttMove;
-          }
-        }
-        [[fallthrough]];
-      }
-      case Stage::PVMove: {
-        stage = Stage::UnsortedViolentMove;
-        if constexpr (meta.isInternal()) {
-          if (pvMove && pvMove != ttMove) {
-            auto it = std::find(moves.begin() + index, moves.end(), pvMove);
             std::swap(moves[index], *it);
             ++index;
-            return pvMove;
+            return ttMove;
           }
         }
         [[fallthrough]];
@@ -191,7 +177,7 @@ namespace bb::searching {
         [[fallthrough]];
       }
       case Stage::SortedNonViolentMove: [[fallthrough]];
-      default:{
+      default: {
         return moves[index++];
       }
       }

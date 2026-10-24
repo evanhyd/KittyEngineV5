@@ -40,7 +40,6 @@ namespace bb::searching {
     struct SearchStack {
       std::array<Move, kMaxKillers> killerMoves;
       uint32_t pvLength;
-      bool isFollowingPV;
 
       bool isKillerMove(Move move) const noexcept {
         return std::find(killerMoves.begin(), killerMoves.end(), move) != killerMoves.end();
@@ -227,16 +226,11 @@ namespace bb::searching {
     Eval searchInternal(SearchContext& context, SearchStack* frame, const int depth, const int32_t alpha, const int32_t beta) {
       ++context.searchedNodes;
       const int ply = getPly(frame);
-      Move pvMove{};
       Move ttMove{};
 
-      
       if constexpr (meta.isInternal()) {
-        // Clear old PV written by sibling node and load expected PV move.
+        // Clear old PV written by sibling node.
         frame->pvLength = 0;
-        if (frame->isFollowingPV && context.pvLine.size() > ply) {
-          pvMove = context.pvLine[ply];
-        }
 
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
@@ -286,7 +280,6 @@ namespace bb::searching {
               const int skipped = std::max(1, depth / 2);
               MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
               context.positionHistory.push(context.state.getHash());
-              (frame + 1)->isFollowingPV = false;
               Eval eval = searchInternal<meta.flip().disableNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
               eval.score = -eval.score;
               context.positionHistory.pop();
@@ -328,7 +321,7 @@ namespace bb::searching {
       // Explore moves.
       StagedMovePicker movePicker;
       for (size_t i = 0; i < moves.size(); ++i) {
-        const Move move = movePicker.pick<meta>(moves, ttMove, pvMove, context.state, frame->killerMoves, historyTable_);
+        const Move move = movePicker.pick<meta>(moves, ttMove, context.state, frame->killerMoves, historyTable_);
         const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
 
         if constexpr (meta.isInternal() && !meta.isPV) {
@@ -359,9 +352,6 @@ namespace bb::searching {
         context.positionHistory.push(context.state.getHash());
         //ttTable_.prefetch(context.state.getHash());
 
-        if constexpr (meta.isInternal()) {
-          (frame + 1)->isFollowingPV = frame->isFollowingPV && move == pvMove;
-        }
 
         const Eval eval = [&] {
           if constexpr (meta.isInternal()) {
@@ -400,21 +390,17 @@ namespace bb::searching {
         context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
 
         if (eval.score >= beta) {
-          if constexpr (!meta.isQuiescence()) {
+          if constexpr (meta.isInternal()) {
             storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, move);
-            if constexpr (meta.isInternal()) {
-              recordQuietCutoff(meta.side, frame, moves, i, depth);
-            }
+            recordQuietCutoff(meta.side, frame, moves, i, depth);
           }
           return eval;
         }
         if (eval.score > bestEval.score) {
           bestEval = eval;
-          if constexpr (!meta.isQuiescence()) {
+          if constexpr (meta.isInternal()) {
             bestMove = move;
-            if constexpr (meta.isInternal()) {
-              acceptChildPVLine(frame, bestMove);
-            }
+            acceptChildPVLine(frame, bestMove);
           }
         }
       }
@@ -465,11 +451,6 @@ namespace bb::searching {
         return SearchResult{score, bestMove, context.searchedNodes, elapsedTime(), &param.pvLine};
       };
 
-      // PV table.
-      Move pvMove{};
-      if (!context.pvLine.empty()) {
-        pvMove = context.pvLine.front();
-      }
       searchStack_[0].pvLength = 0;
 
       // Lookup transposition table for move ordering.
@@ -516,10 +497,9 @@ namespace bb::searching {
 
         StagedMovePicker movePicker;
         for (size_t i = 0; i < moves.size(); ++i) {
-          const Move move = movePicker.pick<meta>(moves, ttMove, pvMove, state, searchStack_[0].killerMoves, historyTable_);
+          const Move move = movePicker.pick<meta>(moves, ttMove, state, searchStack_[0].killerMoves, historyTable_);
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
-          searchStack_[1].isFollowingPV = move == pvMove;
 
           const int depth = context.maxDepth;
 
@@ -560,7 +540,7 @@ namespace bb::searching {
             acceptChildPVLine(searchStack_.data(), bestMove);
             if (bestEval.score >= beta) {
               recordQuietCutoff(meta.side, searchStack_.data(), moves, i, context.maxDepth);
-              std::swap(moves[0], moves[i]);
+              ttMove = bestMove;
               break;
             }
           }
