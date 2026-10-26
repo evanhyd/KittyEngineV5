@@ -3,29 +3,33 @@
 #include "boardstate.h"
 #include "node_meta.h"
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cstdint>
 #include <utility>
 
 namespace bb::searching {
 
-  // Pick moves with different stages to minimize the sorting cost.
-  // TT Move -> Violent Move -> Killer Move -> Remaining Quiet Move
+  // Lazily pick move by reducing sorting overhead.
+  // Queen Promotions -> Good Captures -> Killer Moves -> Quiet Moves -> Bad Violent Moves -> Underpromotions.
   class StagedMovePicker {
-    enum class Stage {
+    enum class Stage : uint8_t {
       TTMove,
-      UnsortedViolentMove,
-      SortedViolentMove,
-      UnsortedNonViolentMove,
-      SortedNonViolentMove,
+      PreSort,
+      Sort,
     };
 
-    // Move Ordering Priorities Magic.
-    static constexpr int32_t kPromotionPriority = 1'000'000;
+    static constexpr int32_t kSeeMargin = 0;
+
+    // Move Ordering Priorities.
+    static constexpr int32_t kPromotionPriority = 2'000'000;
+    static constexpr int32_t kGoodCapturePriority = 1'000'000;
+    static constexpr int32_t kKillerPriority = 10'000;
+    static constexpr int32_t kBadViolentPriority = -1'000'000;
     static constexpr int32_t kUnderpromotionPriority = -2'000'000;
-    static constexpr int32_t kViolentMovePriority = 100'000;
-    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1330, 1500, 1900, 5000 };
-    static constexpr int32_t kKillerMovePriority = 100;
     static constexpr int32_t kCastlingPriority = 30;
+
+    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1330, 1500, 1900, 5000 };
 
     static constexpr int32_t capturePriority(Piece attacker, Piece victim) noexcept {
       return kVictimPriority[victim] - attacker;
@@ -94,95 +98,104 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     void sortMoves(auto begin, auto end, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
-      if (begin == end) {
+      const size_t count = static_cast<size_t>(end - begin);
+      if (count == 0) {
+        badViolentBegin_ = end;
         return;
       }
+
       struct PriorityMove {
         int32_t priority;
         Move move;
       };
       static SmallVec<PriorityMove> scoredMoves{};
-      scoredMoves.resize(end - begin);
+      scoredMoves.resize(count);
 
-      // Calculate the priority.
-      std::transform(begin, end, scoredMoves.begin(), [&](const Move& move) {
-        int32_t priority = 0;
+      size_t badViolentCount = 0;
 
-        if (move.isViolentMove()) {
-          priority += kViolentMovePriority + staticExchangeEvaluate<meta.side>(state, move);
-          if (const Piece promotion = move.getPromotedPieceType(); promotion != NoPiece) {
-            priority += (promotion == Queen ? kPromotionPriority : kUnderpromotionPriority);
+      auto scoreViolentMove = [&](const Move& move) noexcept -> int32_t {
+        const Piece promotion = move.getPromotedPieceType();
+        if (promotion == Queen) {
+          return kPromotionPriority + staticExchangeEvaluate<meta.side>(state, move);
+        }
+        if (promotion != NoPiece) {
+          // Underpromotion is bad, avoid calculating SEE.
+          ++badViolentCount;
+          return kUnderpromotionPriority + static_cast<int32_t>(promotion);
+        }
+        const int32_t see = staticExchangeEvaluate<meta.side>(state, move);
+        if (see < kSeeMargin) {
+          ++badViolentCount;
+          return kBadViolentPriority + see;
+        }
+        return kGoodCapturePriority + see;
+      };
+
+      if constexpr (meta.isQuiescence()) {
+        std::transform(begin, end, scoredMoves.begin(), [&](const Move& move) {
+          return PriorityMove{ scoreViolentMove(move), move };
+        });
+      } else {
+        std::transform(begin, end, scoredMoves.begin(), [&](const Move& move) {
+          if (move.isViolentMove()) {
+            return PriorityMove{ scoreViolentMove(move), move };
           }
-        } else if constexpr (meta.isInternal()) {
-          // Killer move heuristics.
-          for (size_t i = 0; i < killerMoves.size() && killerMoves[i]; ++i) {
-            if (move == killerMoves[i]) {
-              priority += kKillerMovePriority - int32_t(i);
+          for (size_t k = 0; k < killerMoves.size() && killerMoves[k]; ++k) {
+            if (move == killerMoves[k]) {
+              return PriorityMove{ kKillerPriority - static_cast<int32_t>(k), move };
             }
           }
-
-          // History heuristics.
-          priority += historyTable[meta.side][move.from()][move.to()];
-
+          int32_t priority = historyTable[meta.side][move.from()][move.to()];
           if (move.isCastling()) {
             priority += kCastlingPriority;
           }
-        }
+          return PriorityMove{ priority, move };
+        });
+      }
 
-        return PriorityMove{ priority, move };
-      });
+      if (count > 1) {
+        std::ranges::sort(scoredMoves, std::greater<>{}, &PriorityMove::priority);
+        std::ranges::transform(scoredMoves, begin, &PriorityMove::move);
+      }
 
-      // Sort the moves based on priority, then map back to the original moves list.
-      std::ranges::sort(scoredMoves, std::greater<>{}, & PriorityMove::priority);
-      std::ranges::transform(scoredMoves, begin, &PriorityMove::move);
+      badViolentBegin_ = end - badViolentCount;
     }
 
     Stage stage = Stage::TTMove;
-    uint32_t index = 0;
+    MoveList::iterator current{};
+    MoveList::iterator badViolentBegin_{};
 
   public:
+    [[nodiscard]] bool isBadViolentMove() const noexcept {
+      return current > badViolentBegin_;
+    }
+
     template <NodeMeta meta>
     Move pick(MoveList& moves, Move ttMove, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
       switch (stage) {
       case Stage::TTMove: {
-        stage = Stage::UnsortedViolentMove;
+        stage = Stage::PreSort;
+        current = moves.begin();
+        badViolentBegin_ = moves.end();
         if constexpr (meta.isInternal()) {
           if (ttMove) {
             auto it = std::find(moves.begin(), moves.end(), ttMove);
-            std::swap(moves[index], *it);
-            ++index;
-            return ttMove;
+            assert(it != moves.end());
+            std::swap(*current, *it);
+            return *current++;
           }
         }
         [[fallthrough]];
       }
-      case Stage::UnsortedViolentMove: {
-        int endIndex = index;
-        for (int i = index; i < moves.size(); ++i) {
-          if (moves[i].isViolentMove()) {
-            std::swap(moves[endIndex], moves[i]);
-            ++endIndex;
-          }
-        }
-        sortMoves<meta>(moves.begin() + index, moves.begin() + endIndex, state, killerMoves, historyTable);
-        stage = Stage::SortedViolentMove;
+      case Stage::PreSort: {
+        sortMoves<meta>(current, moves.end(), state, killerMoves, historyTable);
+        stage = Stage::Sort;
         [[fallthrough]];
       }
-      case Stage::SortedViolentMove: {
-        if (moves[index].isViolentMove()) {
-          return moves[index++];
-        }
-        stage = Stage::UnsortedNonViolentMove;
-        [[fallthrough]];
-      }
-      case Stage::UnsortedNonViolentMove: {
-        sortMoves<meta>(moves.begin() + index, moves.end(), state, killerMoves, historyTable);
-        stage = Stage::SortedNonViolentMove;
-        [[fallthrough]];
-      }
-      case Stage::SortedNonViolentMove: [[fallthrough]];
+      case Stage::Sort: [[fallthrough]];
       default: {
-        return moves[index++];
+        assert(current != moves.end());
+        return *current++;
       }
       }
     }

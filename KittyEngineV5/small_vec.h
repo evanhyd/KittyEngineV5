@@ -17,6 +17,9 @@ namespace bb {
     size_t size_ = 0;
 
   public:
+    using iterator = decltype(data_)::iterator;
+    using const_iterator = decltype(data_)::const_iterator;
+
     constexpr SmallVec() noexcept = default;
     
     SmallVec(const SmallVec& rhs) noexcept {

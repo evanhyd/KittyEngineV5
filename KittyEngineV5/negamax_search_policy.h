@@ -17,7 +17,6 @@
 namespace bb::searching {
   template <evaluation::EvaluationPolicy EvalPolicy>
   class NegamaxSearchPolicy {
-
     // Data Structures Magic.
     static constexpr size_t kMaxKillers = 3;
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
@@ -45,6 +44,9 @@ namespace bb::searching {
         return std::find(killerMoves.begin(), killerMoves.end(), move) != killerMoves.end();
       }
     };
+
+    template <typename T>
+    using ButterFlyTable = std::array<std::array<T, kSquareSize>, kSquareSize>;
 
     // Pruning Magic.
     static constexpr int kFutilityDepth = 3;
@@ -75,10 +77,11 @@ namespace bb::searching {
     EvalPolicy evalPolicy_;
     const int32_t aspirationWindow_;
     std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
-    // PV row at ply p has room for at most 65 - p moves.
-    std::array<Move, kPvSlots> pvTable_;
+    std::array<Move, kPvSlots> pvTable_; // PV row at ply p has room for at most 65 - p moves.
     TranspositionTable ttTable_;
-    std::array<std::array<std::array<int32_t, kSquareSize>, kSquareSize>, 2> historyTable_{};
+
+    // History Heuristics
+    std::array<ButterFlyTable<int32_t>, 2> historyTable_{};
 
     int getPly(const SearchStack* frame) const noexcept {
       return static_cast<int>(frame - searchStack_.data());
@@ -240,7 +243,7 @@ namespace bb::searching {
         if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove); ttEval) {
           return *ttEval;
         }
-        if (depth == 0) {
+        if (depth <= 0) {
           --context.searchedNodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
         }
@@ -266,10 +269,10 @@ namespace bb::searching {
         }
 
         if constexpr (!meta.isPV) {
-          if (!inCheck && context.state.template countMMPiece<meta.side>() >= 2) {
+          if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= 2) {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
-            if (depth <= kReverseFutilityDepth && !isCheckmateScore(beta)) {
+            if (depth <= kReverseFutilityDepth) {
               staticEvalScore = evalPolicy_.evaluate(context.state);
               if (*staticEvalScore - depth * kReverseFutilityMarginPerDepth >= beta) {
                 const Eval eval(beta, false);
@@ -279,21 +282,28 @@ namespace bb::searching {
             }
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
-            if (depth >= 2 && meta.canNullMove) {
-              const int skipped = std::max(1, depth / 2);
-              MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
-              context.positionHistory.push(context.state.getHash());
-              Eval eval = searchInternal<meta.flip().disableNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
-              eval.score = -eval.score;
-              context.positionHistory.pop();
-              context.state.template unmakeMove<meta.side, true>(Move{}, undo, evalPolicy_);
-
-              if (eval.score >= beta) {
-                if (isCheckmateScore(eval.score)) {
-                  eval.score = beta;
+            if constexpr (meta.canNullMove) {
+              if (depth >= 2) {
+                if (!staticEvalScore) {
+                  staticEvalScore = evalPolicy_.evaluate(context.state);
                 }
-                storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
-                return eval;
+                if (*staticEvalScore >= beta) {
+                  const int skipped = std::max(1, depth / 2);
+                  MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
+                  context.positionHistory.push(context.state.getHash());
+                  Eval eval = searchInternal<meta.flip().disableNullMove()>(context, frame + 1, depth - skipped, -beta, -beta + 1);
+                  eval.score = -eval.score;
+                  context.positionHistory.pop();
+                  context.state.template unmakeMove<meta.side, true>(Move{}, undo, evalPolicy_);
+
+                  if (eval.score >= beta) {
+                    if (isCheckmateScore(eval.score)) {
+                      eval.score = beta;
+                    }
+                    storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
+                    return eval;
+                  }
+                }
               }
             }
           }
@@ -321,19 +331,22 @@ namespace bb::searching {
 
       Move bestMove{};
 
+      bool isFutilePosition;
+      if constexpr (meta.isInternal() && !meta.isPV) {
+        isFutilePosition = !inCheck && (depth <= kFutilityDepth);
+      }
+
       // Explore moves.
       StagedMovePicker movePicker;
       for (size_t i = 0; i < moves.size(); ++i) {
         const Move move = movePicker.pick<meta>(moves, ttMove, context.state, frame->killerMoves, historyTable_);
 
-        bool isQuiet;
+        bool isFutileMove;
         if constexpr (meta.isInternal() && !meta.isPV) {
-          isQuiet = (i > 0 && depth <= kFutilityDepth) &&
-            (!inCheck && !move.isViolentMove() && !frame->isKillerMove(move) && context.state.template countMMPiece<meta.side>() >= 2);
-
+          isFutileMove = isFutilePosition && !move.isViolentMove() && (i > 0);
           // Lazy-init the static evaluation.
-          // It is rare to contains check-only quiet moves, so it is fine to always initialize it.
-          if (isQuiet && !staticEvalScore) {
+          // Rare to have check-only AND quiet-move-only positions, always initialize it.
+          if (isFutileMove && !staticEvalScore) {
             staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
           }
         }
@@ -342,7 +355,7 @@ namespace bb::searching {
 
         if constexpr (meta.isInternal() && !meta.isPV) {
           // Futility Pruning.
-          if (isQuiet && *staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score
+          if (isFutileMove && *staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score
               && !context.state.template isInCheck<getOtherSide(meta.side)>()) {
             context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
             continue;
@@ -356,26 +369,31 @@ namespace bb::searching {
           if constexpr (meta.isInternal()) {
             constexpr auto childMeta = meta.flip().enableNullMove();
 
-            // Disable narrow window on PV and near leaf.
-            if (i == 0 || depth == 1) {
+            // First move: full window. Subsequent moves: scout search.
+            if (i == 0) {
               return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, depth - 1, bestEval.score, beta);
             }
 
-            // Late move reduction (narrow window + reduced depth).
+            // Late move reduction.
+            // If reduction > 0, then LMR (narrow window + reduced depth).
+            // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (!inCheck && !move.isViolentMove()) {
+            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove())) {
               reduction = int(kLmrReductions[depth][i]);
             }
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
 
-            // PV search if alpha improves (narrow window).
+            // If LMR improves alpha, research with scout.
             if (reduction > 0 && result.score > bestEval.score) {
               result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1, bestEval.score, bestEval.score + 1);
             }
 
-            // Full window search if within window.
-            if (bestEval.score < result.score && result.score < beta) {
-              result = searchChild<childMeta.setPV(true)>(context, frame + 1, depth - 1, bestEval.score, beta);
+            // If within window, full search.
+            // Non PV can stop, because it only needed to prove improvement.
+            if constexpr (meta.isPV) {
+              if (bestEval.score < result.score && result.score < beta) {
+                result = searchChild<childMeta.setPV(true)>(context, frame + 1, depth - 1, bestEval.score, beta);
+              }
             }
             return result;
           } else {
@@ -509,20 +527,21 @@ namespace bb::searching {
             }
 
             // Late move reduction.
+            // If reduction > 0, then LMR (narrow window + reduced depth).
+            // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (!inCheck && !move.isViolentMove()) {
+            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove())) {
               reduction = int(kLmrReductions[depth][i]);
             }
 
-            // LMR search (narrow window + reduced depth).
             Eval result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
 
-            // PV search (narrow window).
+            // If LMR improves alpha, research with scout.
             if (reduction > 0 && result.score > bestEval.score) {
               result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, bestEval.score + 1);
             }
 
-            // Full window search.
+            // If within window, full search.
             if (bestEval.score < result.score && result.score < beta) {
               result = searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, beta);
             }
