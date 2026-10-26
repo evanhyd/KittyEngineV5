@@ -21,12 +21,14 @@ namespace bb {
     };
 
     struct alignas(32) Entry {
-      ZobristHash::Hash key = 0;                   // 8 bytes (offset 0..7)
-      int32_t depth = 0;                           // 4 bytes (offset 8..9)
-      int32_t age = 0;                             // 4 bytes (offset 10..11)
-      ScoreType scoreType = ScoreType::None;       // 1 byte  (offset 12)
-      int32_t score = 0;                           // 4 bytes (offset 20..23)
-      Move bestMove{};                             // 4 bytes (offset 16..19)
+      ZobristHash::Hash key = 0;              // 8 bytes
+      int32_t depth = 0;                      // 4 bytes
+      int32_t age = 0;                        // 4 bytes
+      ScoreType scoreType = ScoreType::None;  // 1 byte 
+      bool hasStaticScore = false;            // 1 byte
+      int32_t score = 0;                      // 4 bytes
+      int32_t staticScore = 0;                // 4 bytes
+      Move bestMove{};                        // 4 bytes
 
       constexpr bool isValid() const noexcept {
         return scoreType != ScoreType::None;
@@ -82,6 +84,11 @@ namespace bb {
           slot.bestMove = bestMove;
         } else if (slot.bestMove == Move{} && bestMove != Move{}) {
           slot.bestMove = bestMove;
+        }
+
+        if (entry.hasStaticScore) {
+          slot.hasStaticScore = true;
+          slot.staticScore = entry.staticScore;
         }
         slot.age = currentAge_;
         return;

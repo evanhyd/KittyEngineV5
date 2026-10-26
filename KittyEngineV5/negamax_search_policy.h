@@ -39,6 +39,7 @@ namespace bb::searching {
     struct SearchStack {
       std::array<Move, kMaxKillers> killerMoves;
       uint32_t pvLength;
+      std::optional<int32_t> staticScore;
 
       bool isKillerMove(Move move) const noexcept {
         return std::find(killerMoves.begin(), killerMoves.end(), move) != killerMoves.end();
@@ -136,15 +137,17 @@ namespace bb::searching {
       return std::nullopt;
     }
 
-    void storeTT(const SearchContext& context, SearchStack* frame, int depth, Eval eval,
-                 TranspositionTable::ScoreType scoreType, Move bestMove) noexcept {
+    void storeTT(const SearchContext& context, int ply, int depth, 
+                 TranspositionTable::ScoreType scoreType, Eval eval, std::optional<int32_t> staticScore, Move bestMove) noexcept {
       if (!eval.isUnreliable) {
         ttTable_.put(TranspositionTable::Entry{
           .key = context.state.getHash(),
           .depth = int32_t(depth),
           .age = 0,
           .scoreType = scoreType,
-          .score = normalizeScore(eval.score, getPly(frame)),
+          .hasStaticScore = staticScore.has_value(),
+          .score = normalizeScore(eval.score, ply),
+          .staticScore = staticScore.value_or(0),
           .bestMove = bestMove,
         });
       }
@@ -158,6 +161,13 @@ namespace bb::searching {
         return std::nullopt;
       }
       ttMove = ttEntry->bestMove;
+
+      // Retrieve static position evaluation.
+      if (ttEntry->hasStaticScore) {
+        frame->staticScore = ttEntry->staticScore;
+      }
+
+      // Ignore if depth was too shallow.
       if (ttEntry->depth < depth) {
         return std::nullopt;
       }
@@ -234,8 +244,9 @@ namespace bb::searching {
       Move ttMove{};
 
       if constexpr (meta.isInternal()) {
-        // Clear old PV written by sibling node.
+        // Clear old PV and static eval written by sibling node.
         frame->pvLength = 0;
+        frame->staticScore = std::nullopt;
 
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
@@ -258,7 +269,6 @@ namespace bb::searching {
       Eval bestEval(alpha, false);
 
       // Must be internal node. Disable on PV, in check, or with low material (zugzwang risk).
-      std::optional<int32_t> staticEvalScore;
 
       const bool inCheck = context.state.template isInCheck<meta.side>();
       if constexpr (meta.isInternal()) {
@@ -273,10 +283,12 @@ namespace bb::searching {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
             if (depth <= kReverseFutilityDepth) {
-              staticEvalScore = evalPolicy_.evaluate(context.state);
-              if (*staticEvalScore - depth * kReverseFutilityMarginPerDepth >= beta) {
+              if (!frame->staticScore) {
+                frame->staticScore = evalPolicy_.evaluate(context.state);
+              }
+              if ((*frame->staticScore) - depth * kReverseFutilityMarginPerDepth >= beta) {
                 const Eval eval(beta, false);
-                storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
+                storeTT(context, ply, depth, TranspositionTable::ScoreType::LowerBound, eval, frame->staticScore, ttMove);
                 return eval;
               }
             }
@@ -284,10 +296,10 @@ namespace bb::searching {
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
             if constexpr (meta.canNullMove) {
               if (depth >= 2) {
-                if (!staticEvalScore) {
-                  staticEvalScore = evalPolicy_.evaluate(context.state);
+                if (!frame->staticScore) {
+                  frame->staticScore = evalPolicy_.evaluate(context.state);
                 }
-                if (*staticEvalScore >= beta) {
+                if ((*frame->staticScore) >= beta) {
                   const int skipped = std::max(1, depth / 2);
                   MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
                   context.positionHistory.push(context.state.getHash());
@@ -300,7 +312,7 @@ namespace bb::searching {
                     if (isCheckmateScore(eval.score)) {
                       eval.score = beta;
                     }
-                    storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, ttMove);
+                    storeTT(context, ply, depth, TranspositionTable::ScoreType::LowerBound, eval, frame->staticScore, ttMove);
                     return eval;
                   }
                 }
@@ -346,8 +358,8 @@ namespace bb::searching {
           isFutileMove = isFutilePosition && !move.isViolentMove() && (i > 0);
           // Lazy-init the static evaluation.
           // Rare to have check-only AND quiet-move-only positions, always initialize it.
-          if (isFutileMove && !staticEvalScore) {
-            staticEvalScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
+          if (isFutileMove && !frame->staticScore) {
+            frame->staticScore = evalPolicy_.evaluate(context.state); // 1200 cycles.
           }
         }
 
@@ -355,7 +367,7 @@ namespace bb::searching {
 
         if constexpr (meta.isInternal() && !meta.isPV) {
           // Futility Pruning.
-          if (isFutileMove && *staticEvalScore + kFutilityMarginPerDepth * depth <= bestEval.score
+          if (isFutileMove && *(frame->staticScore) + kFutilityMarginPerDepth * depth <= bestEval.score
               && !context.state.template isInCheck<getOtherSide(meta.side)>()) {
             context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
             continue;
@@ -406,7 +418,7 @@ namespace bb::searching {
 
         if (eval.score >= beta) {
           if constexpr (meta.isInternal()) {
-            storeTT(context, frame, depth, eval, TranspositionTable::ScoreType::LowerBound, move);
+            storeTT(context, ply, depth, TranspositionTable::ScoreType::LowerBound, eval, frame->staticScore, move);
             recordQuietCutoff(meta.side, frame, moves, i, depth);
           }
           return eval;
@@ -426,7 +438,7 @@ namespace bb::searching {
         if (!bestMove) {
           bestMove = moves[0];
         }
-        storeTT(context, frame, depth, bestEval, scoreType, bestMove);
+        storeTT(context, ply, depth, scoreType, bestEval, frame->staticScore, bestMove);
       }
       return bestEval;
     }
@@ -576,7 +588,7 @@ namespace bb::searching {
         if (!bestMove) {
           bestMove = moves[0];
         }
-        storeTT(context, searchStack_.data(), context.maxDepth, bestEval, TranspositionTable::ScoreType::Exact, bestMove);
+        storeTT(context, 0, context.maxDepth, TranspositionTable::ScoreType::Exact, bestEval, std::nullopt, bestMove);
         param.pvLine.resize(searchStack_[0].pvLength);
         std::copy_n(pvMoves(searchStack_.data()), searchStack_[0].pvLength, param.pvLine.begin());
         return makeResult(bestEval.score, bestMove);
