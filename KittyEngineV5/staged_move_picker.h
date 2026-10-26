@@ -178,6 +178,7 @@ namespace bb::searching {
         current = moves.begin();
         badViolentBegin_ = moves.end();
         if constexpr (meta.isInternal()) {
+          // If ttMove is valid, then it guarantees exists in the move list.
           if (ttMove) {
             auto it = std::find(moves.begin(), moves.end(), ttMove);
             assert(it != moves.end());
