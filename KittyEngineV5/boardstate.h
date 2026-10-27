@@ -171,7 +171,7 @@ namespace bb {
 
     // Return a bitboard containing ally pieces that are pinned.
     template <Side ally>
-    constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize> occupancy) const noexcept {
+    constexpr Bitboard getPinnedMask(Square kingSq, const std::array<Bitboard, kSideSize>& occupancy) const noexcept {
       constexpr Side enemy = getOtherSide(ally);
 
       // Get the enemy sliders squares, then check if any ally piece is blocking the attack ray.

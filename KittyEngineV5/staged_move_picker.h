@@ -6,6 +6,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace bb::searching {
@@ -29,38 +30,67 @@ namespace bb::searching {
     static constexpr int32_t kUnderpromotionPriority = -2'000'000;
     static constexpr int32_t kCastlingPriority = 30;
 
-    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1330, 1500, 1900, 5000 };
+    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1320, 1500, 1900, 5000 };
 
-    static constexpr int32_t capturePriority(Piece attacker, Piece victim) noexcept {
-      return kVictimPriority[victim] - attacker;
-    }
 
     template <Side ally>
     int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
       constexpr Side enemy = getOtherSide(ally);
       const Square square = move.to();
-      Bitboard occupancy = moveSquare(state.getOccupancy(White) | state.getOccupancy(Black), move.from(), square);
+      const std::array<Bitboard, kSideSize> sideOccupancy = { state.getOccupancy(White), state.getOccupancy(Black) };
+      Bitboard occupancy = moveSquare(sideOccupancy[White] | sideOccupancy[Black], move.from(), square);
       if (move.isEnpassant()) {
         occupancy = unsetSquare(occupancy, ally == White ? squareDown(square) : squareUp(square));
       }
+
       const Piece promotion = move.getPromotedPieceType();
       const Piece attacker = promotion == NoPiece ? move.getMovedPiece() : promotion;
       const Piece victim = move.isCapture() ? state.getPieceAt<enemy>(square) : (move.isEnpassant() ? Pawn : NoPiece);
       std::array<Piece, kSideSize> pieceIndex{ Pawn, Pawn };
 
+      // Constant attacks on 'square' that do not change as occupancy changes
+      const std::array<Bitboard, kSideSize> pawnAttacks = { getAttack<Pawn, Black>(square), getAttack<Pawn, White>(square) };
+      const Bitboard knightAttacks = getAttack<Knight>(square);
+      const Bitboard kingAttacks   = getAttack<King>(square);
+      const std::array<Square, kSideSize> kingSq = { peekPiece(state.getPieces(White, King)), peekPiece(state.getPieces(Black, King)) };
+      const std::array<Bitboard, kSideSize> pinned = { state.getPinnedMask<White>(kingSq[White], sideOccupancy), state.getPinnedMask<Black>(kingSq[Black], sideOccupancy) };
+
       auto popLVA = [&](Side side) -> Piece {
+        // Cache slider ray lookups for this ply so Queen reuses Bishop and Rook rays
+        std::optional<Bitboard> bAttacks;
+        std::optional<Bitboard> rAttacks;
+        auto getBishopAttacks = [&] {
+          if (!bAttacks) bAttacks = getAttack<Bishop>(square, occupancy);
+          return *bAttacks;
+        };
+        auto getRookAttacks = [&] {
+          if (!rAttacks) rAttacks = getAttack<Rook>(square, occupancy);
+          return *rAttacks;
+        };
+
         for (Piece piece = pieceIndex[side]; piece < kPieceSize; ++piece) {
           Bitboard attackers = 0;
           switch (piece) {
-          case Pawn: attackers = (side == White ? getAttack<Pawn, Black>(square) : getAttack<Pawn, White>(square)) & state.getPieces(side, Pawn); break;
-          case Knight: attackers = getAttack<Knight>(square) & state.getPieces(side, Knight); break;
-          case Bishop: attackers = getAttack<Bishop>(square, occupancy) & state.getPieces(side, Bishop); break;
-          case Rook: attackers = getAttack<Rook>(square, occupancy) & state.getPieces(side, Rook); break;
-          case Queen: attackers = getAttack<Queen>(square, occupancy) & state.getPieces(side, Queen); break;
-          case King: attackers = getAttack<King>(square) & state.getPieces(side, King); break;
+          case Pawn:   attackers = pawnAttacks[side] & state.getPieces(side, Pawn); break;
+          case Knight: attackers = knightAttacks & state.getPieces(side, Knight); break;
+          case Bishop: attackers = getBishopAttacks() & state.getPieces(side, Bishop); break;
+          case Rook:   attackers = getRookAttacks() & state.getPieces(side, Rook); break;
+          case Queen:  attackers = (getBishopAttacks() | getRookAttacks()) & state.getPieces(side, Queen); break;
+          case King:   attackers = kingAttacks & state.getPieces(side, King); break;
           default: break;
           }
           attackers &= occupancy;
+
+          if (attackers & pinned[side]) {
+            // Filter out pinned pieces.
+            for (Bitboard bb = attackers & pinned[side]; bb; bb = popPiece(bb)) {
+              const Square sq = peekPiece(bb);
+              if (piece == Knight || !isSquareSet(kLineOfSightMasks[kingSq[side]][sq], square)) {
+                attackers = unsetSquare(attackers, sq);
+              }
+            }
+          }
+
           if (attackers) {
             occupancy = unsetSquare(occupancy, peekPiece(attackers));
             return piece;
@@ -75,7 +105,7 @@ namespace bb::searching {
 
       // https://chess.stackexchange.com/questions/44853/whats-the-maximum-number-of-pieces-attacking-a-single-square
       SmallVec<int32_t, 32> gains;
-      gains.push(victim == NoPiece ? 0 : capturePriority(attacker, victim));
+      gains.push(victim == NoPiece ? 0 : kVictimPriority[victim]);
       Piece exchangedPiece = attacker;
       Side side = enemy;
 
@@ -84,7 +114,7 @@ namespace bb::searching {
         if (nextAttacker == NoPiece) {
           break;
         }
-        gains.push(capturePriority(nextAttacker, exchangedPiece));
+        gains.push(kVictimPriority[exchangedPiece]);
         exchangedPiece = nextAttacker;
         side = getOtherSide(side);
       }
@@ -113,45 +143,40 @@ namespace bb::searching {
 
       size_t badViolentCount = 0;
 
-      auto scoreViolentMove = [&](const Move& move) noexcept -> int32_t {
-        const Piece promotion = move.getPromotedPieceType();
-        if (promotion == Queen) {
-          return kPromotionPriority + staticExchangeEvaluate<meta.side>(state, move);
-        }
-        if (promotion != NoPiece) {
-          // Underpromotion is bad, avoid calculating SEE.
-          ++badViolentCount;
-          return kUnderpromotionPriority + static_cast<int32_t>(promotion);
-        }
-        const int32_t see = staticExchangeEvaluate<meta.side>(state, move);
-        if (see < kSeeMargin) {
-          ++badViolentCount;
-          return kBadViolentPriority + see;
-        }
-        return kGoodCapturePriority + see;
-      };
-
-      if constexpr (meta.isQuiescence()) {
-        std::transform(begin, end, scoredMoves.begin(), [&](const Move& move) {
-          return PriorityMove{ scoreViolentMove(move), move };
-        });
-      } else {
-        std::transform(begin, end, scoredMoves.begin(), [&](const Move& move) {
-          if (move.isViolentMove()) {
-            return PriorityMove{ scoreViolentMove(move), move };
+      auto scoreMove = [&](Move move) noexcept -> int32_t {
+        if (move.isViolentMove()) {
+          const Piece promotion = move.getPromotedPieceType();
+          if (promotion == Queen) {
+            return kPromotionPriority + staticExchangeEvaluate<meta.side>(state, move);
           }
-          for (size_t k = 0; k < killerMoves.size() && killerMoves[k]; ++k) {
-            if (move == killerMoves[k]) {
-              return PriorityMove{ kKillerPriority - static_cast<int32_t>(k), move };
+          if (promotion != NoPiece) {
+            // Underpromotion is bad, avoid calculating SEE.
+            ++badViolentCount;
+            return kUnderpromotionPriority + static_cast<int32_t>(promotion);
+          }
+          const int32_t see = staticExchangeEvaluate<meta.side>(state, move);
+          if (see < kSeeMargin) {
+            ++badViolentCount;
+            return kBadViolentPriority + see;
+          }
+          return kGoodCapturePriority + see;
+        }
+
+        if constexpr (meta.isQuiescence()) {
+          return 0; // Quiet evasion
+        } else {
+          for (size_t i = 0; i < killerMoves.size() && killerMoves[i]; ++i) {
+            if (move == killerMoves[i]) {
+              return kKillerPriority - static_cast<int32_t>(i);
             }
           }
-          int32_t priority = historyTable[meta.side][move.from()][move.to()];
-          if (move.isCastling()) {
-            priority += kCastlingPriority;
-          }
-          return PriorityMove{ priority, move };
-        });
-      }
+          return historyTable[meta.side][move.from()][move.to()] + (move.isCastling() ? kCastlingPriority : 0);
+        }
+      };
+
+      std::transform(begin, end, scoredMoves.begin(), [&](Move move) {
+        return PriorityMove{ scoreMove(move), move };
+      });
 
       if (count > 1) {
         std::ranges::sort(scoredMoves, std::greater<>{}, &PriorityMove::priority);

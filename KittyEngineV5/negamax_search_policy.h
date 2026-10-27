@@ -362,28 +362,24 @@ namespace bb::searching {
 
       Move bestMove{};
 
-      bool isFutilePosition = false;
-      if constexpr (meta.isInternal() && !meta.isPV) {
-        isFutilePosition = !inCheck && (depth <= kFutilityDepth);
-        if (isFutilePosition) {
-          getStaticScore();
-        }
-      }
-
       // Explore moves.
       StagedMovePicker movePicker;
       for (size_t i = 0; i < moves.size(); ++i) {
         const Move move = movePicker.pick<meta>(moves, ttMove, context.state, frame->killerMoves, historyTable_);
-        const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
 
         if constexpr (meta.isInternal() && !meta.isPV) {
           // Futility Pruning.
-          if ((i > 0) && isFutilePosition && !move.isViolentMove() && getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score
-              && !context.state.template isInCheck<getOtherSide(meta.side)>()) {
-            context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+          if ((i > 0) && (depth <= kFutilityDepth) && !inCheck && !move.isViolentMove() && getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score) {
             continue;
           }
+        } else if constexpr (meta.isQuiescence()) {
+          // Skip bad violent move if no check is involved.
+          if (!inCheck && movePicker.isBadViolentMove()) {
+            break;
+          }
         }
+
+        const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
 
         context.positionHistory.push(context.state.getHash());
         //ttTable_.prefetch(context.state.getHash());
