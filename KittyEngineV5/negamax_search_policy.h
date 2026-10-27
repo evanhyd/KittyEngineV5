@@ -135,14 +135,26 @@ namespace bb::searching {
       if (halfmove >= 100) {
         return Eval(0, true);
       }
-      const auto hBegin = context.positionHistory.rbegin();
-      const auto hEnd = hBegin + std::min(context.positionHistory.size(), static_cast<size_t>(halfmove) + 1);
-      if (const auto it = std::find(hBegin + 1, hEnd, context.state.getHash()); it != hEnd) {
-        const bool inGameHistory = int(std::distance(hBegin, it)) >= ply;
-        return Eval(0, !inGameHistory);
+      auto it = context.positionHistory.rbegin();
+      const auto end = it + std::min(context.positionHistory.size(), static_cast<size_t>(halfmove) + 1);
+      // Don't use std::find, because it uses ! instead of <, and "end" might be before "it".
+      for (++it; it < end; ++it) {
+        if (*it == context.state.getHash()) {
+          const bool inGameHistory = int(std::distance(it, end)) >= ply;
+          return Eval(0, !inGameHistory);
+        }
       }
       return std::nullopt;
     }
+
+    int32_t expandWindow(int attempt) const noexcept {
+      switch (attempt) {
+      case 1: return 3 * aspirationWindow_;
+      case 2: return 6 * aspirationWindow_;
+      case 3: return 12 * aspirationWindow_;
+      default: return evaluation::kCheckmateWinScore;
+      }
+    };
 
     void storeTT(const SearchContext& context, SearchStack* frame, int depth,
                  TranspositionTable::ScoreType scoreType, Eval eval, Move bestMove, bool inCheck) noexcept {
@@ -271,6 +283,7 @@ namespace bb::searching {
         }
       } else {
         // TOOD: move to the top if our search depth indeed reach 64 in the future.
+        // Right now it is not even close to searching up to 64 depth.
         if (ply == kMaxDepthHardCutoff) {
           return Eval(evalPolicy_.evaluate(context.state), false);
         }
@@ -432,11 +445,7 @@ namespace bb::searching {
       
       if constexpr (meta.isInternal()) {
         const auto scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact);
-        // This happen is every move does not improve the position.
-        if (!bestMove) {
-          bestMove = moves[0];
-        }
-        storeTT(context, frame, depth, scoreType, bestEval, bestMove, inCheck);
+        storeTT(context, frame, depth, scoreType, bestEval, bestMove ? bestMove : moves[0], inCheck);
       }
       return bestEval;
     }
@@ -505,16 +514,7 @@ namespace bb::searching {
       }
 
       // Set up aspiration window.
-      const auto expandWindow = [](int& failTime, int32_t window) noexcept {
-        ++failTime;
-        switch (failTime) {
-        case 1: return 3 * window;
-        case 2: return 10 * window;
-        default: return evaluation::kCheckmateWinScore;
-        }
-      };
-      int failLowCount = 0;
-      int failHighCount = 0;
+      int searchAttempt = 0;
       auto [alpha, beta] = context.maxDepth <= 4
         ? std::pair{evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore}
         : std::pair{param.pastEval - aspirationWindow_, param.pastEval + aspirationWindow_};
@@ -579,14 +579,15 @@ namespace bb::searching {
           }
         }
 
-        if (bestEval.score >= beta) {
-          // Fail-high, the position is better than expected, increase beta and re-search.
-          beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(failHighCount, aspirationWindow_));
-          continue;
-        } else if (bestEval.score <= alpha) {
-          // Fail-low, the position is worse than expected, decrease alpha and re-search.
-          alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(failLowCount, aspirationWindow_));
-          continue;
+        if (!isCheckmateScore(bestEval.score)) {
+          ++searchAttempt;
+          if (bestEval.score >= beta) {
+            beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(searchAttempt));
+            continue;
+          } else if (bestEval.score <= alpha) {
+            alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(searchAttempt));
+            continue;
+          }
         }
 
         // Update TT and PV.
