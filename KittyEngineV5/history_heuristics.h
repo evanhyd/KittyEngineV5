@@ -10,15 +10,11 @@
 namespace bb::searching {
   class HistoryHeuristics {
     static constexpr size_t kMaxKillers = 2;
-    static constexpr int32_t kKillerPriority = 10'000;
     static constexpr int32_t kMaxQuietHistory = 1000;
     static constexpr int32_t kMaxRefutationHistory = 1000;
     static constexpr int32_t kMaxFollowupHistory = 500;
     static constexpr int32_t kMaxCaptureHistory = 400;
     static constexpr int32_t kMaxQuietScore = kMaxQuietHistory + kMaxRefutationHistory + kMaxFollowupHistory;
-
-    static_assert(kMaxQuietScore < kKillerPriority - static_cast<int32_t>(kMaxKillers),
-                  "Quiet move score sum must never crossover killer move priorities");
 
     using PieceToHistory = std::array<std::array<int16_t, kSquareSize>, kPieceSize>;
     using ContinuationHistory = std::array<std::array<PieceToHistory, kSquareSize>, kPieceSize>;
@@ -94,18 +90,16 @@ namespace bb::searching {
     }
 
     template <Side side>
-    [[nodiscard]] int16_t getCaptureScore(Piece attacker, Square to, Piece victim) const noexcept {
+    int16_t getCaptureScore(Piece attacker, Square to, Piece victim) const noexcept {
       return captureHistory_[side][attacker][to][victim];
     }
 
-    template <Side side>
-    [[nodiscard]] int32_t getQuietScore(int ply, Move move, Move prev1 = {}, Move prev2 = {}) const noexcept {
-      for (size_t i = 0; i < kMaxKillers && killerMoves_[ply][i]; ++i) {
-        if (move == killerMoves_[ply][i]) {
-          return kKillerPriority - static_cast<int32_t>(i);
-        }
-      }
+    Move getKiller(int ply, size_t index) const noexcept {
+      return killerMoves_[ply][index];
+    }
 
+    template <Side side>
+    int32_t getQuietScore(Move move, Move prev1 = {}, Move prev2 = {}) const noexcept {
       int32_t score = quietHistory_[side][move.from()][move.to()];
       const Piece piece = move.getMovedPiece();
       const Square to = move.to();

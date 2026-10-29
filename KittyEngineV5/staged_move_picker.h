@@ -8,29 +8,28 @@
 #include <cassert>
 #include <cstdint>
 #include <optional>
-#include <utility>
 
 namespace bb::searching {
 
-  // Lazily pick move by reducing sorting overhead.
-  // Queen Promotions -> Good Captures -> Killer Moves -> Quiet Moves -> Bad Violent Moves -> Underpromotions.
+  // Lazily pick moves in priority stages entirely in-place:
+  // TT Move -> Good Violent (Queen promos & SEE >= 0) -> Killers -> Good Quiets -> Bad Quiets -> Bad Violent (SEE < 0 & Underpromos).
   class StagedMovePicker {
     enum class Stage : uint8_t {
       TTMove,
-      PreSort,
-      Sort,
+      GoodViolent,
+      Killer1,
+      Killer2,
+      Quiets,
+      BadViolent
     };
 
     static constexpr int32_t kSeeMargin = 0;
-
-    // Move Ordering Priorities.
     static constexpr int32_t kPromotionPriority = 2'000'000;
     static constexpr int32_t kGoodCapturePriority = 1'000'000;
     static constexpr int32_t kBadViolentPriority = -1'000'000;
     static constexpr int32_t kUnderpromotionPriority = -2'000'000;
 
     static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1320, 1500, 1900, 5000 };
-
 
     template <Side ally>
     int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
@@ -125,78 +124,76 @@ namespace bb::searching {
       return gains.front() - reply;
     }
 
+    template <typename It, typename Pred>
+    static It forwardPartition(It first, It last, Pred pred) noexcept {
+      first = std::find_if_not(first, last, pred);
+      for (auto it = first; it != last; ++it) {
+        if (pred(*it)) {
+          std::iter_swap(first++, it);
+        }
+      }
+      return first;
+    }
+
+    template <typename It, typename ScoreFn>
+    static It sortAndSplitAtZero(It begin, It end, ScoreFn scoreFn) noexcept {
+      const size_t n = static_cast<size_t>(end - begin);
+      if (n <= 1) {
+        return (n == 1 && scoreFn(*begin) < 0) ? begin : end;
+      }
+
+      int32_t scores[256];
+      assert(n <= 256);
+      for (size_t i = 0; i < n; ++i) {
+        scores[i] = scoreFn(*(begin + i));
+      }
+
+      for (size_t i = 1; i < n; ++i) {
+        const Move keyMove = *(begin + i);
+        const int32_t keyScore = scores[i];
+        size_t j = i;
+        while (j > 0 && scores[j - 1] < keyScore) {
+          *(begin + j) = *(begin + j - 1);
+          scores[j] = scores[j - 1];
+          --j;
+        }
+        *(begin + j) = keyMove;
+        scores[j] = keyScore;
+      }
+
+      auto it = std::find_if(scores, scores + n, [](int32_t s) noexcept { return s < 0; });
+      return begin + (it - scores);
+    }
+
     template <NodeMeta meta>
-    void sortMoves(auto begin, auto end, const BoardState& state) noexcept {
-      const size_t count = static_cast<size_t>(end - begin);
-      if (count == 0) {
-        badViolentBegin_ = end;
-        badNonViolentBegin_ = end;
-        return;
+    int32_t scoreViolent(const BoardState& state, Move m) const noexcept {
+      const Piece promo = m.getPromotedPieceType();
+      if (promo == Queen) {
+        return kPromotionPriority + staticExchangeEvaluate<meta.side>(state, m);
       }
-
-      struct PriorityMove {
-        int32_t priority;
-        Move move;
-      };
-      static SmallVec<PriorityMove> scoredMoves{};
-      scoredMoves.resize(count);
-
-      size_t badViolentCount = 0;
-      size_t badQuietCount = 0;
-
-      auto scoreMove = [&](Move move) noexcept -> int32_t {
-        if (move.isViolentMove()) {
-          const Piece promotion = move.getPromotedPieceType();
-          if (promotion == Queen) {
-            return kPromotionPriority + staticExchangeEvaluate<meta.side>(state, move);
-          }
-          if (promotion != NoPiece) {
-            // Underpromotion is bad, avoid calculating SEE.
-            ++badViolentCount;
-            return kUnderpromotionPriority + static_cast<int32_t>(promotion);
-          }
-          const int32_t see = staticExchangeEvaluate<meta.side>(state, move);
-          if (see < kSeeMargin) {
-            ++badViolentCount;
-            return kBadViolentPriority + see;
-          }
-          constexpr Side enemy = getOtherSide(meta.side);
-          const Piece victim = move.isCapture() ? state.getPieceAt<enemy>(move.to()) : (move.isEnpassant() ? Pawn : NoPiece);
-          const int32_t capScore = victim != NoPiece ? history_.getCaptureScore<meta.side>(move.getMovedPiece(), move.to(), victim) : 0;
-          return kGoodCapturePriority + see + capScore;
-        }
-
-        if constexpr (meta.isQuiescence()) {
-          return 0; // Quiet evasion
-        } else {
-          const int32_t score = history_.getQuietScore<meta.side>(ply_, move, prev1_, prev2_);
-          if (score < 0) {
-            ++badQuietCount;
-          }
-          return score;
-        }
-      };
-
-      std::transform(begin, end, scoredMoves.begin(), [&](Move move) {
-        return PriorityMove{ scoreMove(move), move };
-      });
-
-      if (count > 1) {
-        std::ranges::sort(scoredMoves, std::greater<>{}, &PriorityMove::priority);
-        std::ranges::transform(scoredMoves, begin, &PriorityMove::move);
+      if (promo != NoPiece) {
+        return kUnderpromotionPriority + static_cast<int32_t>(promo);
       }
-
-      badViolentBegin_ = end - badViolentCount;
-      badNonViolentBegin_ = badViolentBegin_ - badQuietCount;
+      const int32_t see = staticExchangeEvaluate<meta.side>(state, m);
+      if (see < kSeeMargin) {
+        return kBadViolentPriority + see;
+      }
+      constexpr Side enemy = getOtherSide(meta.side);
+      const Piece victim = m.isCapture() ? state.getPieceAt<enemy>(m.to()) : (m.isEnpassant() ? Pawn : NoPiece);
+      const int32_t capScore = victim != NoPiece ? history_.getCaptureScore<meta.side>(m.getMovedPiece(), m.to(), victim) : 0;
+      return kGoodCapturePriority + see + capScore;
     }
 
     int ply_;
     Move prev1_{};
     Move prev2_{};
     const HistoryHeuristics& history_;
-    Stage stage = Stage::TTMove;
-    MoveList::iterator current{};
-    MoveList::iterator badNonViolentBegin_{};
+
+    Stage stage_ = Stage::TTMove;
+
+    MoveList::iterator current_{};
+    MoveList::iterator goodViolentEnd_{};
+    MoveList::iterator badQuietBegin_{};
     MoveList::iterator badViolentBegin_{};
 
   public:
@@ -204,42 +201,113 @@ namespace bb::searching {
       : ply_(ply), prev1_(prev1), prev2_(prev2), history_(history) {}
 
     bool isBadViolentMove() const noexcept {
-      return current > badViolentBegin_;
+      return current_ > badViolentBegin_;
     }
 
     bool isBadQuietMove() const noexcept {
-      return current > badNonViolentBegin_ && current <= badViolentBegin_;
+      return current_ > badQuietBegin_ && current_ <= badViolentBegin_;
     }
 
     template <NodeMeta meta>
     Move pick(MoveList& moves, Move ttMove, const BoardState& state) noexcept {
-      switch (stage) {
-      case Stage::TTMove: {
-        stage = Stage::PreSort;
-        current = moves.begin();
-        badViolentBegin_ = moves.end();
-        badNonViolentBegin_ = moves.end();
-        if constexpr (meta.isInternal()) {
-          // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
-          if (ttMove) {
-            auto it = std::find(moves.begin(), moves.end(), ttMove);
-            assert(it != moves.end());
-            std::swap(*current, *it);
-            return *current++;
+      auto pickKiller = [&](Move killer) noexcept -> bool {
+        if (killer) {
+          auto it = std::find(current_, badViolentBegin_, killer);
+          if (it != badViolentBegin_) {
+            std::swap(*current_, *it);
+            return true;
           }
         }
-        [[fallthrough]];
-      }
-      case Stage::PreSort: {
-        sortMoves<meta>(current, moves.end(), state);
-        stage = Stage::Sort;
-        [[fallthrough]];
-      }
-      case Stage::Sort: [[fallthrough]];
-      default: {
-        assert(current != moves.end());
-        return *current++;
-      }
+        return false;
+      };
+
+      while (true) {
+        switch (stage_) {
+        case Stage::TTMove: {
+          stage_ = Stage::GoodViolent;
+          current_ = moves.begin();
+          goodViolentEnd_ = moves.begin();
+          badQuietBegin_ = moves.end();
+          badViolentBegin_ = moves.end();
+          if constexpr (meta.isInternal()) {
+            // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
+            if (ttMove) {
+              auto it = std::find(moves.begin(), moves.end(), ttMove);
+              assert(it != moves.end());
+              std::swap(*current_, *it);
+              return *current_++;
+            }
+          }
+          [[fallthrough]];
+        }
+
+        case Stage::GoodViolent: {
+          if (current_ == goodViolentEnd_) {
+            auto violentsEnd = forwardPartition(current_, moves.end(), [](Move m) noexcept {
+              return m.isViolentMove();
+            });
+            goodViolentEnd_ = sortAndSplitAtZero(current_, violentsEnd, [&](Move m) noexcept {
+              return scoreViolent<meta>(state, m);
+            });
+            const size_t numBadViolents = static_cast<size_t>(violentsEnd - goodViolentEnd_);
+            if (numBadViolents > 0) {
+              std::rotate(goodViolentEnd_, violentsEnd, moves.end());
+            }
+            badViolentBegin_ = moves.end() - numBadViolents;
+            badQuietBegin_ = badViolentBegin_;
+          }
+
+          if (current_ < goodViolentEnd_) {
+            return *current_++;
+          }
+          stage_ = Stage::Killer1;
+          [[fallthrough]];
+        }
+
+        case Stage::Killer1: {
+          stage_ = Stage::Killer2;
+          if constexpr (meta.isInternal()) {
+            if (pickKiller(history_.getKiller(ply_, 0))) {
+              return *current_++;
+            }
+          }
+          [[fallthrough]];
+        }
+
+        case Stage::Killer2: {
+          stage_ = Stage::Quiets;
+          if constexpr (meta.isInternal()) {
+            const Move k1 = history_.getKiller(ply_, 0);
+            const Move k2 = history_.getKiller(ply_, 1);
+            if (k2 != k1 && pickKiller(k2)) {
+              return *current_++;
+            }
+          }
+          [[fallthrough]];
+        }
+
+        case Stage::Quiets: {
+          if (badQuietBegin_ == badViolentBegin_) {
+            if constexpr (meta.isInternal()) {
+              badQuietBegin_ = sortAndSplitAtZero(current_, badViolentBegin_, [&](Move m) noexcept {
+                return history_.getQuietScore<meta.side>(m, prev1_, prev2_);
+              });
+            }
+          }
+
+          if (current_ < badViolentBegin_) {
+            return *current_++;
+          }
+          stage_ = Stage::BadViolent;
+          [[fallthrough]];
+        }
+
+        case Stage::BadViolent: {
+          return *current_++;
+        }
+        default:
+          return Move{};
+        }
       }
     }
   };

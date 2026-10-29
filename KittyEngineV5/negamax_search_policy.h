@@ -55,6 +55,10 @@ namespace bb::searching {
     static constexpr int32_t kFutilityMarginPerDepth = 100;
     static constexpr int kReverseFutilityDepth = 3;
     static constexpr int32_t kReverseFutilityMarginPerDepth = 100;
+    static constexpr int kLateMovePruningDepth = 4;
+    static constexpr int lateMovePruningThreshold(int depth) noexcept {
+      return 4 + 3 * depth * depth;
+    }
     static constexpr int kLateMoveReductionDepth = 3; // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
     static inline const auto kLmrReductions = [] {
       std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff+1> table{};
@@ -321,6 +325,7 @@ namespace bb::searching {
       }
 
       Move bestMove{};
+      int quietCount = 0;
 
       const Move prev1 = getPrevMove(frame, 1);
       const Move prev2 = getPrevMove(frame, 2);
@@ -332,11 +337,23 @@ namespace bb::searching {
         frame->move = move;
 
         if constexpr (meta.isInternal() && !meta.isPV) {
-          // Futility Pruning.
-          if ((i > 0) && (depth <= kFutilityDepth) && !inCheck && !move.isViolentMove() &&
-              !history_.isKillerMove(ply, move) &&
-              getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score) {
-            continue;
+          if (!move.isViolentMove()) {
+            ++quietCount;
+            // Late Move Pruning
+            if (depth <= kLateMovePruningDepth && !inCheck &&
+                quietCount >= lateMovePruningThreshold(depth) &&
+                !history_.isKillerMove(ply, move) &&
+                !isCheckmateScore(bestEval.score) &&
+                context.state.template countMMPiece<meta.side>() >= 2) {
+              continue;
+            }
+
+            // Futility Pruning.
+            if ((i > 0) && (depth <= kFutilityDepth) && !inCheck &&
+                !history_.isKillerMove(ply, move) &&
+                getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score) {
+              continue;
+            }
           }
         } else if constexpr (meta.isQuiescence()) {
           // Skip bad violent move if no check is involved.
@@ -365,7 +382,7 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (depth >= kLateMoveReductionDepth && !inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(ply, move)) {
+            if (depth >= kLateMoveReductionDepth && !inCheck && (movePicker.isBadViolentMove() || (!move.isViolentMove() && !history_.isKillerMove(ply, move)))) {
               reduction = int(kLmrReductions[depth][i]);
               if (movePicker.isBadQuietMove() || movePicker.isBadViolentMove()) {
                 ++reduction;
@@ -522,7 +539,7 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (depth >= kLateMoveReductionDepth && !inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(0, move)) {
+            if (depth >= kLateMoveReductionDepth && !inCheck && (movePicker.isBadViolentMove() || (!move.isViolentMove() && !history_.isKillerMove(0, move)))) {
               reduction = int(kLmrReductions[depth][i]);
               if (movePicker.isBadQuietMove() || movePicker.isBadViolentMove()) {
                 ++reduction;
