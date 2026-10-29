@@ -1,0 +1,34 @@
+#pragma once
+#include <cstdint>
+
+namespace bb::searching {
+  struct NegamaxSearchConfig {
+    // Reverse Futility Pruning (Static Null Move Pruning)
+    int reverseFutilityDepth = 3;
+    int32_t reverseFutilityMarginPerDepth = 100;
+
+    // Null Move Pruning
+    int nullMoveDepth = 2;
+
+    // Futility Pruning
+    int futilityDepth = 3;
+    int32_t futilityMarginPerDepth = 100;
+
+    // Late Move Reductions
+    int lateMoveReductionDepth = 3;
+    double lateMoveReductionBase = 0.7844;
+    double lateMoveReductionDivisor = 2.4696;
+    double lateMoveReductionHistoryK = 1.0 / 1024.0;
+    double lateMoveReductionHistoryB = 0.0;
+
+    // History Heuristics Limits
+    int32_t maxQuietHistory = 1000;
+    int32_t maxRefutationHistory = 1000;
+    int32_t maxFollowupHistory = 500;
+    int32_t maxCaptureHistory = 400;
+
+    // Safety and Stability Invariants
+    static constexpr int kNullMoveReductionDivisor = 2;
+    static constexpr int kNullMoveMinPieces = 2;
+  };
+}

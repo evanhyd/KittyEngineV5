@@ -1,3 +1,4 @@
+#include "negamax_search_config.h"
 #include "board.h"
 #include "negamax_search_policy.h"
 #include "handcraft_evaluation_policy.h"
@@ -38,11 +39,12 @@ void printHelp() {
 
 template <typename EvalPolicy>
 void runEngine(EvalPolicy&& evalPolicy, size_t ttCapacity) {
+  constexpr bb::searching::NegamaxSearchConfig searchConfig{};
   constexpr int aspirationWindow = 60;
   constexpr float timePercentage = 0.05f;
 
   bb::Board board{
-    bb::searching::NegamaxSearchPolicy{std::forward<EvalPolicy>(evalPolicy), aspirationWindow, ttCapacity},
+    bb::searching::NegamaxSearchPolicy{std::forward<EvalPolicy>(evalPolicy), searchConfig, aspirationWindow, ttCapacity},
     bb::time_control::EqualPercentageTimeControlPolicy{timePercentage}
   };
 

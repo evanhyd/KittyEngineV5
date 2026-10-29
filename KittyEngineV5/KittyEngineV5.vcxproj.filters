@@ -129,6 +129,9 @@
     <ClInclude Include="history_heuristics.h">
       <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
+    <ClInclude Include="negamax_search_config.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="weights.bin">

@@ -206,10 +206,6 @@ namespace bb::searching {
       return current_ > badViolentBegin_;
     }
 
-    bool isBadQuietMove() const noexcept {
-      return current_ > badQuietBegin_ && current_ <= badViolentBegin_;
-    }
-
     template <NodeMeta meta>
     Move pick(MoveList& moves, Move ttMove, const BoardState& state) noexcept {
       auto pickKiller = [&](Move killer) noexcept -> bool {

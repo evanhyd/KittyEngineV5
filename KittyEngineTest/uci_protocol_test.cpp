@@ -32,6 +32,10 @@ namespace {
   constexpr size_t kTestTranspositionEntries = 1024;
   constexpr float kTestTimePercentage = 0.05f;
 
+  auto makeUciSearch(int32_t aspirationWindow, size_t ttEntries = kTestTranspositionEntries) {
+    return UciSearch{evaluation::HandCraftEvaluationPolicy{}, searching::NegamaxSearchConfig{}, aspirationWindow, ttEntries};
+  }
+
   struct RecordingSearchPolicy {
     int* requestedDepth;
     std::vector<searching::SearchResult>* results;
@@ -329,7 +333,7 @@ TEST(UciIntegration, KeepsHumanViewOffProtocolOutput) {
   std::istringstream input{"uci\nisready\nquit\nuci\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -348,7 +352,7 @@ TEST(UciIntegration, RunsFastAndDetailedPerftOnCurrentPosition) {
     "quit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -368,7 +372,7 @@ TEST(UciIntegration, RunsFastAndDetailedPerftOnCurrentPosition) {
 }
 
 TEST(SearchStatistics, CountsRootAndLeafPositions) {
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 32'000, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(32'000), TestTimePolicy{kTestTimePercentage}};
   MoveList legalMoves;
   board.getState().generateMoves<White>(legalMoves);
 
@@ -377,7 +381,7 @@ TEST(SearchStatistics, CountsRootAndLeafPositions) {
 }
 
 TEST(SearchStatistics, ReusesRootTranspositionWithNanosecondDuration) {
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
   const auto cached = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
 
@@ -390,7 +394,7 @@ TEST(SearchStatistics, ReusesRootTranspositionWithNanosecondDuration) {
 }
 
 TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16},
+  UciBoard board{makeUciSearch(80, 1u << 16),
                  TestTimePolicy{kTestTimePercentage}};
   const auto cold = board.search(5, std::nullopt, [](const searching::SearchResult&) {});
   ASSERT_TRUE(cold.bestMove.has_value());
@@ -423,7 +427,7 @@ TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
 
 TEST(SearchFrame, MateDistanceUsesActualPlyAcrossDepths) {
   BoardState state{"7k/8/5KQ1/8/8/8/8/8 w - - 0 1"};
-  UciSearch search{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16};
+  UciSearch search{makeUciSearch(80, 1u << 16)};
   searching::PositionHistory history;
   history.push(state.getHash());
   searching::PVLine pvLine;
@@ -470,7 +474,7 @@ TEST(UciIntegration, StopsAfterMateInOneAndReportsBestMove) {
   std::istringstream input{"position fen 7k/8/5KQ1/8/8/8/8/8 w - - 0 1\ngo depth 4\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 16},
+  UciBoard board{makeUciSearch(80, 1u << 16),
                  TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
@@ -836,7 +840,7 @@ TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {
   std::istringstream input{"position startpos moves e2e4 e7e5\nucinewgame\nposition startpos moves e2e4 e7e5\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -850,7 +854,7 @@ TEST(UciIntegration, NewGameKeepsBoardUntilNextPositionCommand) {
   std::istringstream input{"position startpos moves e2e4\nucinewgame\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -914,7 +918,7 @@ TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
     "isready\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -946,7 +950,7 @@ TEST(UciIntegration, RejectsInvalidDepthAndReportsNoLegalMove) {
     "go depth 2\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -980,7 +984,7 @@ TEST(UciIntegration, ReportsCheckmateWithoutLegalMove) {
   std::istringstream input{"position fen 7k/6Q1/6K1/8/8/8/8/8 b - - 0 1\ngo depth 1\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -1041,7 +1045,7 @@ TEST(UciIntegration, PlayAcceptsLegalMoveAndRejectsIllegalMove) {
   std::istringstream input{"play e2e4\nplay e2e5\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
-  UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
@@ -1067,7 +1071,7 @@ TEST(UciIntegration, ReplaysPromotionCastlingAndEnPassant) {
     std::istringstream input{example.command};
     std::ostringstream uciOutput;
     std::ostringstream humanOutput;
-    UciBoard board{UciSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+    UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
     user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
     terminal.run();
     EXPECT_EQ(notation::boardToFen(board.getState()), example.expected);

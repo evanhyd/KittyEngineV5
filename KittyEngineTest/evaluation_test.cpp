@@ -392,7 +392,7 @@ TEST(Nnue, LongMoveSequenceWithoutEvaluationRefreshesSafely) {
 TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
   Board board{
     searching::NegamaxSearchPolicy{
-      evaluation::NNUEEvaluationPolicy{testWeightsPath()}, 80, 1u << 16
+      evaluation::NNUEEvaluationPolicy{testWeightsPath()}, searching::NegamaxSearchConfig{}, 80, 1u << 16
     },
     time_control::EqualPercentageTimeControlPolicy{0.05f}
   };
@@ -415,7 +415,7 @@ TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
 #if 0
 TEST(EvaluationDecision, AvoidsBishopCaptureBlunderAtDepth10) {
   Board board{
-    searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, 80, 1u << 20},
+    searching::NegamaxSearchPolicy{evaluation::HandCraftEvaluationPolicy{}, searching::NegamaxSearchConfig{}, 80, 1u << 20},
     time_control::EqualPercentageTimeControlPolicy{0.05f}
   };
   board.setPosition("3r2k1/5ppp/2p1p1b1/1p6/2Pq1P2/1P1PN2P/rP1Q1RP1/3R2K1 b - - 0 26");

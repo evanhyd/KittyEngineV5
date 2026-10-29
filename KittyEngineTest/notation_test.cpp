@@ -21,6 +21,10 @@ namespace {
   constexpr size_t kTestTranspositionEntries = 1024;
   constexpr float kTestTimePercentage = 0.05f;
 
+  auto makeTestSearch(int32_t aspirationWindow) {
+    return TestSearch{evaluation::HandCraftEvaluationPolicy{}, searching::NegamaxSearchConfig{}, aspirationWindow, kTestTranspositionEntries};
+  }
+
   struct StatefulEvaluator {
     int* calls;
     int* copies;
@@ -116,7 +120,7 @@ TEST(BoardState, GettersTrackMakeAndUnmake) {
 }
 
 TEST(Board, StartsAtInitialPosition) {
-  const TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  const TestBoard board{makeTestSearch(50), TestTimePolicy{kTestTimePercentage}};
   EXPECT_EQ(board.getState().getSide(), White);
   EXPECT_EQ(board.getState().getPieceAt(E1).side, White);
   EXPECT_EQ(board.getState().getPieceAt(E1).piece, King);
@@ -131,7 +135,7 @@ TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
   const void* firstAddress = nullptr;
   bool stableAddress = true;
   Board board{searching::NegamaxSearchPolicy{
-    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, searching::NegamaxSearchConfig{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
   const int copiesBeforeSearch = copies;
 
   ASSERT_TRUE(board.search(1, std::nullopt, [](const searching::SearchResult&) {}).bestMove.has_value());
@@ -206,7 +210,7 @@ TEST(TerminalUI, PrintsWelcomeMessage) {
   std::istringstream in;
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  TestBoard board{makeTestSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
   terminal.run();
   EXPECT_NE(humanOut.str().find("Welcome to KittyEngineV5"), std::string::npos);
@@ -218,7 +222,7 @@ TEST(TerminalUI, RunStopsAtQuitOrEndOfInput) {
   std::istringstream in{"quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  TestBoard board{makeTestSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
   terminal.run();
   EXPECT_EQ(humanOut.str().find("FEN: "), humanOut.str().rfind("FEN: "));
@@ -232,7 +236,7 @@ TEST(TerminalUI, RendersBoardAndSuppressesUnchangedFrames) {
     "quit\n"};
   std::ostringstream uciOut;
   std::ostringstream humanOut;
-  TestBoard board{TestSearch{evaluation::HandCraftEvaluationPolicy{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+  TestBoard board{makeTestSearch(50), TestTimePolicy{kTestTimePercentage}};
   user_interface::TerminalUI terminal(board, in, uciOut, humanOut);
 
   terminal.run();
