@@ -93,6 +93,13 @@ namespace bb::searching {
       return Move{};
     }
 
+    int32_t getStaticScore(const SearchContext& context, SearchStack* frame) noexcept {
+      if (!frame->staticScore) {
+        frame->staticScore = evalPolicy_.evaluate(context.state);
+      }
+      return *frame->staticScore;
+    }
+
     static constexpr size_t pvOffset(size_t ply) noexcept {
       return ply * (2 * (kMaxDepthHardCutoff + 1) - ply + 1) / 2;
     }
@@ -257,12 +264,6 @@ namespace bb::searching {
       Eval bestEval(alpha, false);
       const bool inCheck = frame->inCheck.value_or(context.state.template isInCheck<meta.side>());
       frame->inCheck = inCheck;
-      const auto getStaticScore = [&]() noexcept {
-        if (!frame->staticScore) {
-          frame->staticScore = evalPolicy_.evaluate(context.state);
-        }
-        return *frame->staticScore;
-      };
 
       if constexpr (meta.isInternal()) {
         // Checkmate or draw.
@@ -276,7 +277,7 @@ namespace bb::searching {
           if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= 2) {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
-            if (depth <= kReverseFutilityDepth && getStaticScore() - depth * kReverseFutilityMarginPerDepth >= beta) {
+            if (depth <= kReverseFutilityDepth && getStaticScore(context, frame) - depth * kReverseFutilityMarginPerDepth >= beta) {
               const Eval eval(beta, false);
               storeTT(context, frame, depth, TranspositionTable::ScoreType::LowerBound, eval, ttMove, inCheck);
               return eval;
@@ -284,7 +285,7 @@ namespace bb::searching {
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
             if constexpr (meta.canNullMove) {
-              if (depth >= 2 && getStaticScore() >= beta) {
+              if (depth >= 2 && getStaticScore(context, frame) >= beta) {
                 const int reduction = std::max(1, depth / 2);
                 MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
                 context.positionHistory.push(context.state.getHash());
@@ -312,7 +313,7 @@ namespace bb::searching {
             return Eval(evaluation::kCheckmateLossScore + ply, false);
           }
         } else {
-          const int32_t standPat = getStaticScore();
+          const int32_t standPat = getStaticScore(context, frame);
           if (standPat >= beta) {
             return Eval(beta, false);
           }
@@ -325,7 +326,7 @@ namespace bb::searching {
       }
 
       Move bestMove{};
-      int quietCount = 0;
+      //int quietCount = 0;
 
       const Move prev1 = getPrevMove(frame, 1);
       const Move prev2 = getPrevMove(frame, 2);
@@ -338,20 +339,21 @@ namespace bb::searching {
 
         if constexpr (meta.isInternal() && !meta.isPV) {
           if (!move.isViolentMove()) {
-            ++quietCount;
-            // Late Move Pruning
-            if (depth <= kLateMovePruningDepth && !inCheck &&
-                quietCount >= lateMovePruningThreshold(depth) &&
-                !history_.isKillerMove(ply, move) &&
-                !isCheckmateScore(bestEval.score) &&
-                context.state.template countMMPiece<meta.side>() >= 2) {
-              continue;
-            }
+            //++quietCount;
+
+            //// Late Move Pruning. Only good for bullet and blitz format.
+            //if (depth <= kLateMovePruningDepth && !inCheck &&
+            //    quietCount >= lateMovePruningThreshold(depth) &&
+            //    !history_.isKillerMove(ply, move) &&
+            //    !isCheckmateScore(bestEval.score) &&
+            //    context.state.template countMMPiece<meta.side>() >= 2) {
+            //  continue;
+            //}
 
             // Futility Pruning.
             if ((i > 0) && (depth <= kFutilityDepth) && !inCheck &&
                 !history_.isKillerMove(ply, move) &&
-                getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score) {
+                getStaticScore(context, frame) + kFutilityMarginPerDepth * depth <= bestEval.score) {
               continue;
             }
           }
@@ -585,13 +587,17 @@ namespace bb::searching {
             beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(searchAttempt));
             continue;
           } else if (bestEval.score <= alpha) {
+            bestMove = moves[0];
             alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(searchAttempt));
             continue;
           }
         }
 
         // Update TT and PV.
-        storeTT(context, searchStack_.data(), context.maxDepth, TranspositionTable::ScoreType::Exact, bestEval, bestMove ? bestMove : moves[0], inCheck);
+        if (!bestMove) {
+          bestMove = moves[0];
+        }
+        storeTT(context, searchStack_.data(), context.maxDepth, TranspositionTable::ScoreType::Exact, bestEval, bestMove, inCheck);
         param.pvLine.resize(searchStack_[0].pvLength);
         std::copy_n(pvMoves(searchStack_.data()), searchStack_[0].pvLength, param.pvLine.begin());
         return makeResult(bestEval.score, bestMove);

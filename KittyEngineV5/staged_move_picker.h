@@ -17,9 +17,11 @@ namespace bb::searching {
     enum class Stage : uint8_t {
       TTMove,
       GoodViolent,
+      YieldGoodViolent,
       Killer1,
       Killer2,
       Quiets,
+      YieldQuiets,
       BadViolent
     };
 
@@ -242,21 +244,23 @@ namespace bb::searching {
         }
 
         case Stage::GoodViolent: {
-          if (current_ == goodViolentEnd_) {
-            auto violentsEnd = forwardPartition(current_, moves.end(), [](Move m) noexcept {
-              return m.isViolentMove();
-            });
-            goodViolentEnd_ = sortAndSplitAtZero(current_, violentsEnd, [&](Move m) noexcept {
-              return scoreViolent<meta>(state, m);
-            });
-            const size_t numBadViolents = static_cast<size_t>(violentsEnd - goodViolentEnd_);
-            if (numBadViolents > 0) {
-              std::rotate(goodViolentEnd_, violentsEnd, moves.end());
-            }
-            badViolentBegin_ = moves.end() - numBadViolents;
-            badQuietBegin_ = badViolentBegin_;
+          stage_ = Stage::YieldGoodViolent;
+          auto violentsEnd = forwardPartition(current_, moves.end(), [](Move m) noexcept {
+            return m.isViolentMove();
+          });
+          goodViolentEnd_ = sortAndSplitAtZero(current_, violentsEnd, [&](Move m) noexcept {
+            return scoreViolent<meta>(state, m);
+          });
+          const size_t numBadViolents = static_cast<size_t>(violentsEnd - goodViolentEnd_);
+          if (numBadViolents > 0) {
+            std::rotate(goodViolentEnd_, violentsEnd, moves.end());
           }
+          badViolentBegin_ = moves.end() - numBadViolents;
+          badQuietBegin_ = badViolentBegin_;
+          [[fallthrough]];
+        }
 
+        case Stage::YieldGoodViolent: {
           if (current_ < goodViolentEnd_) {
             return *current_++;
           }
@@ -287,14 +291,16 @@ namespace bb::searching {
         }
 
         case Stage::Quiets: {
-          if (badQuietBegin_ == badViolentBegin_) {
-            if constexpr (meta.isInternal()) {
-              badQuietBegin_ = sortAndSplitAtZero(current_, badViolentBegin_, [&](Move m) noexcept {
-                return history_.getQuietScore<meta.side>(m, prev1_, prev2_);
-              });
-            }
+          stage_ = Stage::YieldQuiets;
+          if constexpr (meta.isInternal()) {
+            badQuietBegin_ = sortAndSplitAtZero(current_, badViolentBegin_, [&](Move m) noexcept {
+              return history_.getQuietScore<meta.side>(m, prev1_, prev2_);
+            });
           }
+          [[fallthrough]];
+        }
 
+        case Stage::YieldQuiets: {
           if (current_ < badViolentBegin_) {
             return *current_++;
           }
