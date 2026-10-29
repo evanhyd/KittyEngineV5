@@ -353,10 +353,12 @@ namespace bb::searching {
         const Eval eval = [&] {
           if constexpr (meta.isInternal()) {
             constexpr auto childMeta = meta.flip().enableNullMove();
+            const int extension = inCheck ? 1 : 0;
+            const int childDepth = depth - 1 + extension;
 
             // First move: full window. Subsequent moves: scout search.
             if (i == 0) {
-              return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, depth - 1, bestEval.score, beta);
+              return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, childDepth, bestEval.score, beta);
             }
 
             // Late move reduction.
@@ -366,18 +368,18 @@ namespace bb::searching {
             if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(ply, move)) {
               reduction = int(kLmrReductions[depth][i]);
             }
-            Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
+            Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);
 
             // If LMR improves alpha, research with scout.
             if (reduction > 0 && result.score > bestEval.score) {
-              result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1, bestEval.score, bestEval.score + 1);
+              result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth, bestEval.score, bestEval.score + 1);
             }
 
             // If within window, full search.
             // Non PV can stop, because it only needed to prove improvement.
             if constexpr (meta.isPV) {
               if (bestEval.score < result.score && result.score < beta) {
-                result = searchChild<childMeta.setPV(true)>(context, frame + 1, depth - 1, bestEval.score, beta);
+                result = searchChild<childMeta.setPV(true)>(context, frame + 1, childDepth, bestEval.score, beta);
               }
             }
             return result;
@@ -504,10 +506,12 @@ namespace bb::searching {
 
           const Eval eval = [&] {
             constexpr auto childMeta = meta.flip().enableNullMove();
+            const int extension = inCheck ? 1 : 0;
+            const int childDepth = depth - 1 + extension;
 
             // Disable narrow window on PV and near leaf.
             if (i == 0 || depth == 1) {
-              return searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, beta);
+              return searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, childDepth, bestEval.score, beta);
             }
 
             // Late move reduction.
@@ -518,16 +522,16 @@ namespace bb::searching {
               reduction = int(kLmrReductions[depth][i]);
             }
 
-            Eval result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
+            Eval result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);
 
             // If LMR improves alpha, research with scout.
             if (reduction > 0 && result.score > bestEval.score) {
-              result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, bestEval.score + 1);
+              result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, childDepth, bestEval.score, bestEval.score + 1);
             }
 
             // If within window, full search.
             if (bestEval.score < result.score && result.score < beta) {
-              result = searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, depth - 1, bestEval.score, beta);
+              result = searchChild<childMeta.setPV(true)>(context, searchStack_.data() + 1, childDepth, bestEval.score, beta);
             }
             return result;
           }();
