@@ -170,7 +170,7 @@ namespace bb {
   inline constexpr std::array<Bitboard, kSideSize> kQueenCastleOccupancyMasks = { toBitboard(B1, C1, D1) , toBitboard(B8, C8, D8) };
   inline constexpr std::array<Bitboard, kSideSize> kKingCastleSafetyMasks = { toBitboard(E1, F1, G1) , toBitboard(E8, F8, G8) };
   inline constexpr std::array<Bitboard, kSideSize> kQueenCastleSafetyMasks = { toBitboard(C1, D1, E1) , toBitboard(C8, D8, E8) };
-  inline constexpr auto kCastlePermissionMask = []() {
+  inline constexpr auto kCastlePermissionMask = []() consteval {
     std::array<CastlePermission, kSquareSize> table{};
     table.fill(0b00001111);
     table[A1] &= ~WhiteQueenCastle;
@@ -186,7 +186,7 @@ namespace bb {
   /////////////////
   // MASK TABLES //
   /////////////////
-  inline constexpr auto kSquareToRankMasks = []() {
+  inline constexpr auto kSquareToRankMasks = []() consteval {
     std::array<Bitboard, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
       table[i] = kRank8Mask << (getSquareRank(i) * kBoardLenSize);
@@ -194,7 +194,7 @@ namespace bb {
     return table;
   }();
 
-  inline constexpr auto kSquareToFileMasks = []() {
+  inline constexpr auto kSquareToFileMasks = []() consteval {
     std::array<Bitboard, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
       table[i] = kFileAMask << getSquareFile(i);
@@ -202,8 +202,8 @@ namespace bb {
     return table;
   }();
 
-  inline constexpr auto kSquareToDiagonalMasks = []() {
-    auto kDiagonalMasks = []() {
+  inline constexpr auto kSquareToDiagonalMasks = []() consteval {
+    auto kDiagonalMasks = []() consteval {
       std::array<Bitboard, 15> table{ 1 };
       for (Square i = 1; i < table.size(); ++i) {
         table[i] = shiftRight(table[i - 1]) | shiftDown(table[i - 1]);
@@ -218,8 +218,8 @@ namespace bb {
     return table;
   }();
 
-  inline constexpr auto kSquareToAntiDiagonalMaskTable = []() {
-    auto kAntiDiagonalMasks = []() {
+  inline constexpr auto kSquareToAntiDiagonalMaskTable = []() consteval {
+    auto kAntiDiagonalMasks = []() consteval {
       std::array<Bitboard, 15> table{ 0x80 };
       for (Square i = 1; i < table.size(); ++i) {
         table[i] = shiftLeft(table[i - 1]) | shiftDown(table[i - 1]);
@@ -239,7 +239,7 @@ namespace bb {
   // ATTACK TABLES //
   ///////////////////
   namespace internal {
-    inline constexpr auto kPawnAttackTable = []() {
+    inline constexpr auto kPawnAttackTable = []() consteval {
       std::array<std::array<Bitboard, kSquareSize>, kSideSize> table{};
       for (Square i = 0; i < kSquareSize; ++i) {
         Bitboard bitboard = toBitboard(i);
@@ -249,7 +249,7 @@ namespace bb {
       return table;
     }();
 
-    inline constexpr auto kKnightAttackTable = []() {
+    inline constexpr auto kKnightAttackTable = []() consteval {
       std::array<Bitboard, kSquareSize> table{};
       for (Square i = 0; i < kSquareSize; ++i) {
         Bitboard bitboard = toBitboard(i);
@@ -262,7 +262,7 @@ namespace bb {
       return table;
     }();
 
-    inline constexpr auto kKingAttackTable = []() {
+    inline constexpr auto kKingAttackTable = []() consteval {
       std::array<Bitboard, kSquareSize> table{};
       for (Square i = 0; i < kSquareSize; ++i) {
         Bitboard bitboard = toBitboard(i);
@@ -296,7 +296,7 @@ namespace bb {
 
     // Generate attack ray bitboard at square, spans outward and stops at occupancy bits at each direction.
     inline constexpr Bitboard generateSliderAttackReachable(Piece piece, Square square, Bitboard occupancy) noexcept {
-      constexpr auto isInRange = [](int32_t r, int32_t f) {
+      constexpr auto isInRange = [](int32_t r, int32_t f) constexpr {
         return 0 <= r && r < kBoardLenSize && 0 <= f && f < kBoardLenSize;
       };
 
@@ -433,7 +433,7 @@ namespace bb {
   ////////////////////
   // UTILITY TABLES //
   ////////////////////
-  inline constexpr auto kLineOfSightMasks = []() {
+  inline constexpr auto kLineOfSightMasks = []() consteval {
     std::array<std::array<Bitboard, kSquareSize>, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
       for (Square j = 0; j < kSquareSize; ++j) {
@@ -455,7 +455,7 @@ namespace bb {
     return table;
   }();
 
-  inline const auto kSquareBetweenMasks = []() {
+  inline constexpr auto kSquareBetweenMasks = []() consteval {
     std::array<std::array<Bitboard, kSquareSize>, kSquareSize> table{};
     for (Square i = 0; i < kSquareSize; ++i) {
       for (Square j = 0; j < kSquareSize; ++j) {
@@ -463,9 +463,9 @@ namespace bb {
           continue;
         }
         if (kSquareToDiagonalMasks[i] == kSquareToDiagonalMasks[j] || kSquareToAntiDiagonalMaskTable[i] == kSquareToAntiDiagonalMaskTable[j]) {
-          table[i][j] = getAttack<Bishop>(i, toBitboard(j)) & getAttack<Bishop>(j, toBitboard(i));
+          table[i][j] = internal::generateSliderAttackReachable(Bishop, i, toBitboard(j)) & internal::generateSliderAttackReachable(Bishop, j, toBitboard(i));
         } else if (getSquareRank(i) == getSquareRank(j) || getSquareFile(i) == getSquareFile(j)) {
-          table[i][j] = getAttack<Rook>(i, toBitboard(j)) & getAttack<Rook>(j, toBitboard(i));
+          table[i][j] = internal::generateSliderAttackReachable(Rook, i, toBitboard(j)) & internal::generateSliderAttackReachable(Rook, j, toBitboard(i));
         }
       }
     }

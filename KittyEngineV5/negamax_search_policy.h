@@ -365,8 +365,12 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(ply, move)) {
+            if (depth >= kLateMoveReductionDepth && !inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(ply, move)) {
               reduction = int(kLmrReductions[depth][i]);
+              if (movePicker.isBadQuietMove() || movePicker.isBadViolentMove()) {
+                ++reduction;
+              }
+              reduction = std::min(reduction, childDepth - 1);
             }
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);
 
@@ -518,8 +522,12 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(0, move)) {
+            if (depth >= kLateMoveReductionDepth && !inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(0, move)) {
               reduction = int(kLmrReductions[depth][i]);
+              if (movePicker.isBadQuietMove() || movePicker.isBadViolentMove()) {
+                ++reduction;
+              }
+              reduction = std::min(reduction, childDepth - 1);
             }
 
             Eval result = searchChild<childMeta.setPV(false)>(context, searchStack_.data() + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);

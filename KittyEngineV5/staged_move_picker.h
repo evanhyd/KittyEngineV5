@@ -130,6 +130,7 @@ namespace bb::searching {
       const size_t count = static_cast<size_t>(end - begin);
       if (count == 0) {
         badViolentBegin_ = end;
+        badNonViolentBegin_ = end;
         return;
       }
 
@@ -141,6 +142,7 @@ namespace bb::searching {
       scoredMoves.resize(count);
 
       size_t badViolentCount = 0;
+      size_t badQuietCount = 0;
 
       auto scoreMove = [&](Move move) noexcept -> int32_t {
         if (move.isViolentMove()) {
@@ -167,7 +169,11 @@ namespace bb::searching {
         if constexpr (meta.isQuiescence()) {
           return 0; // Quiet evasion
         } else {
-          return history_.getQuietScore<meta.side>(ply_, move, prev1_, prev2_);
+          const int32_t score = history_.getQuietScore<meta.side>(ply_, move, prev1_, prev2_);
+          if (score < 0) {
+            ++badQuietCount;
+          }
+          return score;
         }
       };
 
@@ -181,6 +187,7 @@ namespace bb::searching {
       }
 
       badViolentBegin_ = end - badViolentCount;
+      badNonViolentBegin_ = badViolentBegin_ - badQuietCount;
     }
 
     int ply_;
@@ -189,14 +196,19 @@ namespace bb::searching {
     const HistoryHeuristics& history_;
     Stage stage = Stage::TTMove;
     MoveList::iterator current{};
+    MoveList::iterator badNonViolentBegin_{};
     MoveList::iterator badViolentBegin_{};
 
   public:
     explicit StagedMovePicker(int ply, Move prev1, Move prev2, const HistoryHeuristics& history) noexcept
       : ply_(ply), prev1_(prev1), prev2_(prev2), history_(history) {}
 
-    [[nodiscard]] bool isBadViolentMove() const noexcept {
+    bool isBadViolentMove() const noexcept {
       return current > badViolentBegin_;
+    }
+
+    bool isBadQuietMove() const noexcept {
+      return current > badNonViolentBegin_ && current <= badViolentBegin_;
     }
 
     template <NodeMeta meta>
@@ -206,8 +218,9 @@ namespace bb::searching {
         stage = Stage::PreSort;
         current = moves.begin();
         badViolentBegin_ = moves.end();
+        badNonViolentBegin_ = moves.end();
         if constexpr (meta.isInternal()) {
-          // If ttMove is valid, then it guarantees exists in the move list.
+          // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
           if (ttMove) {
             auto it = std::find(moves.begin(), moves.end(), ttMove);
             assert(it != moves.end());
