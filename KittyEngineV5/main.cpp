@@ -38,7 +38,7 @@ void printHelp() {
 
 template <typename EvalPolicy>
 void runEngine(EvalPolicy&& evalPolicy, size_t ttCapacity) {
-  constexpr int aspirationWindow = 40;
+  constexpr int aspirationWindow = 60;
   constexpr float timePercentage = 0.05f;
 
   bb::Board board{

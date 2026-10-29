@@ -126,6 +126,9 @@
     <ClInclude Include="node_meta.h">
       <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
+    <ClInclude Include="history_heuristics.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="weights.bin">

@@ -367,3 +367,6 @@ DiagnosticsScratch/
 /KittyEngineV5/weights.bin
 /weights.bin
 /NUL.exe
+
+*.json
+*.ps1

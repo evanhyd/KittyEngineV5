@@ -5,6 +5,7 @@
 #include "transposition_table.h"
 #include "node_meta.h"
 #include "staged_move_picker.h"
+#include "history_heuristics.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -18,7 +19,6 @@ namespace bb::searching {
   template <evaluation::EvaluationPolicy EvalPolicy>
   class NegamaxSearchPolicy {
     // Data Structures Magic.
-    static constexpr size_t kMaxKillers = 3;
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
 
     struct Eval {
@@ -37,34 +37,25 @@ namespace bb::searching {
     };
 
     struct SearchStack {
-      std::array<Move, kMaxKillers> killerMoves{};
+      Move move{};
       uint32_t pvLength = 0;
       std::optional<int32_t> staticScore;
       std::optional<bool> inCheck;
 
-      void clearForPly() {
+      void clearForPly() noexcept {
+        move = Move{};
         pvLength = 0;
         staticScore = std::nullopt;
         inCheck = std::nullopt;
       }
-
-      bool isKillerMove(Move move) const noexcept {
-        return std::find(killerMoves.begin(), killerMoves.end(), move) != killerMoves.end();
-      }
     };
-
-    template <typename T>
-    using ButterFlyTable = std::array<std::array<T, kSquareSize>, kSquareSize>;
 
     // Pruning Magic.
     static constexpr int kFutilityDepth = 3;
     static constexpr int32_t kFutilityMarginPerDepth = 100;
     static constexpr int kReverseFutilityDepth = 3;
     static constexpr int32_t kReverseFutilityMarginPerDepth = 100;
-    static_assert(kFutilityDepth == kReverseFutilityDepth, "allow for lazy static eval optimization");
-
-    // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
-    static constexpr int kLateMoveReductionDepth = 3;
+    static constexpr int kLateMoveReductionDepth = 3; // https://chessprogramming.org/Late_Move_Reductions#reduction-depth
     static inline const auto kLmrReductions = [] {
       std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff+1> table{};
       for (size_t depth = kLateMoveReductionDepth; depth < table.size(); ++depth) {
@@ -75,10 +66,7 @@ namespace bb::searching {
       }
       return table;
     }();
-
-    constexpr int lateMovePruningThreshold(int depth) noexcept {
-      return 3 + 2 * depth * depth;
-    }
+    static_assert(kFutilityDepth == kReverseFutilityDepth, "allow for lazy static eval optimization");
 
 
     // PRIVATE MEMBERS
@@ -87,12 +75,18 @@ namespace bb::searching {
     std::array<SearchStack, kMaxDepthHardCutoff + 1> searchStack_;
     std::array<Move, kPvSlots> pvTable_{}; // PV row at ply p has room for at most 65 - p moves.
     TranspositionTable ttTable_;
-
-    // History Heuristics
-    std::array<ButterFlyTable<int32_t>, 2> historyTable_{};
+    HistoryHeuristics history_{};
 
     int getPly(const SearchStack* frame) const noexcept {
       return static_cast<int>(frame - searchStack_.data());
+    }
+
+    Move getPrevMove(const SearchStack* frame, int pliesAgo) const noexcept {
+      const int ply = getPly(frame);
+      if (ply >= pliesAgo) {
+        return (frame - pliesAgo)->move;
+      }
+      return Move{};
     }
 
     static constexpr size_t pvOffset(size_t ply) noexcept {
@@ -149,9 +143,8 @@ namespace bb::searching {
 
     int32_t expandWindow(int attempt) const noexcept {
       switch (attempt) {
-      case 1: return 3 * aspirationWindow_;
-      case 2: return 6 * aspirationWindow_;
-      case 3: return 12 * aspirationWindow_;
+      case 1: return 6 * aspirationWindow_;
+      case 2: return 12 * aspirationWindow_;
       default: return evaluation::kCheckmateWinScore;
       }
     };
@@ -217,39 +210,6 @@ namespace bb::searching {
         return std::nullopt;
       }
     }
-
-    void recordKiller(decltype(SearchStack::killerMoves)& killers, Move move) noexcept {
-      const auto it = std::find(killers.begin(), killers.end(), move);
-      const size_t slot = it == killers.end() ? killers.size() - 1 : static_cast<size_t>(it - killers.begin());
-      for (size_t i = slot; i > 0; --i) {
-        killers[i] = killers[i - 1];
-      }
-      killers[0] = move;
-    }
-
-    void recordHistory(Side side, Move move, int32_t reward) noexcept {
-      constexpr int32_t kMaxHistoryPriority = 95; // Reserve up-to 5 killer moves
-      constexpr int32_t kMinHistoryPriority = -kMaxHistoryPriority;
-      int32_t& score = historyTable_[side][move.from()][move.to()];
-      score = std::clamp(score + reward, kMinHistoryPriority, kMaxHistoryPriority);
-    }
-
-    void recordQuietCutoff(Side side, SearchStack* frame, const MoveList& moves, size_t index, int depth) noexcept {
-      const Move move = moves[index];
-      if (move.isViolentMove()) {
-        return;
-      }
-      recordKiller(frame->killerMoves, move);
-      const int reward = depth * depth;
-      recordHistory(side, move, reward);
-      for (size_t i = 0; i < index; ++i) {
-        if (!moves[i].isViolentMove()) {
-          recordHistory(side, moves[i], -reward);
-        }
-      }
-    }
-
-    
 
     //////////////////
     // SEARCH CHILD //
@@ -362,14 +322,20 @@ namespace bb::searching {
 
       Move bestMove{};
 
+      const Move prev1 = getPrevMove(frame, 1);
+      const Move prev2 = getPrevMove(frame, 2);
+
       // Explore moves.
-      StagedMovePicker movePicker;
+      StagedMovePicker movePicker(getPly(frame), prev1, prev2, history_);
       for (size_t i = 0; i < moves.size(); ++i) {
-        const Move move = movePicker.pick<meta>(moves, ttMove, context.state, frame->killerMoves, historyTable_);
+        const Move move = movePicker.pick<meta>(moves, ttMove, context.state);
+        frame->move = move;
 
         if constexpr (meta.isInternal() && !meta.isPV) {
           // Futility Pruning.
-          if ((i > 0) && (depth <= kFutilityDepth) && !inCheck && !move.isViolentMove() && getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score) {
+          if ((i > 0) && (depth <= kFutilityDepth) && !inCheck && !move.isViolentMove() &&
+              !history_.isKillerMove(ply, move) &&
+              getStaticScore() + kFutilityMarginPerDepth * depth <= bestEval.score) {
             continue;
           }
         } else if constexpr (meta.isQuiescence()) {
@@ -397,7 +363,7 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove())) {
+            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(ply, move)) {
               reduction = int(kLmrReductions[depth][i]);
             }
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, depth - 1 - reduction, bestEval.score, bestEval.score + 1);
@@ -426,7 +392,11 @@ namespace bb::searching {
         if (eval.score >= beta) {
           if constexpr (meta.isInternal()) {
             storeTT(context, frame, depth, TranspositionTable::ScoreType::LowerBound, eval, move, inCheck);
-            recordQuietCutoff(meta.side, frame, moves, i, depth);
+            if (!move.isViolentMove()) {
+              history_.template recordQuietCutoff<meta.side>(ply, depth, moves, i, prev1, prev2);
+            } else if (undo.capturedPiece != NoPiece) {
+              history_.template recordCaptureCutoff<meta.side>(move.getMovedPiece(), move.to(), undo.capturedPiece, depth);
+            }
           }
           return eval;
         }
@@ -453,7 +423,7 @@ namespace bb::searching {
 
     void reset() {
       evalPolicy_.reset();
-      historyTable_ = {};
+      history_.clear();
       ttTable_.clear();
     }
 
@@ -499,7 +469,7 @@ namespace bb::searching {
       if (!param.rootMoves) {
         param.rootMoves.emplace();
         state.generateMoves<ally>(*param.rootMoves);
-        std::ranges::for_each(searchStack_, [](auto& stack) { stack.killerMoves = {}; });
+        history_.clearKillers();
         ttTable_.age();
       }
       MoveList& moves = *param.rootMoves;
@@ -523,9 +493,10 @@ namespace bb::searching {
         Eval bestEval(alpha, false);
         Move bestMove{};
 
-        StagedMovePicker movePicker;
+        StagedMovePicker movePicker(0, {}, {}, history_);
         for (size_t i = 0; i < moves.size(); ++i) {
-          const Move move = movePicker.pick<meta>(moves, ttMove, state, searchStack_[0].killerMoves, historyTable_);
+          const Move move = movePicker.pick<meta>(moves, ttMove, state);
+          searchStack_[0].move = move;
           const MoveUndo undo = state.makeMove<ally>(move, evalPolicy_);
           param.positionHistory.push(state.getHash());
 
@@ -543,7 +514,7 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove())) {
+            if (!inCheck && (!move.isViolentMove() || movePicker.isBadViolentMove()) && !history_.isKillerMove(0, move)) {
               reduction = int(kLmrReductions[depth][i]);
             }
 
@@ -568,7 +539,11 @@ namespace bb::searching {
             bestMove = move;
             acceptChildPVLine(searchStack_.data(), bestMove);
             if (bestEval.score >= beta) {
-              recordQuietCutoff(meta.side, searchStack_.data(), moves, i, context.maxDepth);
+              if (!move.isViolentMove()) {
+                history_.template recordQuietCutoff<meta.side>(0, context.maxDepth, moves, i);
+              } else if (undo.capturedPiece != NoPiece) {
+                history_.template recordCaptureCutoff<meta.side>(move.getMovedPiece(), move.to(), undo.capturedPiece, context.maxDepth);
+              }
               ttMove = bestMove;
               break;
             }

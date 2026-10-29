@@ -2,6 +2,7 @@
 #include "bitboard.h"
 #include "boardstate.h"
 #include "node_meta.h"
+#include "history_heuristics.h"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -25,10 +26,8 @@ namespace bb::searching {
     // Move Ordering Priorities.
     static constexpr int32_t kPromotionPriority = 2'000'000;
     static constexpr int32_t kGoodCapturePriority = 1'000'000;
-    static constexpr int32_t kKillerPriority = 10'000;
     static constexpr int32_t kBadViolentPriority = -1'000'000;
     static constexpr int32_t kUnderpromotionPriority = -2'000'000;
-    static constexpr int32_t kCastlingPriority = 30;
 
     static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1320, 1500, 1900, 5000 };
 
@@ -127,7 +126,7 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    void sortMoves(auto begin, auto end, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
+    void sortMoves(auto begin, auto end, const BoardState& state) noexcept {
       const size_t count = static_cast<size_t>(end - begin);
       if (count == 0) {
         badViolentBegin_ = end;
@@ -159,18 +158,16 @@ namespace bb::searching {
             ++badViolentCount;
             return kBadViolentPriority + see;
           }
-          return kGoodCapturePriority + see;
+          constexpr Side enemy = getOtherSide(meta.side);
+          const Piece victim = move.isCapture() ? state.getPieceAt<enemy>(move.to()) : (move.isEnpassant() ? Pawn : NoPiece);
+          const int32_t capScore = victim != NoPiece ? history_.getCaptureScore<meta.side>(move.getMovedPiece(), move.to(), victim) : 0;
+          return kGoodCapturePriority + see + capScore;
         }
 
         if constexpr (meta.isQuiescence()) {
           return 0; // Quiet evasion
         } else {
-          for (size_t i = 0; i < killerMoves.size() && killerMoves[i]; ++i) {
-            if (move == killerMoves[i]) {
-              return kKillerPriority - static_cast<int32_t>(i);
-            }
-          }
-          return historyTable[meta.side][move.from()][move.to()] + (move.isCastling() ? kCastlingPriority : 0);
+          return history_.getQuietScore<meta.side>(ply_, move, prev1_, prev2_);
         }
       };
 
@@ -186,17 +183,24 @@ namespace bb::searching {
       badViolentBegin_ = end - badViolentCount;
     }
 
+    int ply_;
+    Move prev1_{};
+    Move prev2_{};
+    const HistoryHeuristics& history_;
     Stage stage = Stage::TTMove;
     MoveList::iterator current{};
     MoveList::iterator badViolentBegin_{};
 
   public:
+    explicit StagedMovePicker(int ply, Move prev1, Move prev2, const HistoryHeuristics& history) noexcept
+      : ply_(ply), prev1_(prev1), prev2_(prev2), history_(history) {}
+
     [[nodiscard]] bool isBadViolentMove() const noexcept {
       return current > badViolentBegin_;
     }
 
     template <NodeMeta meta>
-    Move pick(MoveList& moves, Move ttMove, const BoardState& state, const auto& killerMoves, const auto& historyTable) noexcept {
+    Move pick(MoveList& moves, Move ttMove, const BoardState& state) noexcept {
       switch (stage) {
       case Stage::TTMove: {
         stage = Stage::PreSort;
@@ -214,7 +218,7 @@ namespace bb::searching {
         [[fallthrough]];
       }
       case Stage::PreSort: {
-        sortMoves<meta>(current, moves.end(), state, killerMoves, historyTable);
+        sortMoves<meta>(current, moves.end(), state);
         stage = Stage::Sort;
         [[fallthrough]];
       }
