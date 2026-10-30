@@ -478,3 +478,218 @@ TEST(HandCraftEvaluation, PositionScoresFidelity) {
     EXPECT_EQ(score, expected) << "Mismatch on FEN: " << fen;
   }
 }
+
+
+TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
+  struct BenchmarkConfig {
+    std::string name;
+    bb::searching::NegamaxSearchConfig config;
+  };
+
+  const std::vector<BenchmarkConfig> configs = {
+    // Current Champion R3: 4C
+    {"0. Champion R3: LMP (6+2*d^2), Div=2.70, 750/1250/500", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+
+    // --- ROUND 4: NEIGHBORHOOD SEARCH AROUND 750/1250 ---
+    {"1A. Hist 720/1280/500, Div=2.70, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 720;
+      c.maxRefutationHistory = 1280;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+    {"1B. Hist 740/1260/500, Div=2.70, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 740;
+      c.maxRefutationHistory = 1260;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+    {"1C. Hist 760/1240/500, Div=2.70, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 760;
+      c.maxRefutationHistory = 1240;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+    {"1D. Hist 780/1220/500, Div=2.70, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 780;
+      c.maxRefutationHistory = 1220;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+
+    // --- ROUND 4, SET 2: Followup History Grid ---
+    {"2A. Hist 750/1250/450, Div=2.70, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 450;
+      return c;
+    }()},
+    {"2B. Hist 750/1250/550, Div=2.70, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 550;
+      return c;
+    }()},
+
+    // --- ROUND 4, SET 3: Fine Divisor with 750/1250 ---
+    {"3A. Hist 750/1250/500, Div=2.68, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.68;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+    {"3B. Hist 750/1250/500, Div=2.72, LMP 6+2*d^2", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.72;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+
+    // --- ROUND 4, SET 4: History K Slope Tuning ---
+    {"4A. Hist 750/1250/500, Div=2.70, k=1/950", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.lateMoveReductionHistoryK = 1.0 / 950.0;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+    {"4B. Hist 750/1250/500, Div=2.70, k=1/1050", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 4;
+      c.lateMovePruningBase = 6;
+      c.lateMovePruningMultiplier = 2;
+      c.lateMoveReductionDivisor = 2.70;
+      c.lateMoveReductionHistoryK = 1.0 / 1050.0;
+      c.maxQuietHistory = 750;
+      c.maxRefutationHistory = 1250;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()},
+
+    // --- Original Reference Before Tuning ---
+    {"Ref. Original Baseline: No LMP, 800/1200, Div=2.70", [] {
+      bb::searching::NegamaxSearchConfig c{};
+      c.lateMovePruningDepth = 0;
+      c.lateMoveReductionDivisor = 2.70;
+      c.maxQuietHistory = 800;
+      c.maxRefutationHistory = 1200;
+      c.maxFollowupHistory = 500;
+      return c;
+    }()}
+  };
+
+  struct PositionSpec {
+    std::string name;
+    std::string_view fen;
+    int depth;
+  };
+
+  const std::vector<PositionSpec> positions = {
+    {"Startpos", fen::kStartPosition, 10},
+    {"Kiwipete", fen::kKiwipete, 9},
+    {"Endgame", fen::kRookEndgame, 11},
+    {"Tactics", "2rr3k/pp3pp1/1nnqbN1p/3pN3/2pP4/2P3Q1/PPB4P/R4RK1 w - - 0 1", 8}
+  };
+
+  std::cout << "\n==================================== SEARCH EXPERIMENTS: ROUND 4 ====================================\n";
+  std::cout << std::format("{:<52} | {:<9} | {:<9} | {:<9} | {:<9} | {:<10} | {:<8}\n",
+                           "Configuration", "Startpos", "Kiwipete", "Endgame", "Tactics", "TotalNodes", "Rel %");
+  std::cout << "------------------------------------------------------------------------------------------------------------------------------------------------\n";
+
+  uint64_t baselineTotalNodes = 0;
+
+  for (size_t configIndex = 0; configIndex < configs.size(); ++configIndex) {
+    const auto& [name, config] = configs[configIndex];
+    uint64_t configTotalNodes = 0;
+    std::vector<uint64_t> posNodes;
+    std::vector<std::string> bestMoves;
+    std::vector<int32_t> posScores;
+
+    for (const auto& pos : positions) {
+      bb::Board board{
+        bb::searching::NegamaxSearchPolicy{
+          bb::evaluation::NNUEEvaluationPolicy{testWeightsPath()},
+          config,
+          60,
+          1u << 20
+        },
+        bb::time_control::EqualPercentageTimeControlPolicy{0.05f}
+      };
+
+      board.setPosition(pos.fen);
+      const auto result = board.search(pos.depth, std::nullopt, [](const bb::searching::SearchResult&) {});
+      posNodes.push_back(result.nodesSearched);
+      configTotalNodes += result.nodesSearched;
+      bestMoves.push_back(result.bestMove ? notation::moveToString(*result.bestMove) : "none");
+      posScores.push_back(result.score);
+    }
+
+    if (configIndex == 0) {
+      baselineTotalNodes = configTotalNodes;
+    }
+
+    const double relPercent = baselineTotalNodes > 0
+      ? (100.0 * static_cast<double>(configTotalNodes) / static_cast<double>(baselineTotalNodes))
+      : 100.0;
+
+    std::cout << std::format("{:<52} | {:<9} | {:<9} | {:<9} | {:<9} | {:<10} | {:>6.2f}%\n",
+                             name, posNodes[0], posNodes[1], posNodes[2], posNodes[3], configTotalNodes, relPercent);
+    std::cout << std::format("   evals: [Start: {} ({:+d}), Kiwi: {} ({:+d}), End: {} ({:+d}), Tac: {} ({:+d})]\n",
+                             bestMoves[0], posScores[0], bestMoves[1], posScores[1], bestMoves[2], posScores[2], bestMoves[3], posScores[3]);
+  }
+  std::cout << "================================================================================================================================================\n\n";
+}

@@ -14,16 +14,21 @@ namespace bb::searching {
     int futilityDepth = 3;
     int32_t futilityMarginPerDepth = 100;
 
+    // Late Move Pruning
+    int lateMovePruningDepth = 4;
+    int lateMovePruningBase = 6;
+    int lateMovePruningMultiplier = 2;
+
     // Late Move Reductions
     int lateMoveReductionDepth = 3;
     double lateMoveReductionBase = 0.7844;
-    double lateMoveReductionDivisor = 2.4696;
-    double lateMoveReductionHistoryK = 1.0 / 1024.0;
+    double lateMoveReductionDivisor = 2.70;
+    double lateMoveReductionHistoryK = 1.0 / 1000.0;
     double lateMoveReductionHistoryB = 0.0;
 
     // History Heuristics Limits
-    int32_t maxQuietHistory = 1000;
-    int32_t maxRefutationHistory = 1000;
+    int32_t maxQuietHistory = 750;
+    int32_t maxRefutationHistory = 1250;
     int32_t maxFollowupHistory = 500;
     int32_t maxCaptureHistory = 400;
 

@@ -68,7 +68,7 @@ namespace bb::searching {
         maxCaptureHistory_(maxCaptureHistory),
         maxQuietScore_(maxQuietHistory + maxRefutationHistory + maxFollowupHistory) {
       for (int32_t score = -kMaxHistoryScore; score <= kMaxHistoryScore; ++score) {
-        const int historyAdjustment = static_cast<int>(std::round(-lateMoveReductionHistoryK * score + lateMoveReductionHistoryB));
+        const int historyAdjustment = std::max(0, static_cast<int>(std::round(-lateMoveReductionHistoryK * score + lateMoveReductionHistoryB)));
         lateMoveHistoryAdjustments_[static_cast<size_t>(score + kMaxHistoryScore)] = static_cast<int8_t>(historyAdjustment);
       }
     }

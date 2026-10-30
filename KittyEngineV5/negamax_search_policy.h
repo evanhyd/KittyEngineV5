@@ -306,6 +306,7 @@ namespace bb::searching {
       }
 
       Move bestMove{};
+      int quietCount = 0;
 
       const Move prev1 = getPrevMove(frame, 1);
       const Move prev2 = getPrevMove(frame, 2);
@@ -318,6 +319,16 @@ namespace bb::searching {
 
         if constexpr (meta.isInternal() && !meta.isPV) {
           if (!move.isViolentMove()) {
+            ++quietCount;
+
+            // Late Move Pruning (LMP).
+            if (depth <= config_.lateMovePruningDepth && !inCheck &&
+                quietCount >= (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) &&
+                !history_.isKillerMove(ply, move) &&
+                !isCheckmateScore(bestEval.score)) {
+              continue;
+            }
+
             // Futility Pruning.
             if ((i > 0) && (depth <= config_.futilityDepth) && !inCheck &&
                 !history_.isKillerMove(ply, move) &&
@@ -355,8 +366,9 @@ namespace bb::searching {
             if (depth >= config_.lateMoveReductionDepth && !inCheck && (movePicker.isBadViolentMove() || (!move.isViolentMove() && !history_.isKillerMove(ply, move)))) {
               reduction = int(lateMoveReductions_[depth][i]);
 
-              // History-scaled LMR.
-              if (!move.isViolentMove()) {
+              if (movePicker.isBadViolentMove()) {
+                ++reduction;
+              } else if (!move.isViolentMove()) {
                 const int32_t historyScore = history_.template getQuietScore<meta.side>(move, prev1, prev2);
                 reduction += history_.getHistoryReduction(historyScore);
               }
@@ -530,8 +542,9 @@ namespace bb::searching {
             if (depth >= config_.lateMoveReductionDepth && !inCheck && (movePicker.isBadViolentMove() || (!move.isViolentMove() && !history_.isKillerMove(0, move)))) {
               reduction = int(lateMoveReductions_[depth][i]);
 
-              // History-scaled LMR.
-              if (!move.isViolentMove()) {
+              if (movePicker.isBadViolentMove()) {
+                ++reduction;
+              } else if (!move.isViolentMove()) {
                 const int32_t historyScore = history_.template getQuietScore<meta.side>(move);
                 reduction += history_.getHistoryReduction(historyScore);
               }
