@@ -322,13 +322,13 @@ namespace bb::searching {
           if (!move.isViolentMove()) {
             ++quietCount;
 
-            // Late Move Pruning (LMP).
-            if (depth <= config_.lateMovePruningDepth && !inCheck &&
-                quietCount >= (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) &&
-                !history_.isKillerMove(ply, move) &&
-                !isCheckmateScore(bestEval.score)) {
-              continue;
-            }
+            // Late Move Pruning (LMP). NOT reliable, please do not enable it.
+            //if (depth <= config_.lateMovePruningDepth && !inCheck &&
+            //    quietCount >= (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) &&
+            //    !history_.isKillerMove(ply, move) &&
+            //    !isCheckmateScore(bestEval.score)) {
+            //  continue;
+            //}
 
             // Futility Pruning.
             if ((i > 0) && (depth <= config_.futilityDepth) && !inCheck &&
