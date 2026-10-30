@@ -22,16 +22,6 @@ namespace bb {
     BoardState state_;
     searching::PositionHistory positionHistory_;
     searching::MoveHistory moveHistory_;
-    searching::PVLine pvLine_;
-
-    void advancePV(const Move& move) {
-      if (pvLine_.empty() || pvLine_.front() != move) {
-        pvLine_.clear();
-        return;
-      }
-      std::shift_left(pvLine_.begin(), pvLine_.end(), 1);
-      pvLine_.pop();
-    }
 
   public:
     explicit Board(SearchPolicy searchPolicy, TimePolicy timePolicy)
@@ -52,7 +42,6 @@ namespace bb {
       positionHistory_.clear();
       positionHistory_.push(state_.getHash());
       moveHistory_.clear();
-      pvLine_.clear();
     }
 
     void setPosition(std::string_view fen) {
@@ -61,53 +50,21 @@ namespace bb {
       positionHistory_.clear();
       positionHistory_.push(state_.getHash());
       moveHistory_.clear();
-      pvLine_.clear();
     }
 
     void setPosition(std::string_view fen, std::span<const std::string_view> moves) {
       const BoardState previousState = state_;
       const searching::PositionHistory previousPositionHistory = positionHistory_;
       const searching::MoveHistory previousMoveHistory = moveHistory_;
-      const searching::PVLine previousPV = pvLine_;
       try {
         setPosition(fen);
         for (const std::string_view moveText : moves) {
           playMove(moveText);
         }
-
-        // Keep the old PV if replay ends at the same position or at a position along that PV.
-        if (state_.getHash() == previousState.getHash()) {
-          pvLine_ = previousPV;
-        } else if (!previousPV.empty()) {
-          BoardState pvState = previousState;
-          for (size_t i = 0; i < previousPV.size(); ++i) {
-            MoveList legalMoves;
-            const Side ally = pvState.getSide();
-            if (ally == White) {
-              pvState.generateMoves<White>(legalMoves);
-            } else {
-              pvState.generateMoves<Black>(legalMoves);
-            }
-            if (std::find(legalMoves.begin(), legalMoves.end(), previousPV[i]) == legalMoves.end()) {
-              break;
-            }
-            if (ally == White) {
-              pvState.makeMove<White>(previousPV[i]);
-            } else {
-              pvState.makeMove<Black>(previousPV[i]);
-            }
-            if (pvState.getHash() == state_.getHash()) {
-              pvLine_.resize(previousPV.size() - i - 1);
-              std::copy(previousPV.begin() + i + 1, previousPV.end(), pvLine_.begin());
-              break;
-            }
-          }
-        }
       } catch (...) {
         state_ = previousState;
         positionHistory_ = previousPositionHistory;
         moveHistory_ = previousMoveHistory;
-        pvLine_ = previousPV;
         throw;
       }
     }
@@ -121,7 +78,6 @@ namespace bb {
             state_.makeMove<ally>(move, searchingPolicy_);
             positionHistory_.push(state_.getHash());
             moveHistory_.push(move);
-            advancePV(move);
             return;
           }
         }
@@ -140,10 +96,7 @@ namespace bb {
       maxDepth = std::min(maxDepth, searching::kMaxDepthHardCutoff);
 
       const auto iterativeDeepening = [&]<Side ally>() {
-        searching::SearchResult result{
-          .score = 0,
-          .pvLine = &pvLine_,
-        };
+        searching::SearchResult result{};
 
         std::optional<MoveList> rootMoves;
 
@@ -152,7 +105,6 @@ namespace bb {
             .maxDepth = depth,
             .pastEval = result.score,
             .positionHistory = positionHistory_,
-            .pvLine = pvLine_,
             .rootMoves = rootMoves,
           };
           result = searchingPolicy_.template search<ally>(state_, param);

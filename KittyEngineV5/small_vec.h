@@ -42,6 +42,14 @@ namespace bb {
       return data_[index];
     }
 
+    constexpr T* data() noexcept {
+      return data_.data();
+    }
+
+    constexpr const T* data() const noexcept {
+      return data_.data();
+    }
+
     constexpr void set(const SmallVec& rhs) noexcept {
       std::copy(rhs.begin(), rhs.end(), begin());
       size_ = rhs.size_;

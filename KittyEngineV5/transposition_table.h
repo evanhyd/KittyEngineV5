@@ -31,7 +31,8 @@ namespace bb {
       bool hasStaticScore = false;            // 1 byte  (25)
       bool inCheck = false;                   // 1 byte  (26)
       bool hasInCheck = false;                // 1 byte  (27)
-      // 4 bytes padding (28..31)
+      bool isPV = false;                      // 1 byte  (28)
+      // 3 bytes padding (29..31)
 
       constexpr bool isValid() const noexcept {
         return scoreType != ScoreType::None;
@@ -68,6 +69,7 @@ namespace bb {
       _mm_prefetch(reinterpret_cast<const char*>(&entries_[getIndex(key)]), _MM_HINT_T0);
     }
 
+    template <bool isEntryPV = false, ScoreType entryScoreType = ScoreType::None>
     void put(const Entry& entry) noexcept {
       auto& slot = entries_[getIndex(entry.key)];
 
@@ -78,21 +80,55 @@ namespace bb {
         return;
       }
 
-            // Same position, take the younger and deeper one.
+      // Same position, prioritize exact/PV evaluations and deeper searches.
       if (slot.key == entry.key) {
         const Move bestMove = entry.bestMove != Move{} ? entry.bestMove : slot.bestMove;
         const bool hasStaticScore = entry.hasStaticScore || slot.hasStaticScore;
         const int32_t staticScore = entry.hasStaticScore ? entry.staticScore : slot.staticScore;
         const bool inCheck = entry.hasInCheck ? entry.inCheck : slot.inCheck;
         const bool hasInCheck = entry.hasInCheck || slot.hasInCheck;
+        const bool isPV = isEntryPV || entry.isPV || slot.isPV;
 
-        if (entry.depth >= slot.depth ||
-            (entry.scoreType == ScoreType::Exact && slot.scoreType != ScoreType::Exact)) {
+        bool shouldReplace = false;
+        if constexpr (entryScoreType == ScoreType::Exact) {
+          if (slot.scoreType != ScoreType::Exact) {
+            shouldReplace = true;
+          }
+        } else if constexpr (entryScoreType == ScoreType::None) {
+          if (entry.scoreType == ScoreType::Exact && slot.scoreType != ScoreType::Exact) {
+            shouldReplace = true;
+          }
+        }
+
+        if (!shouldReplace) {
+          if constexpr (isEntryPV) {
+            if (!slot.isPV) {
+              shouldReplace = (entry.depth >= slot.depth - 1);
+            } else {
+              shouldReplace = (entry.depth >= slot.depth);
+            }
+          } else {
+            if (entry.isPV) {
+              if (!slot.isPV) {
+                shouldReplace = (entry.depth >= slot.depth - 1);
+              } else {
+                shouldReplace = (entry.depth >= slot.depth);
+              }
+            } else if (slot.isPV) {
+              shouldReplace = (entry.depth >= slot.depth + 4);
+            } else {
+              shouldReplace = (entry.depth >= slot.depth);
+            }
+          }
+        }
+
+        if (shouldReplace) {
           slot = entry;
           slot.bestMove = bestMove;
         } else if (slot.bestMove == Move{} && bestMove != Move{}) {
           slot.bestMove = bestMove;
         }
+        slot.isPV = isPV;
         slot.hasStaticScore = hasStaticScore;
         slot.staticScore = staticScore;
         slot.inCheck = inCheck;
@@ -101,10 +137,13 @@ namespace bb {
         return;
       }
 
-      // Different position, take the younger and deeper one.
+      // Different position (Hash Collision): protect fresh PV nodes from eviction.
       const int ageDiff = std::clamp(static_cast<int>(currentAge_) - static_cast<int>(slot.age), 0, 100);
-      const int effectiveOldDepth = slot.depth - 2 * ageDiff;
-      if (entry.depth >= effectiveOldDepth) {
+      const int slotPvBonus = (slot.isPV && slot.age == currentAge_) ? 4 : 0;
+      const int entryPvBonus = (isEntryPV || entry.isPV) ? 4 : 0;
+      const int effectiveOldDepth = slot.depth + slotPvBonus - 3 * ageDiff;
+
+      if (entry.depth + entryPvBonus >= effectiveOldDepth) {
         slot = entry;
         slot.age = currentAge_;
       }

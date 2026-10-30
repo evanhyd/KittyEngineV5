@@ -480,6 +480,120 @@ TEST(HandCraftEvaluation, PositionScoresFidelity) {
 }
 
 
+TEST(TranspositionTable, PVEntriesAreProtectedFromNonPVEviction) {
+  constexpr size_t capacity = 1024;
+  bb::TranspositionTable table(capacity);
+
+  const bb::ZobristHash::Hash key1 = 0x12345678ULL;
+  // key2 maps to the exact same index as key1: (key1 & 1023) == (key2 & 1023)
+  const bb::ZobristHash::Hash key2 = key1 + capacity;
+
+  const bb::Move pvMove(E2, E4, Pawn);
+  const bb::Move nonPvMove(D2, D4, Pawn);
+
+  // 1. Store a PV entry at depth 10
+  table.put(bb::TranspositionTable::Entry{
+    .key = key1,
+    .score = 50,
+    .staticScore = 40,
+    .bestMove = pvMove,
+    .depth = 10,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::Exact,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = true,
+  });
+
+  const auto* e1 = table.get(key1);
+  ASSERT_NE(e1, nullptr);
+  EXPECT_TRUE(e1->isPV);
+  EXPECT_EQ(e1->bestMove, pvMove);
+
+  // 2. A non-PV collision at depth 12 (shallow depth advantage of +2) must NOT evict the PV node!
+  table.put(bb::TranspositionTable::Entry{
+    .key = key2,
+    .score = -30,
+    .staticScore = -20,
+    .bestMove = nonPvMove,
+    .depth = 12,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::LowerBound,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
+
+  // key1 must still be retained because of slotPvBonus (+4 effective depth => 14 > 12)
+  EXPECT_NE(table.get(key1), nullptr);
+  EXPECT_EQ(table.get(key2), nullptr);
+
+  // 3. A non-PV collision at depth 15 (exceeding 10 + 4 = 14) CAN evict key1
+  table.put(bb::TranspositionTable::Entry{
+    .key = key2,
+    .score = -30,
+    .staticScore = -20,
+    .bestMove = nonPvMove,
+    .depth = 15,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::LowerBound,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
+
+  EXPECT_EQ(table.get(key1), nullptr);
+  EXPECT_NE(table.get(key2), nullptr);
+}
+
+TEST(TranspositionTable, SameKeyPreservesPVMoveAndStatusAgainstNonPVBounds) {
+  constexpr size_t capacity = 1024;
+  bb::TranspositionTable table(capacity);
+
+  const bb::ZobristHash::Hash key = 0x999999ULL;
+  const bb::Move pvMove(G1, F3, Knight);
+  const bb::Move scoutMove(B1, C3, Knight);
+
+  // Store initial exact PV entry at depth 8
+  table.put(bb::TranspositionTable::Entry{
+    .key = key,
+    .score = 25,
+    .staticScore = 20,
+    .bestMove = pvMove,
+    .depth = 8,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::Exact,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = true,
+  });
+
+  // A non-PV scout LowerBound at depth 8 for the same key must NOT overwrite the Exact PV evaluation
+  table.put(bb::TranspositionTable::Entry{
+    .key = key,
+    .score = 30,
+    .staticScore = 20,
+    .bestMove = scoutMove,
+    .depth = 8,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::LowerBound,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
+
+  const auto* entry = table.get(key);
+  ASSERT_NE(entry, nullptr);
+  EXPECT_TRUE(entry->isPV);
+  EXPECT_EQ(entry->scoreType, bb::TranspositionTable::ScoreType::Exact);
+  EXPECT_EQ(entry->bestMove, pvMove);
+}
+
 TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
   struct BenchmarkConfig {
     std::string name;
@@ -487,147 +601,38 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
   };
 
   const std::vector<BenchmarkConfig> configs = {
-    // Current Champion R3: 4C
-    {"0. Champion R3: LMP (6+2*d^2), Div=2.70, 750/1250/500", [] {
+    // Current Champion:
+    {"1. Champion (LMP d<=4: 6+2*d^2, Div=2.69)", bb::searching::NegamaxSearchConfig{}},
+
+    // Test E1: LMP depth 5 with multiplier 1 (Base 8 + 1*d^2: d4=24, d5=33)
+    {"2. E1: LMP d<=5 (Base 8 + 1*d^2), Div=2.69", [] {
       bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 500;
+      c.lateMovePruningDepth = 5;
+      c.lateMovePruningBase = 8;
+      c.lateMovePruningMultiplier = 1;
       return c;
     }()},
 
-    // --- ROUND 4: NEIGHBORHOOD SEARCH AROUND 750/1250 ---
-    {"1A. Hist 720/1280/500, Div=2.70, LMP 6+2*d^2", [] {
+    // Test E2: LMP depth 5 with multiplier 1 (Base 10 + 1*d^2: d4=26, d5=35)
+    {"3. E2: LMP d<=5 (Base 10 + 1*d^2), Div=2.69", [] {
       bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 720;
-      c.maxRefutationHistory = 1280;
-      c.maxFollowupHistory = 500;
-      return c;
-    }()},
-    {"1B. Hist 740/1260/500, Div=2.70, LMP 6+2*d^2", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 740;
-      c.maxRefutationHistory = 1260;
-      c.maxFollowupHistory = 500;
-      return c;
-    }()},
-    {"1C. Hist 760/1240/500, Div=2.70, LMP 6+2*d^2", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 760;
-      c.maxRefutationHistory = 1240;
-      c.maxFollowupHistory = 500;
-      return c;
-    }()},
-    {"1D. Hist 780/1220/500, Div=2.70, LMP 6+2*d^2", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 780;
-      c.maxRefutationHistory = 1220;
-      c.maxFollowupHistory = 500;
+      c.lateMovePruningDepth = 5;
+      c.lateMovePruningBase = 10;
+      c.lateMovePruningMultiplier = 1;
       return c;
     }()},
 
-    // --- ROUND 4, SET 2: Followup History Grid ---
-    {"2A. Hist 750/1250/450, Div=2.70, LMP 6+2*d^2", [] {
+    // Test E3: Divisor 2.68 at Deep Depth 20
+    {"4. E3: Div=2.68 (LMP d<=4: 6+2*d^2)", [] {
       bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 450;
-      return c;
-    }()},
-    {"2B. Hist 750/1250/550, Div=2.70, LMP 6+2*d^2", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 550;
-      return c;
-    }()},
-
-    // --- ROUND 4, SET 3: Fine Divisor with 750/1250 ---
-    {"3A. Hist 750/1250/500, Div=2.68, LMP 6+2*d^2", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
       c.lateMoveReductionDivisor = 2.68;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 500;
-      return c;
-    }()},
-    {"3B. Hist 750/1250/500, Div=2.72, LMP 6+2*d^2", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.72;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 500;
       return c;
     }()},
 
-    // --- ROUND 4, SET 4: History K Slope Tuning ---
-    {"4A. Hist 750/1250/500, Div=2.70, k=1/950", [] {
+    // Test E4: Divisor 2.70 at Deep Depth 20
+    {"5. E4: Div=2.70 (LMP d<=4: 6+2*d^2)", [] {
       bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
       c.lateMoveReductionDivisor = 2.70;
-      c.lateMoveReductionHistoryK = 1.0 / 950.0;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 500;
-      return c;
-    }()},
-    {"4B. Hist 750/1250/500, Div=2.70, k=1/1050", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 4;
-      c.lateMovePruningBase = 6;
-      c.lateMovePruningMultiplier = 2;
-      c.lateMoveReductionDivisor = 2.70;
-      c.lateMoveReductionHistoryK = 1.0 / 1050.0;
-      c.maxQuietHistory = 750;
-      c.maxRefutationHistory = 1250;
-      c.maxFollowupHistory = 500;
-      return c;
-    }()},
-
-    // --- Original Reference Before Tuning ---
-    {"Ref. Original Baseline: No LMP, 800/1200, Div=2.70", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 0;
-      c.lateMoveReductionDivisor = 2.70;
-      c.maxQuietHistory = 800;
-      c.maxRefutationHistory = 1200;
-      c.maxFollowupHistory = 500;
       return c;
     }()}
   };
@@ -639,16 +644,14 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
   };
 
   const std::vector<PositionSpec> positions = {
-    {"Startpos", fen::kStartPosition, 10},
-    {"Kiwipete", fen::kKiwipete, 9},
-    {"Endgame", fen::kRookEndgame, 11},
-    {"Tactics", "2rr3k/pp3pp1/1nnqbN1p/3pN3/2pP4/2P3Q1/PPB4P/R4RK1 w - - 0 1", 8}
+    {"Startpos20", fen::kStartPosition, 20},
+    {"Kiwipete14", fen::kKiwipete, 14}
   };
 
-  std::cout << "\n==================================== SEARCH EXPERIMENTS: ROUND 4 ====================================\n";
-  std::cout << std::format("{:<52} | {:<9} | {:<9} | {:<9} | {:<9} | {:<10} | {:<8}\n",
-                           "Configuration", "Startpos", "Kiwipete", "Endgame", "Tactics", "TotalNodes", "Rel %");
-  std::cout << "------------------------------------------------------------------------------------------------------------------------------------------------\n";
+  std::cout << "\n==================================== DEEP SEARCH TUNING: STARTPOS D20 & KIWIPETE D14 ====================================\n";
+  std::cout << std::format("{:<45} | {:<12} | {:<12} | {:<12} | {:<8}\n",
+                           "Configuration", "Startpos20", "Kiwipete14", "TotalNodes", "Rel %");
+  std::cout << "--------------------------------------------------------------------------------------------------------------------------\n";
 
   uint64_t baselineTotalNodes = 0;
 
@@ -658,6 +661,7 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
     std::vector<uint64_t> posNodes;
     std::vector<std::string> bestMoves;
     std::vector<int32_t> posScores;
+    std::vector<double> elapsedTimesMs;
 
     for (const auto& pos : positions) {
       bb::Board board{
@@ -665,17 +669,22 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
           bb::evaluation::NNUEEvaluationPolicy{testWeightsPath()},
           config,
           60,
-          1u << 20
+          1u << 22
         },
         bb::time_control::EqualPercentageTimeControlPolicy{0.05f}
       };
 
       board.setPosition(pos.fen);
+      const auto start = std::chrono::high_resolution_clock::now();
       const auto result = board.search(pos.depth, std::nullopt, [](const bb::searching::SearchResult&) {});
+      const auto end = std::chrono::high_resolution_clock::now();
+      const double ms = std::chrono::duration<double, std::milli>(end - start).count();
+
       posNodes.push_back(result.nodesSearched);
       configTotalNodes += result.nodesSearched;
       bestMoves.push_back(result.bestMove ? notation::moveToString(*result.bestMove) : "none");
       posScores.push_back(result.score);
+      elapsedTimesMs.push_back(ms);
     }
 
     if (configIndex == 0) {
@@ -686,10 +695,11 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
       ? (100.0 * static_cast<double>(configTotalNodes) / static_cast<double>(baselineTotalNodes))
       : 100.0;
 
-    std::cout << std::format("{:<52} | {:<9} | {:<9} | {:<9} | {:<9} | {:<10} | {:>6.2f}%\n",
-                             name, posNodes[0], posNodes[1], posNodes[2], posNodes[3], configTotalNodes, relPercent);
-    std::cout << std::format("   evals: [Start: {} ({:+d}), Kiwi: {} ({:+d}), End: {} ({:+d}), Tac: {} ({:+d})]\n",
-                             bestMoves[0], posScores[0], bestMoves[1], posScores[1], bestMoves[2], posScores[2], bestMoves[3], posScores[3]);
+    std::cout << std::format("{:<45} | {:<12} | {:<12} | {:<12} | {:>6.2f}%\n",
+                             name, posNodes[0], posNodes[1], configTotalNodes, relPercent);
+    std::cout << std::format("   evals: [Start20: {} ({:+d}, {:.1f}s), Kiwi14: {} ({:+d}, {:.1f}s)]\n",
+                             bestMoves[0], posScores[0], elapsedTimesMs[0] / 1000.0,
+                             bestMoves[1], posScores[1], elapsedTimesMs[1] / 1000.0);
   }
-  std::cout << "================================================================================================================================================\n\n";
+  std::cout << "==========================================================================================================================\n\n";
 }

@@ -32,7 +32,6 @@ namespace bb::searching {
     struct SearchContext {
       BoardState& state;
       PositionHistory& positionHistory;
-      PVLine& pvLine;
       int maxDepth; // main search max depth
       uint64_t searchedNodes = 1;
     };
@@ -140,10 +139,11 @@ namespace bb::searching {
       }
     };
 
+    template <bool isPV, TranspositionTable::ScoreType scoreType>
     void storeTT(const SearchContext& context, SearchStack* frame, int depth,
-                 TranspositionTable::ScoreType scoreType, Eval eval, Move bestMove, bool inCheck) noexcept {
+                 Eval eval, Move bestMove, bool inCheck) noexcept {
       if (!eval.isUnreliable) {
-        ttTable_.put(TranspositionTable::Entry{
+        ttTable_.template put<isPV, scoreType>(TranspositionTable::Entry{
           .key = context.state.getHash(),
           .score = normalizeScore(eval.score, getPly(frame)),
           .staticScore = frame->staticScore.value_or(0),
@@ -154,6 +154,7 @@ namespace bb::searching {
           .hasStaticScore = frame->staticScore.has_value(),
           .inCheck = inCheck,
           .hasInCheck = true,
+          .isPV = isPV,
         });
       }
     }
@@ -259,7 +260,7 @@ namespace bb::searching {
             // Reverse Futility Pruning (Static Null Move Pruning).
             if (depth <= config_.reverseFutilityDepth && getStaticScore(context, frame) - depth * config_.reverseFutilityMarginPerDepth >= beta) {
               const Eval eval(beta, false);
-              storeTT(context, frame, depth, TranspositionTable::ScoreType::LowerBound, eval, ttMove, inCheck);
+              storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
               return eval;
             }
 
@@ -277,7 +278,7 @@ namespace bb::searching {
                   if (isCheckmateScore(eval.score)) {
                     eval.score = beta;
                   }
-                  storeTT(context, frame, depth, TranspositionTable::ScoreType::LowerBound, eval, ttMove, inCheck);
+                  storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
                   return eval;
                 }
               }
@@ -399,7 +400,7 @@ namespace bb::searching {
 
         if (eval.score >= beta) {
           if constexpr (meta.isInternal()) {
-            storeTT(context, frame, depth, TranspositionTable::ScoreType::LowerBound, eval, move, inCheck);
+            storeTT<meta.isPV, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, move, inCheck);
             if (!move.isViolentMove()) {
               history_.template recordQuietCutoff<meta.side>(ply, depth, moves, i, prev1, prev2);
             } else if (undo.capturedPiece != NoPiece) {
@@ -418,8 +419,16 @@ namespace bb::searching {
       }
       
       if constexpr (meta.isInternal()) {
-        const auto scoreType = (bestEval.score <= alpha ? TranspositionTable::ScoreType::UpperBound : TranspositionTable::ScoreType::Exact);
-        storeTT(context, frame, depth, scoreType, bestEval, bestMove ? bestMove : moves[0], inCheck);
+        const Move storedMove = bestMove ? bestMove : moves[0];
+        if constexpr (meta.isPV) {
+          if (bestEval.score <= alpha) {
+            storeTT<true, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
+          } else {
+            storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, depth, bestEval, storedMove, inCheck);
+          }
+        } else {
+          storeTT<false, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
+        }
       }
       return bestEval;
     }
@@ -463,15 +472,15 @@ namespace bb::searching {
     SearchResult search(BoardState& state, const SearchParam& param) {
       constexpr NodeMeta meta(ally, NodeMeta::NodeType::Internal, true, true);
       // Result statistics.
-      SearchContext context{state, param.positionHistory, param.pvLine,
+      SearchContext context{state, param.positionHistory,
                             std::clamp(param.maxDepth, 1, kMaxDepthHardCutoff)};
       const auto startTime = std::chrono::steady_clock::now();
       const auto elapsedTime = [&] {
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
           std::chrono::steady_clock::now() - startTime);
       };
-      const auto makeResult = [&](int32_t score, std::optional<Move> bestMove) {
-        return SearchResult{score, bestMove, context.searchedNodes, elapsedTime(), &param.pvLine};
+      const auto makeResult = [&](int32_t score, std::optional<Move> bestMove, std::span<const Move> pvLine = {}) {
+        return SearchResult{score, bestMove, context.searchedNodes, elapsedTime(), pvLine};
       };
 
       searchStack_[0].clearForPly();
@@ -497,7 +506,6 @@ namespace bb::searching {
       }
       MoveList& moves = *param.rootMoves;
       if (moves.empty()) {
-        context.pvLine.clear();
         const int32_t score = state.isInCheck<ally>() ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
         return makeResult(score, std::nullopt);
       }
@@ -599,10 +607,9 @@ namespace bb::searching {
         if (!bestMove) {
           bestMove = moves[0];
         }
-        storeTT(context, searchStack_.data(), context.maxDepth, TranspositionTable::ScoreType::Exact, bestEval, bestMove, inCheck);
-        param.pvLine.resize(searchStack_[0].pvLength);
-        std::copy_n(pvMoves(searchStack_.data()), searchStack_[0].pvLength, param.pvLine.begin());
-        return makeResult(bestEval.score, bestMove);
+        storeTT<true, TranspositionTable::ScoreType::Exact>(context, searchStack_.data(), context.maxDepth, bestEval, bestMove, inCheck);
+        const std::span<const Move> pvSpan{pvMoves(searchStack_.data()), searchStack_[0].pvLength};
+        return makeResult(bestEval.score, bestMove, pvSpan);
       }
     }
   };

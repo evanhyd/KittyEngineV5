@@ -22,13 +22,13 @@ namespace bb::searching {
     // Late Move Reductions
     int lateMoveReductionDepth = 3;
     double lateMoveReductionBase = 0.7844;
-    double lateMoveReductionDivisor = 2.70;
+    double lateMoveReductionDivisor = 2.69;
     double lateMoveReductionHistoryK = 1.0 / 1000.0;
     double lateMoveReductionHistoryB = 0.0;
 
     // History Heuristics Limits
-    int32_t maxQuietHistory = 750;
-    int32_t maxRefutationHistory = 1250;
+    int32_t maxQuietHistory = 770;
+    int32_t maxRefutationHistory = 1230;
     int32_t maxFollowupHistory = 500;
     int32_t maxCaptureHistory = 400;
 

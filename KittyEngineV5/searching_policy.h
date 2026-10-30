@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <chrono>
+#include <span>
 
 namespace bb {
   class BoardState;
@@ -19,16 +20,15 @@ namespace bb {
       int maxDepth;                       // initial max depth
       int32_t pastEval;
       PositionHistory& positionHistory;   // input and output
-      PVLine& pvLine;                     // input and output
       std::optional<MoveList>& rootMoves; // reuse across iterative deepening
     };
 
     struct SearchResult {
-      int32_t score;
+      int32_t score = 0;
       std::optional<Move> bestMove;
-      uint64_t nodesSearched;
-      std::chrono::nanoseconds searchingTime;
-      const PVLine* pvLine;
+      uint64_t nodesSearched = 0;
+      std::chrono::nanoseconds searchingTime{};
+      std::span<const Move> pvLine{};
     };
 
 
