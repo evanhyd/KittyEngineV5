@@ -658,7 +658,7 @@ TEST(StagedMovePicker, YieldsTTMoveFirstWithCorrectSEE) {
   }
   ASSERT_TRUE(static_cast<bool>(ttMove));
 
-  const int32_t expectedSee = searching::StagedMovePicker::staticExchangeEvaluate<White>(state, ttMove);
+  const int32_t expectedSee = searching::StagedMovePicker::staticExchangeEvaluation<White>(state, ttMove);
 
   const auto [m, see] = picker.pick<kMeta>(ttMove, state);
   EXPECT_EQ(m, ttMove);
@@ -678,7 +678,7 @@ TEST(StagedMovePicker, CachesExactSEEForViolentMoves) {
   for (size_t i = 0; i < totalMoves; ++i) {
     const auto [m, see] = picker.pick<kMeta>(Move{}, state);
     if (m.isViolentMove()) {
-      const int32_t directSee = searching::StagedMovePicker::staticExchangeEvaluate<White>(state, m);
+      const int32_t directSee = searching::StagedMovePicker::staticExchangeEvaluation<White>(state, m);
       EXPECT_EQ(see, directSee);
     } else {
       EXPECT_EQ(see, 0);
@@ -714,7 +714,7 @@ TEST(StagedMovePicker, StrictStageOrderMaintained) {
 
       int stage = 0;
       if (m.isViolentMove()) {
-        const int32_t realSee = searching::StagedMovePicker::staticExchangeEvaluate<White>(state, m);
+        const int32_t realSee = searching::StagedMovePicker::staticExchangeEvaluation<White>(state, m);
         const Piece promo = m.getPromotedPieceType();
         const bool isGood = (promo == Queen) || (promo == NoPiece && realSee >= 0);
         stage = isGood ? 1 : 3;
@@ -753,7 +753,7 @@ TEST(StagedMovePicker, BadViolentAtEndOfListIsNotClassifiedAsQuiet) {
 
   for (const auto m : moves) {
     if (m.isViolentMove()) {
-      if (searching::StagedMovePicker::staticExchangeEvaluate<White>(state, m) < 0) {
+      if (searching::StagedMovePicker::staticExchangeEvaluation<White>(state, m) < 0) {
         badCapture = m;
       }
     } else if (!quietMove) {
@@ -778,7 +778,7 @@ TEST(StagedMovePicker, BadViolentAtEndOfListIsNotClassifiedAsQuiet) {
   const auto pick2 = picker.pick<kMeta>(Move{}, state);
   EXPECT_EQ(pick2.move, *badCapture);
   EXPECT_TRUE(picker.isBadViolentMove()) << "BUG CONFIRMED: Bad capture at end was NOT flagged as bad violent move!";
-  EXPECT_EQ(pick2.see, searching::StagedMovePicker::staticExchangeEvaluate<White>(state, *badCapture))
+  EXPECT_EQ(pick2.see, searching::StagedMovePicker::staticExchangeEvaluation<White>(state, *badCapture))
     << "BUG CONFIRMED: Bad capture at end did NOT receive cached SEE!";
 }
 

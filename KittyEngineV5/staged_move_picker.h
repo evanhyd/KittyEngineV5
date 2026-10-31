@@ -85,7 +85,7 @@ namespace bb::searching {
     };
 
     template <Side ally>
-    static int32_t staticExchangeEvaluate(const BoardState& state, Move move) noexcept {
+    static int32_t staticExchangeEvaluation(const BoardState& state, Move move) noexcept {
       constexpr Side enemy = getOtherSide(ally);
       const Square square = move.to();
       const std::array<Bitboard, kSideSize> sideOccupancy = { state.getOccupancy(White), state.getOccupancy(Black) };
@@ -155,8 +155,9 @@ namespace bb::searching {
       };
 
       // https://chess.stackexchange.com/questions/44853/whats-the-maximum-number-of-pieces-attacking-a-single-square
+      const int32_t promoGain = promotion == NoPiece ? 0 : (kVictimPriority[promotion] - kVictimPriority[Pawn]);
       SmallVec<int32_t, 32> gains;
-      gains.push(victim == NoPiece ? 0 : kVictimPriority[victim]);
+      gains.push((victim == NoPiece ? 0 : kVictimPriority[victim]) + promoGain);
       Piece exchangedPiece = attacker;
       Side side = enemy;
 
@@ -234,7 +235,7 @@ namespace bb::searching {
               auto it = std::find(moves_.begin(), moves_.end(), ttMove);
               assert(it != moves_.end());
               std::swap(moves_[0], *it);
-              const int32_t see = ttMove.isViolentMove() ? staticExchangeEvaluate<meta.side>(state, ttMove) : 0;
+              const int32_t see = ttMove.isViolentMove() ? staticExchangeEvaluation<meta.side>(state, ttMove) : 0;
               const size_t idx = current_++;
               return { moves_[idx], see };
             }
@@ -253,7 +254,7 @@ namespace bb::searching {
             while (scan < badViolentBegin) {
               const Move m = moves_[scan];
               if (m.isViolentMove()) {
-                const int32_t see = staticExchangeEvaluate<meta.side>(state, m);
+                const int32_t see = staticExchangeEvaluation<meta.side>(state, m);
                 const int32_t score = scoreViolent<meta>(state, m, see);
                 if (score >= 0) {
                   moves_[scan] = moves_[front];

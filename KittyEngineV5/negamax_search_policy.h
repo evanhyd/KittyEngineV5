@@ -331,6 +331,7 @@ namespace bb::searching {
                 continue;
               }
             } else if (depth <= config_.seePruningDepth &&
+                       move.getPromotedPieceType() == NoPiece &&
                        see < config_.seePruningMarginPerDepth * depth) {
               // SEE Pruning.
               continue;
