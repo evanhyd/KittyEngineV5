@@ -581,7 +581,7 @@ namespace bb::searching {
             acceptChildPVLine(searchStack_.data(), bestMove);
             if (bestEval.score >= beta) {
               if (!move.isViolentMove()) {
-                history_.template recordQuietCutoff<meta.side>(0, context.maxDepth, moves, i);
+                history_.template recordQuietCutoff<meta.side>(0, context.maxDepth, pickerMoves, i);
               } else if (undo.capturedPiece != NoPiece) {
                 history_.template recordCaptureCutoff<meta.side>(move.getMovedPiece(), move.to(), undo.capturedPiece, context.maxDepth);
               }
