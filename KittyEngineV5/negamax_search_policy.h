@@ -52,7 +52,7 @@ namespace bb::searching {
     EvalPolicy evalPolicy_;
     const NegamaxSearchConfig config_;
     const int32_t aspirationWindow_;
-    std::array<int32_t, kSideSize> finalScore_;
+    std::array<int32_t, kSideSize> finalScore_{};
     std::array<SearchFrame, kMaxDepthHardCutoff + 1> frames_;
     std::array<Move, kPvSlots> pvTable_{}; // PV row at ply p has room for at most 65 - p moves.
     std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> lateMoveReductions_{};

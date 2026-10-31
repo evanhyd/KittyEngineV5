@@ -9,6 +9,11 @@
 #include <cstdint>
 #include <optional>
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 26495) // scores_ elements are intentionally uninitialized until written
+#endif
+
 namespace bb::searching {
 
   // Lazily pick moves in priority stages entirely in-place:
@@ -31,11 +36,11 @@ namespace bb::searching {
     static constexpr int32_t kBadViolentPriority = -1'000'000;
     static constexpr int32_t kUnderpromotionPriority = -2'000'000;
 
-    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1320, 1500, 1900, 5000 };
+    static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 100, 320, 320, 500, 900, 10000 };
 
     struct ScoreEntry {
-      int32_t score = 0;
-      int16_t see = 0;
+      int32_t score;
+      int16_t see;
     };
 
     template <NodeMeta meta>
@@ -69,7 +74,7 @@ namespace bb::searching {
     size_t badViolentBegin_ = 0;
 
     MoveList moves_{};
-    ScoreEntry scores_[MoveList{}.capacity()]{};
+    ScoreEntry scores_[MoveList{}.capacity()];
 
   public:
     struct PickResult {
@@ -402,3 +407,7 @@ namespace bb::searching {
     }
   };
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
