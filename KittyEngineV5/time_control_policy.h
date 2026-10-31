@@ -17,6 +17,6 @@ namespace bb::time_control {
   template <typename Policy>
   concept TimeControlPolicy = requires(Policy p, std::optional<TimeControl> timeControl, Side side) {
     { p.set(timeControl) } -> std::same_as<void>;
-    { p.shouldContinue(side) } -> std::same_as<bool>;
+    { p.isTimeUp(side) } -> std::same_as<bool>;
   };
 };

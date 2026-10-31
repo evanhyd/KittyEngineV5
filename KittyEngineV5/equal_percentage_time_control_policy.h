@@ -5,7 +5,7 @@
 
 namespace bb::time_control {
   class EqualPercentageTimeControlPolicy {
-    float percentage_;
+    const float percentage_;
     bool isTimeControlSet_ = false;
     std::array<std::chrono::milliseconds, kSideSize> searchingTime{};
     std::chrono::high_resolution_clock::time_point start_{};
@@ -13,7 +13,7 @@ namespace bb::time_control {
 
   public:
     explicit EqualPercentageTimeControlPolicy(float percentage) noexcept 
-    : percentage_(percentage) {
+      : percentage_(percentage) {
     }
 
     void set(const std::optional<TimeControl>& timeControl) {
@@ -34,25 +34,25 @@ namespace bb::time_control {
       }
     }
 
-    bool shouldContinue(Side side) {
+    bool isTimeUp(Side side) {
       if (!isTimeControlSet_) {
-        return true;
+        return false;
       }
 
       const auto now = std::chrono::high_resolution_clock::now();
       const auto usedTime = now - start_;
       const auto remainingTime = searchingTime[side] - usedTime;
-      const auto lastSearchTime = now - lastSearchStart_;
+      const auto lastUsedTime = now - lastSearchStart_;
 
       // Not enough time for higher depth, stop searching.
-      if (lastSearchTime * 2 >= remainingTime) {
+      if (remainingTime < lastUsedTime * 2) {
         isTimeControlSet_ = false;
-        return false;
+        return true;
       }
 
-      // Update the clock.
+      // Continue searching. Update the last searching time.
       lastSearchStart_ = now;
-      return true;
+      return false;
     }
   };
 

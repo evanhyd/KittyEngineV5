@@ -97,7 +97,7 @@ namespace bb::user_interface {
           uciOutput_ << "readyok\n";
         },
         [this] {
-          board_.reset();
+          board_.newGame();
           render();
         },
         [this](std::string_view fen, std::span<const std::string_view> moves) {
@@ -172,9 +172,11 @@ namespace bb::user_interface {
           uint64_t totalNodes = 0;
           const auto searchStart = std::chrono::steady_clock::now();
           const int searchDepth = std::min(depth.value_or(searching::kMaxDepthHardCutoff), searching::kMaxDepthHardCutoff);
-          const auto result = board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, searchStart](const auto& result) {
+          searching::SearchResult lastResult{};
+          board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, &lastResult, searchStart](const auto& result) {
+            lastResult = result;
             ++completedDepth;
-            totalNodes += result.nodesSearched;
+            totalNodes += result.nodes;
             const auto elapsed = std::chrono::steady_clock::now() - searchStart;
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
@@ -206,7 +208,7 @@ namespace bb::user_interface {
             uciOutput_.flush();
           });
           uciOutput_ << std::format("bestmove {}\n",
-                                    result.bestMove ? notation::moveToString(*result.bestMove) : "0000");
+                                    lastResult.move ? notation::moveToString(lastResult.move) : "0000");
         },
         [this] {
           running_ = false;

@@ -33,8 +33,54 @@ namespace bb::searching {
 
     static constexpr std::array<int32_t, kPieceSize> kVictimPriority{ 1100, 1320, 1320, 1500, 1900, 5000 };
 
+    struct ScoreEntry {
+      int32_t score = 0;
+      int16_t see = 0;
+    };
+
+    template <NodeMeta meta>
+    int32_t scoreViolent(const BoardState& state, Move m, int32_t see) const noexcept {
+      const Piece promo = m.getPromotedPieceType();
+      if (promo == Queen) {
+        return kPromotionPriority + see;
+      }
+      if (promo != NoPiece) {
+        return kUnderpromotionPriority + static_cast<int32_t>(promo);
+      }
+      if (see < kSeeMargin) {
+        return kBadViolentPriority + see;
+      }
+      constexpr Side enemy = getOtherSide(meta.side);
+      const Piece victim = m.isCapture() ? state.getPieceAt<enemy>(m.to()) : (m.isEnpassant() ? Pawn : NoPiece);
+      const int32_t capScore = victim != NoPiece ? historyHeuristics_.getCaptureScore<meta.side>(m.getMovedPiece(), m.to(), victim) : 0;
+      return kGoodCapturePriority + see + capScore;
+    }
+
+    int ply_;
+    Move prev1_{};
+    Move prev2_{};
+    const HistoryHeuristics& historyHeuristics_;
+
+    Stage stage_ = Stage::TTMove;
+
+    size_t current_ = 0;
+    size_t goodViolentEnd_ = 0;
+    size_t badQuietBegin_ = 0;
+    size_t badViolentBegin_ = 0;
+
+    MoveList moves_{};
+    ScoreEntry scores_[MoveList{}.capacity()]{};
+
+  public:
+    struct PickResult {
+      Move move;
+      int32_t see = 0;
+
+      constexpr operator Move() const noexcept { return move; }
+    };
+
     template <Side ally>
-    int32_t staticExchangeEvaluate(const BoardState& state, Move move) const noexcept {
+    static int32_t staticExchangeEvaluate(const BoardState& state, Move move) noexcept {
       constexpr Side enemy = getOtherSide(ally);
       const Square square = move.to();
       const std::array<Bitboard, kSideSize> sideOccupancy = { state.getOccupancy(White), state.getOccupancy(Black) };
@@ -126,94 +172,44 @@ namespace bb::searching {
       return gains.front() - reply;
     }
 
-    template <typename It, typename Pred>
-    static It forwardPartition(It first, It last, Pred pred) noexcept {
-      first = std::find_if_not(first, last, pred);
-      for (auto it = first; it != last; ++it) {
-        if (pred(*it)) {
-          std::iter_swap(first++, it);
-        }
-      }
-      return first;
-    }
-
-    template <typename It, typename ScoreFn>
-    static It sortAndSplitAtZero(It begin, It end, ScoreFn scoreFn) noexcept {
-      const size_t n = static_cast<size_t>(end - begin);
-      if (n <= 1) {
-        return (n == 1 && scoreFn(*begin) < 0) ? begin : end;
-      }
-
-      int32_t scores[256];
-      assert(n <= 256);
-      for (size_t i = 0; i < n; ++i) {
-        scores[i] = scoreFn(*(begin + i));
-      }
-
-      for (size_t i = 1; i < n; ++i) {
-        const Move keyMove = *(begin + i);
-        const int32_t keyScore = scores[i];
-        size_t j = i;
-        while (j > 0 && scores[j - 1] < keyScore) {
-          *(begin + j) = *(begin + j - 1);
-          scores[j] = scores[j - 1];
-          --j;
-        }
-        *(begin + j) = keyMove;
-        scores[j] = keyScore;
-      }
-
-      auto it = std::find_if(scores, scores + n, [](int32_t s) noexcept { return s < 0; });
-      return begin + (it - scores);
-    }
-
-    template <NodeMeta meta>
-    int32_t scoreViolent(const BoardState& state, Move m) const noexcept {
-      const Piece promo = m.getPromotedPieceType();
-      if (promo == Queen) {
-        return kPromotionPriority + staticExchangeEvaluate<meta.side>(state, m);
-      }
-      if (promo != NoPiece) {
-        return kUnderpromotionPriority + static_cast<int32_t>(promo);
-      }
-      const int32_t see = staticExchangeEvaluate<meta.side>(state, m);
-      if (see < kSeeMargin) {
-        return kBadViolentPriority + see;
-      }
-      constexpr Side enemy = getOtherSide(meta.side);
-      const Piece victim = m.isCapture() ? state.getPieceAt<enemy>(m.to()) : (m.isEnpassant() ? Pawn : NoPiece);
-      const int32_t capScore = victim != NoPiece ? history_.getCaptureScore<meta.side>(m.getMovedPiece(), m.to(), victim) : 0;
-      return kGoodCapturePriority + see + capScore;
-    }
-
-    int ply_;
-    Move prev1_{};
-    Move prev2_{};
-    const HistoryHeuristics& history_;
-
-    Stage stage_ = Stage::TTMove;
-
-    MoveList::iterator current_{};
-    MoveList::iterator goodViolentEnd_{};
-    MoveList::iterator badQuietBegin_{};
-    MoveList::iterator badViolentBegin_{};
-
-  public:
     explicit StagedMovePicker(int ply, Move prev1, Move prev2, const HistoryHeuristics& history) noexcept
-      : ply_(ply), prev1_(prev1), prev2_(prev2), history_(history) {}
+      : ply_(ply), prev1_(prev1), prev2_(prev2), historyHeuristics_(history) {}
+
+    MoveList& getMoveBuffer() noexcept { return moves_; }
+
+    const MoveList& getMoveBuffer() const noexcept { return moves_; }
+
+    size_t size() const noexcept { return moves_.size(); }
+
+    bool empty() const noexcept { return moves_.empty(); }
+
+    void rePick() noexcept {
+      stage_ = Stage::TTMove;
+      current_ = 0;
+      goodViolentEnd_ = 0;
+      badQuietBegin_ = moves_.size();
+      badViolentBegin_ = moves_.size();
+    }
+
+    void clear() noexcept {
+      moves_.clear();
+      rePick();
+    }
 
     bool isBadViolentMove() const noexcept {
       return current_ > badViolentBegin_;
     }
 
     template <NodeMeta meta>
-    Move pick(MoveList& moves, Move ttMove, const BoardState& state) noexcept {
+    PickResult pick(Move ttMove, const BoardState& state) noexcept {
+      assert(current_ < moves_.size());
       auto pickKiller = [&](Move killer) noexcept -> bool {
         if (killer) {
-          auto it = std::find(current_, badViolentBegin_, killer);
-          if (it != badViolentBegin_) {
-            std::swap(*current_, *it);
-            return true;
+          for (size_t i = current_; i < badViolentBegin_; ++i) {
+            if (moves_[i] == killer) {
+              std::swap(moves_[current_], moves_[i]);
+              return true;
+            }
           }
         }
         return false;
@@ -223,17 +219,19 @@ namespace bb::searching {
         switch (stage_) {
         case Stage::TTMove: {
           stage_ = Stage::GoodViolent;
-          current_ = moves.begin();
-          goodViolentEnd_ = moves.begin();
-          badQuietBegin_ = moves.end();
-          badViolentBegin_ = moves.end();
+          current_ = 0;
+          goodViolentEnd_ = 0;
+          badQuietBegin_ = moves_.size();
+          badViolentBegin_ = moves_.size();
           if constexpr (meta.isInternal()) {
             // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
             if (ttMove) {
-              auto it = std::find(moves.begin(), moves.end(), ttMove);
-              assert(it != moves.end());
-              std::swap(*current_, *it);
-              return *current_++;
+              auto it = std::find(moves_.begin(), moves_.end(), ttMove);
+              assert(it != moves_.end());
+              std::swap(moves_[0], *it);
+              const int32_t see = ttMove.isViolentMove() ? staticExchangeEvaluate<meta.side>(state, ttMove) : 0;
+              const size_t idx = current_++;
+              return { moves_[idx], see };
             }
           }
           [[fallthrough]];
@@ -241,24 +239,77 @@ namespace bb::searching {
 
         case Stage::GoodViolent: {
           stage_ = Stage::YieldGoodViolent;
-          auto violentsEnd = forwardPartition(current_, moves.end(), [](Move m) noexcept {
-            return m.isViolentMove();
-          });
-          goodViolentEnd_ = sortAndSplitAtZero(current_, violentsEnd, [&](Move m) noexcept {
-            return scoreViolent<meta>(state, m);
-          });
-          const size_t numBadViolents = static_cast<size_t>(violentsEnd - goodViolentEnd_);
-          if (numBadViolents > 0) {
-            std::rotate(goodViolentEnd_, violentsEnd, moves.end());
+          const size_t totalMoves = moves_.size();
+          if (current_ < totalMoves) {
+            size_t front = current_;
+            size_t scan = current_;
+            size_t badViolentBegin = totalMoves;
+
+            while (scan < badViolentBegin) {
+              const Move m = moves_[scan];
+              if (m.isViolentMove()) {
+                const int32_t see = staticExchangeEvaluate<meta.side>(state, m);
+                const int32_t score = scoreViolent<meta>(state, m, see);
+                if (score >= 0) {
+                  moves_[scan] = moves_[front];
+                  moves_[front] = m;
+                  scores_[front] = { score, static_cast<int16_t>(see) };
+                  ++front;
+                  ++scan;
+                } else {
+                  --badViolentBegin;
+                  moves_[scan] = moves_[badViolentBegin];
+                  moves_[badViolentBegin] = m;
+                  scores_[badViolentBegin] = { score, static_cast<int16_t>(see) };
+                }
+              } else {
+                ++scan;
+              }
+            }
+
+            goodViolentEnd_ = front;
+            badViolentBegin_ = badViolentBegin;
+            badQuietBegin_ = badViolentBegin_;
+
+            // Sort good violent moves [current_, goodViolentEnd_) by score descending.
+            for (size_t i = current_ + 1; i < goodViolentEnd_; ++i) {
+              const Move keyMove = moves_[i];
+              const auto keyScore = scores_[i];
+              size_t j = i;
+              while (j > current_ && scores_[j - 1].score < keyScore.score) {
+                moves_[j] = moves_[j - 1];
+                scores_[j] = scores_[j - 1];
+                --j;
+              }
+              moves_[j] = keyMove;
+              scores_[j] = keyScore;
+            }
+
+            // Sort bad violent moves [badViolentBegin_, totalMoves) by score descending.
+            for (size_t i = badViolentBegin_ + 1; i < totalMoves; ++i) {
+              const Move keyMove = moves_[i];
+              const auto keyScore = scores_[i];
+              size_t j = i;
+              while (j > badViolentBegin_ && scores_[j - 1].score < keyScore.score) {
+                moves_[j] = moves_[j - 1];
+                scores_[j] = scores_[j - 1];
+                --j;
+              }
+              moves_[j] = keyMove;
+              scores_[j] = keyScore;
+            }
+          } else {
+            goodViolentEnd_ = current_;
+            badViolentBegin_ = current_;
+            badQuietBegin_ = current_;
           }
-          badViolentBegin_ = moves.end() - numBadViolents;
-          badQuietBegin_ = badViolentBegin_;
           [[fallthrough]];
         }
 
         case Stage::YieldGoodViolent: {
           if (current_ < goodViolentEnd_) {
-            return *current_++;
+            const size_t idx = current_++;
+            return { moves_[idx], scores_[idx].see };
           }
           stage_ = Stage::Killer1;
           [[fallthrough]];
@@ -267,8 +318,9 @@ namespace bb::searching {
         case Stage::Killer1: {
           stage_ = Stage::Killer2;
           if constexpr (meta.isInternal()) {
-            if (pickKiller(history_.getKiller(ply_, 0))) {
-              return *current_++;
+            if (pickKiller(historyHeuristics_.getKiller(ply_, 0))) {
+              const size_t idx = current_++;
+              return { moves_[idx], 0 };
             }
           }
           [[fallthrough]];
@@ -277,10 +329,11 @@ namespace bb::searching {
         case Stage::Killer2: {
           stage_ = Stage::Quiets;
           if constexpr (meta.isInternal()) {
-            const Move k1 = history_.getKiller(ply_, 0);
-            const Move k2 = history_.getKiller(ply_, 1);
+            const Move k1 = historyHeuristics_.getKiller(ply_, 0);
+            const Move k2 = historyHeuristics_.getKiller(ply_, 1);
             if (k2 != k1 && pickKiller(k2)) {
-              return *current_++;
+              const size_t idx = current_++;
+              return { moves_[idx], 0 };
             }
           }
           [[fallthrough]];
@@ -289,26 +342,61 @@ namespace bb::searching {
         case Stage::Quiets: {
           stage_ = Stage::YieldQuiets;
           if constexpr (meta.isInternal()) {
-            badQuietBegin_ = sortAndSplitAtZero(current_, badViolentBegin_, [&](Move m) noexcept {
-              return history_.getQuietScore<meta.side>(m, prev1_, prev2_);
-            });
+            const size_t n = badViolentBegin_ - current_;
+            if (n > 1) {
+              for (size_t i = current_; i < badViolentBegin_; ++i) {
+                scores_[i].score = historyHeuristics_.getQuietScore<meta.side>(moves_[i], prev1_, prev2_);
+              }
+
+              for (size_t i = current_ + 1; i < badViolentBegin_; ++i) {
+                const Move keyMove = moves_[i];
+                const int32_t keyScore = scores_[i].score;
+                size_t j = i;
+                while (j > current_ && scores_[j - 1].score < keyScore) {
+                  moves_[j] = moves_[j - 1];
+                  scores_[j].score = scores_[j - 1].score;
+                  --j;
+                }
+                moves_[j] = keyMove;
+                scores_[j].score = keyScore;
+              }
+
+              badQuietBegin_ = current_;
+              while (badQuietBegin_ < badViolentBegin_ && scores_[badQuietBegin_].score >= 0) {
+                ++badQuietBegin_;
+              }
+            } else if (n == 1) {
+              const int32_t s = historyHeuristics_.getQuietScore<meta.side>(moves_[current_], prev1_, prev2_);
+              scores_[current_].score = s;
+              badQuietBegin_ = (s < 0) ? current_ : badViolentBegin_;
+            } else {
+              badQuietBegin_ = current_;
+            }
           }
           [[fallthrough]];
         }
 
         case Stage::YieldQuiets: {
           if (current_ < badViolentBegin_) {
-            return *current_++;
+            const size_t idx = current_++;
+            return { moves_[idx], 0 };
           }
           stage_ = Stage::BadViolent;
           [[fallthrough]];
         }
 
         case Stage::BadViolent: {
-          return *current_++;
+          assert(current_ < moves_.size());
+          const size_t idx = current_++;
+          return { moves_[idx], scores_[idx].see };
         }
         default:
-          return Move{};
+          assert(false);
+#if defined(_MSC_VER)
+          __assume(false);
+#elif defined(__GNUC__) || defined(__clang__)
+          __builtin_unreachable();
+#endif
         }
       }
     }

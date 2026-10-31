@@ -51,7 +51,11 @@ namespace {
       }
     }
 
-    void invalidateEvaluation() {}
+    void resetEvaluation() {}
+    bool isCheckmateScore(int32_t score) const noexcept {
+      const int32_t absScore = std::abs(score);
+      return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+    }
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
 
@@ -59,7 +63,7 @@ namespace {
     searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
       *requestedDepth = param.maxDepth;
       if (historySizes) {
-        historySizes->push_back(param.positionHistory.size());
+        historySizes->push_back(param.history.size());
       }
       MoveList moves;
       state.generateMoves<ally>(moves);
@@ -80,9 +84,11 @@ namespace {
       const uint64_t nodes = param.maxDepth == 3 ? 100 : param.maxDepth == 2 ? 30 : 10;
       const int32_t score = param.maxDepth == 3 ? kMateMagnitude - 3 : param.maxDepth == 2 ? -12 : 34;
       searching::SearchResult result{
-        score, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-        nodes, std::chrono::milliseconds{10 * param.maxDepth},
-        std::span<const Move>{stored.data(), stored.size()}};
+        .score = score,
+        .move = moves.empty() ? Move{} : moves[0],
+        .pvLine = std::span<const Move>{stored.data(), stored.size()},
+        .nodes = nodes,
+        .searchingTime = std::chrono::milliseconds{10 * param.maxDepth}};
       if (pvSnapshots) {
         pvSnapshots->emplace_back(stored.begin(), stored.end());
       }
@@ -93,13 +99,17 @@ namespace {
 
   struct ZeroTimeSearchPolicy {
     void reset() {}
-    void invalidateEvaluation() {}
+    void resetEvaluation() {}
+    bool isCheckmateScore(int32_t score) const noexcept {
+      const int32_t absScore = std::abs(score);
+      return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+    }
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam&) {
-      return {0, std::nullopt, 1, std::chrono::nanoseconds{}, {}};
+      return {.score = 0, .move = Move{}, .pvLine = {}, .nodes = 1, .searchingTime = std::chrono::nanoseconds{}};
     }
   };
 
@@ -108,7 +118,11 @@ namespace {
     std::chrono::milliseconds pause;
 
     void reset() {}
-    void invalidateEvaluation() {}
+    void resetEvaluation() {}
+    bool isCheckmateScore(int32_t score) const noexcept {
+      const int32_t absScore = std::abs(score);
+      return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+    }
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
 
@@ -118,7 +132,7 @@ namespace {
       std::this_thread::sleep_for(pause);
       MoveList moves;
       state.generateMoves<ally>(moves);
-      return {0, moves.empty() ? std::nullopt : std::optional<Move>{moves[0]}, 1, pause, {}};
+      return {.score = 0, .move = moves.empty() ? Move{} : moves[0], .pvLine = {}, .nodes = 1, .searchingTime = pause};
     }
   };
 
@@ -127,13 +141,17 @@ namespace {
     static constexpr auto kDuration = std::chrono::microseconds{250};
 
     void reset() {}
-    void invalidateEvaluation() {}
+    void resetEvaluation() {}
+    bool isCheckmateScore(int32_t score) const noexcept {
+      const int32_t absScore = std::abs(score);
+      return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+    }
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam&) {
-      return {0, std::nullopt, kNodes, kDuration, {}};
+      return {.score = 0, .move = Move{}, .pvLine = {}, .nodes = kNodes, .searchingTime = kDuration};
     }
   };
 
@@ -143,7 +161,11 @@ namespace {
     const std::vector<int32_t>* scores;
 
     void reset() {}
-    void invalidateEvaluation() {}
+    void resetEvaluation() {}
+    bool isCheckmateScore(int32_t score) const noexcept {
+      const int32_t absScore = std::abs(score);
+      return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+    }
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
 
@@ -151,8 +173,11 @@ namespace {
     searching::SearchResult search(BoardState& state, const searching::SearchParam param) {
       MoveList moves;
       state.generateMoves<ally>(moves);
-      return {scores->at(param.maxDepth - 1), moves.empty() ? std::nullopt : std::optional<Move>{moves[0]},
-              kNodesPerDepth, kSearchDuration, {}};
+      return {.score = scores->at(param.maxDepth - 1),
+              .move = moves.empty() ? Move{} : moves[0],
+              .pvLine = {},
+              .nodes = kNodesPerDepth,
+              .searchingTime = kSearchDuration};
     }
   };
 
@@ -160,15 +185,21 @@ namespace {
     searching::PVLine pvToReturn;
 
     void reset() {}
-    void invalidateEvaluation() {}
+    void resetEvaluation() {}
+    bool isCheckmateScore(int32_t score) const noexcept {
+      const int32_t absScore = std::abs(score);
+      return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+    }
     template <bool Add>
     void markPiece(Side, Piece, Square) {}
 
     template <Side ally>
     searching::SearchResult search(BoardState&, const searching::SearchParam&) {
-      return {0, pvToReturn.empty() ? std::nullopt : std::optional<Move>{pvToReturn[0]},
-              1, std::chrono::nanoseconds{},
-              std::span<const Move>{pvToReturn.data(), pvToReturn.size()}};
+      return {.score = 0,
+              .move = pvToReturn.empty() ? Move{} : pvToReturn[0],
+              .pvLine = std::span<const Move>{pvToReturn.data(), pvToReturn.size()},
+              .nodes = 1,
+              .searchingTime = std::chrono::nanoseconds{}};
     }
   };
 
@@ -346,30 +377,34 @@ TEST(SearchStatistics, CountsRootAndLeafPositions) {
   MoveList legalMoves;
   board.getState().generateMoves<White>(legalMoves);
 
-  const auto result = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
-  EXPECT_EQ(result.nodesSearched, legalMoves.size() + 1);
+  searching::SearchResult result{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { result = r; });
+  EXPECT_EQ(result.nodes, legalMoves.size() + 1);
 }
 
 TEST(SearchStatistics, ReusesRootTranspositionWithNanosecondDuration) {
   UciBoard board{makeUciSearch(50), TestTimePolicy{kTestTimePercentage}};
-  const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
-  const auto cached = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  searching::SearchResult first{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { first = r; });
+  searching::SearchResult cached{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { cached = r; });
 
-  ASSERT_TRUE(first.bestMove.has_value());
-  ASSERT_TRUE(cached.bestMove.has_value());
+  ASSERT_TRUE(static_cast<bool>(first.move));
+  ASSERT_TRUE(static_cast<bool>(cached.move));
   EXPECT_EQ(cached.score, first.score);
-  EXPECT_EQ(notation::moveToString(*cached.bestMove), notation::moveToString(*first.bestMove));
-  EXPECT_LE(cached.nodesSearched, first.nodesSearched);
+  EXPECT_EQ(notation::moveToString(cached.move), notation::moveToString(first.move));
+  EXPECT_LE(cached.nodes, first.nodes);
   EXPECT_GE(cached.searchingTime.count(), 0);
 }
 
 TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
   UciBoard board{makeUciSearch(80, 1u << 16),
                  TestTimePolicy{kTestTimePercentage}};
-  const auto cold = board.search(5, std::nullopt, [](const searching::SearchResult&) {});
-  ASSERT_TRUE(cold.bestMove.has_value());
+  searching::SearchResult cold{};
+  board.search(5, std::nullopt, [&](const searching::SearchResult& r) { cold = r; });
+  ASSERT_TRUE(static_cast<bool>(cold.move));
   ASSERT_FALSE(cold.pvLine.empty());
-  EXPECT_EQ(cold.pvLine.front(), *cold.bestMove);
+  EXPECT_EQ(cold.pvLine.front(), cold.move);
   EXPECT_LE(cold.pvLine.size(), 5u);
 
   BoardState pvState = board.getState();
@@ -387,10 +422,11 @@ TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
   }
 
   const std::vector<Move> coldPV(cold.pvLine.begin(), cold.pvLine.end());
-  const auto warm = board.search(5, std::nullopt, [](const searching::SearchResult&) {});
-  ASSERT_TRUE(warm.bestMove.has_value());
+  searching::SearchResult warm{};
+  board.search(5, std::nullopt, [&](const searching::SearchResult& r) { warm = r; });
+  ASSERT_TRUE(static_cast<bool>(warm.move));
   EXPECT_EQ(warm.score, cold.score);
-  EXPECT_EQ(warm.bestMove, cold.bestMove);
+  EXPECT_EQ(warm.move, cold.move);
   EXPECT_EQ(warm.pvLine.size(), coldPV.size());
   EXPECT_TRUE(std::equal(warm.pvLine.begin(), warm.pvLine.end(), coldPV.begin()));
 }
@@ -400,15 +436,14 @@ TEST(SearchFrame, MateDistanceUsesActualPlyAcrossDepths) {
   UciSearch search{makeUciSearch(80, 1u << 16)};
   searching::PositionHistory history;
   history.push(state.getHash());
-  std::optional<MoveList> rootMoves;
 
   for (const int depth : {1, 4}) {
-    const searching::SearchParam param{depth, 0, history, rootMoves};
+    const searching::SearchParam param{.maxDepth = depth, .history = history};
     const auto result = search.search<White>(state, param);
-    ASSERT_TRUE(result.bestMove.has_value());
+    ASSERT_TRUE(static_cast<bool>(result.move));
     EXPECT_EQ(result.score, evaluation::kCheckmateWinScore - 1);
     ASSERT_FALSE(result.pvLine.empty());
-    EXPECT_EQ(result.pvLine.front(), *result.bestMove);
+    EXPECT_EQ(result.pvLine.front(), result.move);
   }
 }
 
@@ -416,8 +451,9 @@ TEST(BoardSearch, StopsAfterWinningMate) {
   const std::vector<int32_t> scores{kMateMagnitude - 1, 0, 0};
   Board board{ScoreSequenceSearchPolicy{&scores}, TestTimePolicy{kTestTimePercentage}};
   int completedDepths = 0;
-
-  const auto result = board.search(3, std::nullopt, [&](const searching::SearchResult&) {
+  searching::SearchResult result{};
+  board.search(3, std::nullopt, [&](const searching::SearchResult& r) {
+    result = r;
     ++completedDepths;
   });
   EXPECT_EQ(completedDepths, 1);
@@ -431,7 +467,9 @@ TEST(BoardSearch, ContinuesForLosingMateAndScoresOutsideMateRange) {
                               kMateMagnitude + 1, 0}}) {
     Board board{ScoreSequenceSearchPolicy{&scores}, TestTimePolicy{kTestTimePercentage}};
     int completedDepths = 0;
-    const auto result = board.search(3, std::nullopt, [&](const searching::SearchResult&) {
+    searching::SearchResult result{};
+    board.search(3, std::nullopt, [&](const searching::SearchResult& r) {
+      result = r;
       ++completedDepths;
     });
     EXPECT_EQ(completedDepths, 3);
@@ -483,7 +521,7 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
     const auto info = parseInfoLine(line);
     ASSERT_TRUE(info.has_value());
     EXPECT_EQ(info->depth, i + 1);
-    totalNodes += results[i].nodesSearched;
+    totalNodes += results[i].nodes;
     EXPECT_EQ(info->nodes, totalNodes);
     EXPECT_GE(info->timeMs, previousTimeMs);
     if (info->timeMs > 0 && info->timeMs < 1000) {
@@ -501,8 +539,8 @@ TEST(UciIntegration, PassesGoDepthToSearch) {
     }
   }
   ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
-  ASSERT_TRUE(results.back().bestMove.has_value());
-  EXPECT_EQ(line, "bestmove " + notation::moveToString(*results.back().bestMove));
+  ASSERT_TRUE(static_cast<bool>(results.back().move));
+  EXPECT_EQ(line, "bestmove " + notation::moveToString(results.back().move));
   EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
   EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
 }
@@ -526,8 +564,8 @@ TEST(UciIntegration, StopsTimedSearchAfterFirstCompletedDepthWhenBudgetIsZero) {
   ASSERT_TRUE(info.has_value());
   EXPECT_EQ(info->depth, 1);
   ASSERT_TRUE(static_cast<bool>(std::getline(output, line)));
-  ASSERT_TRUE(results.back().bestMove.has_value());
-  EXPECT_EQ(line, "bestmove " + notation::moveToString(*results.back().bestMove));
+  ASSERT_TRUE(static_cast<bool>(results.back().move));
+  EXPECT_EQ(line, "bestmove " + notation::moveToString(results.back().move));
   EXPECT_FALSE(static_cast<bool>(std::getline(output, line)));
   EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
 }
@@ -591,7 +629,8 @@ TEST(BoardSearch, SearchReturnsPVLineFromPolicy) {
   policy.pvToReturn.push(Move{E7, E5, Pawn, NoPiece, 0});
 
   Board board{policy, TestTimePolicy{kTestTimePercentage}};
-  const auto result = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  searching::SearchResult result{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { result = r; });
   ASSERT_EQ(result.pvLine.size(), 2u);
   EXPECT_EQ(result.pvLine[0], policy.pvToReturn[0]);
   EXPECT_EQ(result.pvLine[1], policy.pvToReturn[1]);
@@ -725,7 +764,7 @@ TEST(UciIntegration, ReplaysMovesAndResetsNewGame) {
   EXPECT_NE(humanOutput.str().find("FEN: " + std::string(fen::kStartPosition)), std::string::npos);
 }
 
-TEST(UciIntegration, NewGameKeepsBoardUntilNextPositionCommand) {
+TEST(UciIntegration, NewGameResetsBoardToStartPosition) {
   std::istringstream input{"position startpos moves e2e4\nucinewgame\nquit\n"};
   std::ostringstream uciOutput;
   std::ostringstream humanOutput;
@@ -733,8 +772,7 @@ TEST(UciIntegration, NewGameKeepsBoardUntilNextPositionCommand) {
   user_interface::TerminalUI terminal{board, input, uciOutput, humanOutput};
 
   terminal.run();
-  EXPECT_EQ(notation::boardToFen(board.getState()),
-            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+  EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
   EXPECT_TRUE(uciOutput.str().empty());
 }
 
@@ -770,19 +808,20 @@ TEST(BoardReset, ClearsSearchHistoryAndPolicyButKeepsPosition) {
     TestTimePolicy{kTestTimePercentage}};
 
   board.playMove("e2e4");
-  const auto first = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
+  searching::SearchResult first{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { first = r; });
   ASSERT_FALSE(first.pvLine.empty());
   const std::string position = notation::boardToFen(board.getState());
 
-  board.reset();
+  board.newGame();
   board.search(1, std::nullopt, [](const searching::SearchResult&) {});
 
   EXPECT_EQ(resetCalls, 1);
-  EXPECT_EQ(notation::boardToFen(board.getState()), position);
+  EXPECT_EQ(notation::boardToFen(board.getState()), fen::kStartPosition);
   EXPECT_EQ(historySizes, (std::vector<size_t>{2, 1}));
 }
 
-TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
+TEST(UciIntegration, ReportsErrorOnInvalidPositionAndSearchesToRequestedDepth) {
   std::istringstream input{
     "position startpos moves e2e4\n"
     "position startpos moves e2e4 e7e5 e4e8\n"
@@ -796,7 +835,7 @@ TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
 
   terminal.run();
   EXPECT_EQ(notation::boardToFen(board.getState()),
-            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+            "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2");
   EXPECT_NE(uciOutput.str().find("info string error: Illegal UCI move: e4e8\n"), std::string::npos);
   EXPECT_NE(uciOutput.str().find("info string error: Invalid piece letter\n"), std::string::npos);
   const std::string output = uciOutput.str();
@@ -806,7 +845,7 @@ TEST(UciIntegration, RollsBackInvalidPositionAndSearchesToRequestedDepth) {
   ASSERT_NE(moveEnd, std::string::npos);
   const std::string bestMove = output.substr(moveStart + 9, moveEnd - moveStart - 9);
   MoveList legalMoves;
-  board.getState().generateMoves<Black>(legalMoves);
+  board.getState().generateMoves<White>(legalMoves);
   EXPECT_TRUE(std::any_of(legalMoves.begin(), legalMoves.end(), [&](const Move& move) {
     return notation::moveToString(move) == bestMove;
   }));

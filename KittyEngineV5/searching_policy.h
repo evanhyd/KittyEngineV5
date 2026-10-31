@@ -12,25 +12,21 @@ namespace bb {
   namespace searching {
     inline constexpr int kMaxDepthHardCutoff = 64;
     inline constexpr size_t kMaxMovePerGame = 512;
-    using PVLine = SmallVec<Move, kMaxDepthHardCutoff + 1>;
     using PositionHistory = SmallVec<ZobristHash::Hash, kMaxMovePerGame>;
-    using MoveHistory = SmallVec<Move, kMaxMovePerGame>;
+    using PVLine = SmallVec<Move, kMaxDepthHardCutoff + 1>;
 
     struct SearchParam {
-      int maxDepth;                       // initial max depth
-      int32_t pastEval;
-      PositionHistory& positionHistory;   // input and output
-      std::optional<MoveList>& rootMoves; // reuse across iterative deepening
+      int maxDepth;
+      PositionHistory& history;
     };
 
     struct SearchResult {
-      int32_t score = 0;
-      std::optional<Move> bestMove;
-      uint64_t nodesSearched = 0;
-      std::chrono::nanoseconds searchingTime{};
-      std::span<const Move> pvLine{};
+      int32_t score;
+      Move move;
+      std::span<const Move> pvLine;
+      uint64_t nodes;
+      std::chrono::nanoseconds searchingTime;
     };
-
 
 
     template <typename SearchPolicy>
@@ -38,7 +34,8 @@ namespace bb {
       { policy.search<White>(state, param) } -> std::same_as<SearchResult>;
       { policy.search<Black>(state, param) } -> std::same_as<SearchResult>;
       { policy.reset() } -> std::same_as<void>;
-      { policy.invalidateEvaluation() } -> std::same_as<void>;
+      { policy.resetEvaluation() } -> std::same_as<void>;
+      { policy.isCheckmateScore(int32_t{}) } -> std::same_as<bool>;
       { policy.template markPiece<true>(White, Pawn, A1) } -> std::same_as<void>;
       { policy.template markPiece<false>(White, Pawn, A1) } -> std::same_as<void>;
     };

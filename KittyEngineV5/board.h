@@ -17,15 +17,14 @@
 namespace bb {
   template <searching::SearchingPolicy SearchPolicy, time_control::TimeControlPolicy TimePolicy>
   class Board {
-    SearchPolicy searchingPolicy_;
-    TimePolicy timeControlPolicy_;
     BoardState state_;
-    searching::PositionHistory positionHistory_;
-    searching::MoveHistory moveHistory_;
+    SearchPolicy searchPolicy_;
+    TimePolicy timePolicy_;
+    searching::PositionHistory history_;
 
   public:
     explicit Board(SearchPolicy searchPolicy, TimePolicy timePolicy)
-      : searchingPolicy_(std::move(searchPolicy)), timeControlPolicy_(std::move(timePolicy)) {
+      : searchPolicy_(std::move(searchPolicy)), timePolicy_(std::move(timePolicy)) {
       setPosition(fen::kStartPosition);
     }
 
@@ -37,51 +36,40 @@ namespace bb {
       return state_;
     }
 
-    void reset() {
-      searchingPolicy_.reset();
-      positionHistory_.clear();
-      positionHistory_.push(state_.getHash());
-      moveHistory_.clear();
+    // Start a completely new game.
+    void newGame() {
+      state_.setPosition(fen::kStartPosition);
+      searchPolicy_.reset();
+      history_.clear();
+      history_.push(state_.getHash());
     }
 
-    void setPosition(std::string_view fen) {
+    // Set the initial positions and replay moves.
+    // Keep search heuristic: yes.
+    // Keep evaluation cache: no.
+    void setPosition(std::string_view fen, std::span<const std::string_view> moves = {}) {
       state_.setPosition(fen);
-      searchingPolicy_.invalidateEvaluation();
-      positionHistory_.clear();
-      positionHistory_.push(state_.getHash());
-      moveHistory_.clear();
-    }
-
-    void setPosition(std::string_view fen, std::span<const std::string_view> moves) {
-      const BoardState previousState = state_;
-      const searching::PositionHistory previousPositionHistory = positionHistory_;
-      const searching::MoveHistory previousMoveHistory = moveHistory_;
-      try {
-        setPosition(fen);
-        for (const std::string_view moveText : moves) {
-          playMove(moveText);
-        }
-      } catch (...) {
-        state_ = previousState;
-        positionHistory_ = previousPositionHistory;
-        moveHistory_ = previousMoveHistory;
-        throw;
+      searchPolicy_.resetEvaluation();
+      history_.clear();
+      history_.push(state_.getHash());
+      for (const auto& moveText : moves) {
+        playMove(moveText);
       }
     }
 
-    void playMove(std::string_view moveText) {
-      const auto playMoveImpl = [&]<Side ally>() {
+    // Play a single move and apply to the board.
+    void playMove(std::string_view moveStr) {
+      const auto playMoveImpl = [&]<Side side>() {
         MoveList moves;
-        state_.generateMoves<ally>(moves);
+        state_.generateMoves<side>(moves);
         for (const Move& move : moves) {
-          if (notation::moveToString(move) == moveText) {
-            state_.makeMove<ally>(move, searchingPolicy_);
-            positionHistory_.push(state_.getHash());
-            moveHistory_.push(move);
+          if (notation::moveToString(move) == moveStr) {
+            state_.makeMove<side>(move, searchPolicy_);
+            history_.push(state_.getHash());
             return;
           }
         }
-        throw std::invalid_argument(std::format("Illegal UCI move: {}", moveText));
+        throw std::invalid_argument(std::format("Illegal UCI move: {}", moveStr));
       };
 
       if (state_.getSide() == White) {
@@ -91,38 +79,33 @@ namespace bb {
       }
     }
 
-    searching::SearchResult search(int maxDepth, const std::optional<time_control::TimeControl>& timeControl, auto resultCallback) {
-      timeControlPolicy_.set(timeControl);
-      maxDepth = std::min(maxDepth, searching::kMaxDepthHardCutoff);
+    void search(int maxDepth, const std::optional<time_control::TimeControl>& timeControl, auto resultCallback) {
+      timePolicy_.set(timeControl);
+      maxDepth = std::clamp(maxDepth, 1, searching::kMaxDepthHardCutoff);
 
-      const auto iterativeDeepening = [&]<Side ally>() {
+      const auto iterativeDeepening = [&]<Side side>() {
         searching::SearchResult result{};
 
-        std::optional<MoveList> rootMoves;
-
         for (int depth = 1; depth <= maxDepth; ++depth) {
-          const searching::SearchParam param{
-            .maxDepth = depth,
-            .pastEval = result.score,
-            .positionHistory = positionHistory_,
-            .rootMoves = rootMoves,
-          };
-          result = searchingPolicy_.template search<ally>(state_, param);
+          const searching::SearchParam param{.maxDepth = depth, .history = history_};
+
+          const auto startTime = std::chrono::steady_clock::now();
+          result = searchPolicy_.template search<side>(state_, param);
+          result.searchingTime = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - startTime);
+
           resultCallback(result);
 
-          constexpr int32_t mateScore = evaluation::kCheckmateWinScore;
-          if ((result.score >= mateScore - searching::kMaxDepthHardCutoff && result.score <= mateScore) || !timeControlPolicy_.shouldContinue(ally)) {
+          // Stop if times up or have winning mate.
+          if (timePolicy_.isTimeUp(side) || (searchPolicy_.isCheckmateScore(result.score) && result.score > 0)) {
             break;
           }
         }
-
-        return result;
       };
 
       if (state_.getSide() == White) {
-        return iterativeDeepening.template operator()<White>();
+        iterativeDeepening.template operator()<White>();
       } else {
-        return iterativeDeepening.template operator()<Black>();
+        iterativeDeepening.template operator()<Black>();
       }
     }
   };

@@ -138,10 +138,14 @@ TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
     StatefulEvaluator{calls, copies, firstAddress, stableAddress}, searching::NegamaxSearchConfig{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
   const int copiesBeforeSearch = copies;
 
-  ASSERT_TRUE(board.search(1, std::nullopt, [](const searching::SearchResult&) {}).bestMove.has_value());
+  searching::SearchResult res1{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { res1 = r; });
+  ASSERT_TRUE(static_cast<bool>(res1.move));
   const int callsAfterFirstSearch = calls;
   board.setPosition(fen::kRookEndgame);
-  ASSERT_TRUE(board.search(1, std::nullopt, [](const searching::SearchResult&) {}).bestMove.has_value());
+  searching::SearchResult res2{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { res2 = r; });
+  ASSERT_TRUE(static_cast<bool>(res2.move));
 
   EXPECT_GT(callsAfterFirstSearch, 0);
   EXPECT_GT(calls, callsAfterFirstSearch);

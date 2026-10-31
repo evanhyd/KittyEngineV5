@@ -396,18 +396,22 @@ TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
     },
     time_control::EqualPercentageTimeControlPolicy{0.05f}
   };
-  const auto first = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
-  const auto repeated = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
+  searching::SearchResult first{};
+  board.search(2, std::nullopt, [&](const searching::SearchResult& r) { first = r; });
+  searching::SearchResult repeated{};
+  board.search(2, std::nullopt, [&](const searching::SearchResult& r) { repeated = r; });
   EXPECT_EQ(repeated.score, first.score);
-  EXPECT_EQ(repeated.bestMove, first.bestMove);
+  EXPECT_EQ(repeated.move, first.move);
 
-  board.reset();
-  const auto afterReset = board.search(2, std::nullopt, [](const searching::SearchResult&) {});
+  board.newGame();
+  searching::SearchResult afterReset{};
+  board.search(2, std::nullopt, [&](const searching::SearchResult& r) { afterReset = r; });
   EXPECT_EQ(afterReset.score, first.score);
 
   board.setPosition("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
-  const auto changed = board.search(1, std::nullopt, [](const searching::SearchResult&) {});
-  EXPECT_TRUE(changed.bestMove.has_value());
+  searching::SearchResult changed{};
+  board.search(1, std::nullopt, [&](const searching::SearchResult& r) { changed = r; });
+  EXPECT_TRUE(static_cast<bool>(changed.move));
 }
 
 // Expected to fail: at depth 10 the current engine still chooses 26...Bxd3?
@@ -594,6 +598,226 @@ TEST(TranspositionTable, SameKeyPreservesPVMoveAndStatusAgainstNonPVBounds) {
   EXPECT_EQ(entry->bestMove, pvMove);
 }
 
+namespace {
+  searching::HistoryHeuristics makeTestHistory() {
+    const searching::NegamaxSearchConfig config{};
+    return searching::HistoryHeuristics(config.maxQuietHistory,
+                                        config.maxRefutationHistory,
+                                        config.maxFollowupHistory,
+                                        config.maxCaptureHistory,
+                                        config.lateMoveReductionHistoryK,
+                                        config.lateMoveReductionHistoryB);
+  }
+}
+
+TEST(StagedMovePicker, PreservesMoveCountAndIntegrityAcrossStages) {
+  constexpr searching::NodeMeta kMeta{White, searching::NodeMeta::NodeType::Internal, true, false};
+  BoardState state;
+  state.setPosition(fen::kKiwipete);
+
+  searching::HistoryHeuristics history = makeTestHistory();
+  searching::StagedMovePicker picker(0, {}, {}, history);
+  state.generateMoves<White>(picker.getMoveBuffer());
+  ASSERT_GT(picker.size(), 0);
+
+  const MoveList originalMoves = picker.getMoveBuffer();
+
+  MoveList pickedMoves;
+  for (size_t i = 0; i < originalMoves.size(); ++i) {
+    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    ASSERT_TRUE(static_cast<bool>(m));
+    pickedMoves.push(m);
+  }
+
+  EXPECT_EQ(pickedMoves.size(), originalMoves.size());
+
+  for (const auto orig : originalMoves) {
+    size_t count = 0;
+    for (const auto picked : pickedMoves) {
+      if (picked == orig) ++count;
+    }
+    EXPECT_EQ(count, 1) << "Move not found or duplicated";
+  }
+}
+
+TEST(StagedMovePicker, YieldsTTMoveFirstWithCorrectSEE) {
+  constexpr searching::NodeMeta kMeta{White, searching::NodeMeta::NodeType::Internal, true, false};
+  BoardState state;
+  state.setPosition(fen::kKiwipete);
+
+  searching::HistoryHeuristics history = makeTestHistory();
+  searching::StagedMovePicker picker(0, {}, {}, history);
+  state.generateMoves<White>(picker.getMoveBuffer());
+
+  Move ttMove{};
+  for (const auto m : picker.getMoveBuffer()) {
+    if (m.isCapture()) {
+      ttMove = m;
+      break;
+    }
+  }
+  ASSERT_TRUE(static_cast<bool>(ttMove));
+
+  const int32_t expectedSee = searching::StagedMovePicker::staticExchangeEvaluate<White>(state, ttMove);
+
+  const auto [m, see] = picker.pick<kMeta>(ttMove, state);
+  EXPECT_EQ(m, ttMove);
+  EXPECT_EQ(see, expectedSee);
+}
+
+TEST(StagedMovePicker, CachesExactSEEForViolentMoves) {
+  constexpr searching::NodeMeta kMeta{White, searching::NodeMeta::NodeType::Internal, true, false};
+  BoardState state;
+  state.setPosition(fen::kKiwipete);
+
+  searching::HistoryHeuristics history = makeTestHistory();
+  searching::StagedMovePicker picker(0, {}, {}, history);
+  state.generateMoves<White>(picker.getMoveBuffer());
+  const size_t totalMoves = picker.size();
+
+  for (size_t i = 0; i < totalMoves; ++i) {
+    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    if (m.isViolentMove()) {
+      const int32_t directSee = searching::StagedMovePicker::staticExchangeEvaluate<White>(state, m);
+      EXPECT_EQ(see, directSee);
+    } else {
+      EXPECT_EQ(see, 0);
+    }
+  }
+}
+
+TEST(StagedMovePicker, StrictStageOrderMaintained) {
+  constexpr searching::NodeMeta kMeta{White, searching::NodeMeta::NodeType::Internal, true, false};
+  const std::vector<std::string_view> fens = {
+    fen::kStartPosition,
+    fen::kKiwipete,
+    fen::kMirrorView,
+    fen::kRookEndgame,
+    fen::kTalkChessBug
+  };
+
+  searching::HistoryHeuristics history = makeTestHistory();
+
+  for (const auto& fenStr : fens) {
+    BoardState state;
+    state.setPosition(fenStr);
+
+    searching::StagedMovePicker picker(0, {}, {}, history);
+    state.generateMoves<White>(picker.getMoveBuffer());
+    const size_t totalMoves = picker.size();
+    if (totalMoves == 0) continue;
+
+    int lastStage = 0; // 1: GoodViolent, 2: Quiet/Killer, 3: BadViolent
+    for (size_t i = 0; i < totalMoves; ++i) {
+      const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+      ASSERT_TRUE(static_cast<bool>(m));
+
+      int stage = 0;
+      if (m.isViolentMove()) {
+        const int32_t realSee = searching::StagedMovePicker::staticExchangeEvaluate<White>(state, m);
+        const Piece promo = m.getPromotedPieceType();
+        const bool isGood = (promo == Queen) || (promo == NoPiece && realSee >= 0);
+        stage = isGood ? 1 : 3;
+        EXPECT_EQ(see, realSee) << "Violent move SEE mismatch for move " << i << " in FEN: " << fenStr;
+      } else {
+        stage = 2;
+        EXPECT_EQ(see, 0);
+      }
+
+      if (stage == 3) {
+        EXPECT_TRUE(picker.isBadViolentMove()) << "Bad violent move not reported as bad violent in FEN: " << fenStr;
+      } else {
+        EXPECT_FALSE(picker.isBadViolentMove()) << "Non-bad-violent move reported as bad violent in FEN: " << fenStr;
+      }
+
+      EXPECT_LE(lastStage, stage) << "Stage ordering inverted: stage " << stage << " after stage " << lastStage << " in FEN: " << fenStr;
+      lastStage = stage;
+    }
+  }
+}
+
+TEST(StagedMovePicker, BadViolentAtEndOfListIsNotClassifiedAsQuiet) {
+  constexpr searching::NodeMeta kMeta{White, searching::NodeMeta::NodeType::Internal, true, false};
+  BoardState state;
+  // Position where White Queen on d1 can capture on d7 with negative SEE, and White also has quiet moves
+  state.setPosition(fen::kKiwipete);
+
+  searching::HistoryHeuristics history = makeTestHistory();
+  searching::StagedMovePicker picker(0, {}, {}, history);
+  state.generateMoves<White>(picker.getMoveBuffer());
+
+  MoveList& moves = picker.getMoveBuffer();
+  // Find a quiet move and a bad capture (SEE < 0)
+  std::optional<Move> quietMove;
+  std::optional<Move> badCapture;
+
+  for (const auto m : moves) {
+    if (m.isViolentMove()) {
+      if (searching::StagedMovePicker::staticExchangeEvaluate<White>(state, m) < 0) {
+        badCapture = m;
+      }
+    } else if (!quietMove) {
+      quietMove = m;
+    }
+  }
+
+  ASSERT_TRUE(quietMove.has_value());
+  ASSERT_TRUE(badCapture.has_value());
+
+  // Set up picker with exactly [quietMove, badCapture]
+  picker.getMoveBuffer().clear();
+  picker.getMoveBuffer().push(*quietMove);
+  picker.getMoveBuffer().push(*badCapture);
+
+  // First pick must be the quiet move (since there are no good violent moves)
+  const auto pick1 = picker.pick<kMeta>(Move{}, state);
+  EXPECT_EQ(pick1.move, *quietMove);
+  EXPECT_FALSE(picker.isBadViolentMove());
+
+  // Second pick must be the bad capture!
+  const auto pick2 = picker.pick<kMeta>(Move{}, state);
+  EXPECT_EQ(pick2.move, *badCapture);
+  EXPECT_TRUE(picker.isBadViolentMove()) << "BUG CONFIRMED: Bad capture at end was NOT flagged as bad violent move!";
+  EXPECT_EQ(pick2.see, searching::StagedMovePicker::staticExchangeEvaluate<White>(state, *badCapture))
+    << "BUG CONFIRMED: Bad capture at end did NOT receive cached SEE!";
+}
+
+TEST(StagedMovePicker, RePickRestoresStageAndPointersWithoutLosingMoves) {
+  constexpr searching::NodeMeta kMeta{White, searching::NodeMeta::NodeType::Internal, true, false};
+  BoardState state;
+  state.setPosition(fen::kKiwipete);
+
+  searching::HistoryHeuristics history = makeTestHistory();
+  searching::StagedMovePicker picker(0, {}, {}, history);
+  state.generateMoves<White>(picker.getMoveBuffer());
+  const size_t totalMoves = picker.size();
+  ASSERT_GT(totalMoves, 0);
+
+  MoveList firstPass;
+  for (size_t i = 0; i < totalMoves; ++i) {
+    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    firstPass.push(m);
+  }
+  EXPECT_EQ(firstPass.size(), totalMoves);
+
+  // Call rePick() and pick again.
+  picker.rePick();
+
+  MoveList secondPass;
+  for (size_t i = 0; i < totalMoves; ++i) {
+    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    secondPass.push(m);
+  }
+  EXPECT_EQ(secondPass.size(), totalMoves);
+  for (const auto orig : firstPass) {
+    size_t count = 0;
+    for (const auto picked : secondPass) {
+      if (picked == orig) ++count;
+    }
+    EXPECT_EQ(count, 1) << "Move not found or duplicated after rePick: " << notation::moveToString(orig);
+  }
+}
+
 TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
   struct BenchmarkConfig {
     std::string name;
@@ -601,40 +825,7 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
   };
 
   const std::vector<BenchmarkConfig> configs = {
-    // Current Champion:
-    {"1. Champion (LMP d<=4: 6+2*d^2, Div=2.69)", bb::searching::NegamaxSearchConfig{}},
-
-    // Test E1: LMP depth 5 with multiplier 1 (Base 8 + 1*d^2: d4=24, d5=33)
-    {"2. E1: LMP d<=5 (Base 8 + 1*d^2), Div=2.69", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 5;
-      c.lateMovePruningBase = 8;
-      c.lateMovePruningMultiplier = 1;
-      return c;
-    }()},
-
-    // Test E2: LMP depth 5 with multiplier 1 (Base 10 + 1*d^2: d4=26, d5=35)
-    {"3. E2: LMP d<=5 (Base 10 + 1*d^2), Div=2.69", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMovePruningDepth = 5;
-      c.lateMovePruningBase = 10;
-      c.lateMovePruningMultiplier = 1;
-      return c;
-    }()},
-
-    // Test E3: Divisor 2.68 at Deep Depth 20
-    {"4. E3: Div=2.68 (LMP d<=4: 6+2*d^2)", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMoveReductionDivisor = 2.68;
-      return c;
-    }()},
-
-    // Test E4: Divisor 2.70 at Deep Depth 20
-    {"5. E4: Div=2.70 (LMP d<=4: 6+2*d^2)", [] {
-      bb::searching::NegamaxSearchConfig c{};
-      c.lateMoveReductionDivisor = 2.70;
-      return c;
-    }()}
+    {"Baseline (Fut=100/d3, SEE=-100/d3)", bb::searching::NegamaxSearchConfig{}}
   };
 
   struct PositionSpec {
@@ -645,18 +836,20 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
 
   const std::vector<PositionSpec> positions = {
     {"Startpos20", fen::kStartPosition, 20},
-    {"Kiwipete14", fen::kKiwipete, 14}
+    {"Kiwipete16", fen::kKiwipete, 16},
+    {"RookEndgame20", fen::kRookEndgame, 20}
   };
 
-  std::cout << "\n==================================== DEEP SEARCH TUNING: STARTPOS D20 & KIWIPETE D14 ====================================\n";
-  std::cout << std::format("{:<45} | {:<12} | {:<12} | {:<12} | {:<8}\n",
-                           "Configuration", "Startpos20", "Kiwipete14", "TotalNodes", "Rel %");
-  std::cout << "--------------------------------------------------------------------------------------------------------------------------\n";
+  std::cout << "\n==================================== PRUNING TUNING SCREENING BENCHMARK ====================================\n";
+  std::cout << std::format("{:<45} | {:<10} | {:<10} | {:<10} | {:<12} | {:<8}\n",
+                           "Configuration", "Start16", "Kiwi13", "Endgame16", "TotalNodes", "Rel %");
+  std::cout << "--------------------------------------------------------------------------------------------------------------\n" << std::flush;
 
   uint64_t baselineTotalNodes = 0;
 
   for (size_t configIndex = 0; configIndex < configs.size(); ++configIndex) {
     const auto& [name, config] = configs[configIndex];
+    std::cout << "\nRunning: " << name << " ...\n" << std::flush;
     uint64_t configTotalNodes = 0;
     std::vector<uint64_t> posNodes;
     std::vector<std::string> bestMoves;
@@ -676,15 +869,20 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
 
       board.setPosition(pos.fen);
       const auto start = std::chrono::high_resolution_clock::now();
-      const auto result = board.search(pos.depth, std::nullopt, [](const bb::searching::SearchResult&) {});
+      bb::searching::SearchResult result{};
+      board.search(pos.depth, std::nullopt, [&](const bb::searching::SearchResult& r) { result = r; });
       const auto end = std::chrono::high_resolution_clock::now();
       const double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-      posNodes.push_back(result.nodesSearched);
-      configTotalNodes += result.nodesSearched;
-      bestMoves.push_back(result.bestMove ? notation::moveToString(*result.bestMove) : "none");
+      posNodes.push_back(result.nodes);
+      configTotalNodes += result.nodes;
+      bestMoves.push_back(result.move ? notation::moveToString(result.move) : "none");
       posScores.push_back(result.score);
       elapsedTimesMs.push_back(ms);
+      std::cout << "  -> " << pos.name << ": " << result.nodes << " nodes, "
+                << (result.move ? notation::moveToString(result.move) : "none")
+                << " (" << (result.score >= 0 ? "+" : "") << result.score << "), "
+                << (ms / 1000.0) << "s\n" << std::flush;
     }
 
     if (configIndex == 0) {
@@ -695,11 +893,12 @@ TEST(SearchBenchmark, DISABLED_CompareLmrAndHistoryConfigs) {
       ? (100.0 * static_cast<double>(configTotalNodes) / static_cast<double>(baselineTotalNodes))
       : 100.0;
 
-    std::cout << std::format("{:<45} | {:<12} | {:<12} | {:<12} | {:>6.2f}%\n",
-                             name, posNodes[0], posNodes[1], configTotalNodes, relPercent);
-    std::cout << std::format("   evals: [Start20: {} ({:+d}, {:.1f}s), Kiwi14: {} ({:+d}, {:.1f}s)]\n",
+    std::cout << std::format("{:<45} | {:<10} | {:<10} | {:<10} | {:<12} | {:>6.2f}%\n",
+                             name, posNodes[0], posNodes[1], posNodes[2], configTotalNodes, relPercent);
+    std::cout << std::format("   summary: [Start16: {} ({:+d}, {:.1f}s), Kiwi13: {} ({:+d}, {:.1f}s), End16: {} ({:+d}, {:.1f}s)]\n",
                              bestMoves[0], posScores[0], elapsedTimesMs[0] / 1000.0,
-                             bestMoves[1], posScores[1], elapsedTimesMs[1] / 1000.0);
+                             bestMoves[1], posScores[1], elapsedTimesMs[1] / 1000.0,
+                             bestMoves[2], posScores[2], elapsedTimesMs[2] / 1000.0) << std::flush;
   }
-  std::cout << "==========================================================================================================================\n\n";
+  std::cout << "==============================================================================================================\n\n" << std::flush;
 }

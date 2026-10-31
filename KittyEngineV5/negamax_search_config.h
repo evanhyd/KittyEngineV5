@@ -14,10 +14,9 @@ namespace bb::searching {
     int futilityDepth = 3;
     int32_t futilityMarginPerDepth = 100;
 
-    // Late Move Pruning
-    int lateMovePruningDepth = 4;
-    int lateMovePruningBase = 6;
-    int lateMovePruningMultiplier = 2;
+    // SEE Pruning
+    int seePruningDepth = 3;
+    int32_t seePruningMarginPerDepth = -100;
 
     // Late Move Reductions
     int lateMoveReductionDepth = 3;
