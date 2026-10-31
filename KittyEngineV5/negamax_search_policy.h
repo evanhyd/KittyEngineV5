@@ -248,6 +248,7 @@ namespace bb::searching {
 
       const Move prev1 = getPrevMove(frame, 1);
       const Move prev2 = getPrevMove(frame, 2);
+      const int32_t staticScoreGained = (ply >= 2 ? getStaticScore(context, frame) - getStaticScore(context, frame - 2) : 0);
       StagedMovePicker movePicker(ply, prev1, prev2, historyHeuristics_);
       MoveList& moves = movePicker.getMoveBuffer();
       Eval bestEval(alpha, false);
@@ -265,7 +266,8 @@ namespace bb::searching {
           if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= config_.kNullMoveMinPieces) {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
-            if (depth <= config_.reverseFutilityDepth && getStaticScore(context, frame) - depth * config_.reverseFutilityMarginPerDepth >= beta) {
+            if (depth <= config_.reverseFutilityDepth && 
+                getStaticScore(context, frame) - depth * config_.reverseFutilityMarginPerDepth >= beta + staticScoreGained) {
               const Eval eval(beta, false);
               storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
               return eval;
@@ -314,6 +316,7 @@ namespace bb::searching {
       }
 
       Move bestMove{};
+      int quietCount = 0;
 
       // Explore moves.
       for (size_t i = 0; i < moves.size(); ++i) {
@@ -322,8 +325,21 @@ namespace bb::searching {
         const bool isViolent = move.isViolentMove();
 
         if constexpr (meta.isInternal() && !meta.isPV) {
+          if (!isViolent) {
+            ++quietCount;
+          }
+
           if (!inCheck && i > 0) {
             if (!isViolent) {
+              // Late Move Pruning (LMP).
+              if (depth <= config_.lateMovePruningDepth &&
+                  staticScoreGained < config_.lateMovePruningStaticScoreGainedThreshold &&
+                  quietCount >= (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) &&
+                  !historyHeuristics_.isKillerMove(ply, move) &&
+                  !isCheckmateScore(bestEval.score)) {
+                continue;
+              }
+
               // Futility Pruning.
               if (depth <= config_.futilityDepth &&
                   !historyHeuristics_.isKillerMove(ply, move) &&
@@ -373,6 +389,11 @@ namespace bb::searching {
                 const int32_t historyScore = historyHeuristics_.template getQuietScore<meta.side>(move, prev1, prev2);
                 reduction += historyHeuristics_.getHistoryReduction(historyScore);
               }
+
+              if (staticScoreGained < config_.lateMoveReductionStaticScoreGainedThreshold) {
+                ++reduction;
+              }
+
               reduction = std::clamp(reduction, 0, childDepth - 1);
             }
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);
