@@ -11,7 +11,7 @@ The UCI protocol implementation and terminal UI were done with the assistance fr
 Usage: KittyEngine [options]
 
 Options:
-  --type <hce|nnue>                     Evaluation policy: hce, nnue(default)
+  --type <hce|nnue|noop>                Evaluation policy: hce, nnue(default), noop
   --mode <bullet|blitz|rapid|classical> TT size: bullet=128MB, blitz=256MB, rapid=1GB(default), classical=2GB
   --help, -h                            Print CLI help and exit
 ```
@@ -23,18 +23,39 @@ Options:
 - Iterative Deepening
 - Alpha-beta Pruning
 - Principal Variation Search
-- Null-Move Pruning
-- Late Move Reductions
-- Aspiration Windows
-- Transposition Table With Generation
-- Static Exchange Evaluation
-- Generalized Killer Moves
-- Butterfly History Table
-- Quiescence Search
+- Aspiration Windows with Exponential Widening
+- Transposition Table with Aging Generations and Principal Variation Entry Protection
+- In-place Staged Move Picker (Transposition Table Move -> Good Violent -> Killers -> Quiets -> Bad Violent)
+- Static Exchange Evaluation with In-place Caching
+- Static Exchange Evaluation Pruning for Losing Captures
+- Null-Move Pruning with Adaptive Depth Reductions
+- Reverse Futility Pruning with Improving Bonus
+- Futility Pruning with Dynamic Improving Margin
+- Late Move Pruning with Quadratic Move Count Scaling
+- Late Move Reductions with Dynamic History-based Adjustments
+- Improving Heuristic Tracking 2-Ply and 4-Ply Static Score Acceleration
+- Multi-Tier History Heuristics:
+  - Butterfly Quiet History Table with Gravity Centering
+  - 1-Ply Refutation / Continuation History
+  - 2-Ply Followup History
+  - Piece-to-Victim Capture History Table
+- Generalized Killer Move Slots per Ply
+- Quiescence Search with Stand-Pat Cutoffs and In-Check Quiet Check Evasions
 
 ## Evaluation Policy
 
-The executable defaults to NNUE evaluation (`--type nnue`); handcrafted evaluation is available via `--type hce`.
+The executable defaults to NNUE evaluation (`--type nnue`); handcrafted evaluation is available via `--type hce`, and a benchmark stub is available via `--type noop`.
+
+### NNUE evaluation
+
+- Classic Half-KP feature layout (king-relative perspective).
+- Architecture: 49,152 sparse inputs per perspective, two 256-neuron accumulators, 32 and 32 hidden neurons, and one output; all values are floats.
+- Inputs: non-king and king pieces indexed by side, piece type, king square, and piece square from each perspective (`[own king square: 64] * 768 + [relative piece side: 2] * [piece type: 6] * 64 + [piece square: 64]`).
+- Activations: Squared Clipped ReLU in accumulators and hidden layers, with linear output.
+- Incremental accumulator updates with deferred refreshes for efficient forward/backward move making.
+- Hand-tuned SIMD matrix operations optimized for low-latency CPU computations.
+- Training: more than 410 million unique positions distilled from Stockfish evaluations using the Bullet library.
+- Weights: loaded from `weights.bin` in the current working directory.
 
 ### Handcrafted evaluation
 
@@ -45,17 +66,7 @@ The handcrafted policy combines:
 - Isolated, doubled, and passed pawn scores.
 - Bishop-pair and open or semi-open rook-file bonuses.
 - King placement, pawn shelter, open files near the king, and nearby attacks.
-- Tappered evaluation.
-
-### NNUE evaluation
-
-- Classic Half-KP
-- Architecture: 40,960 sparse inputs per perspective, two 256-neuron accumulators, 32 and 32 hidden neurons, and one output; all values are floats.
-- Inputs: non-king pieces indexed by side, piece type, king square, and piece square from each perspective.
-- Activations: squared clipped ReLU in the accumulators and hidden layers, and a linear output.
-- Hand-tuned SIMD Matrix optimzied for low latency CPU computations.
-- Training: more than 410 million unique positions distilled from Stockfish evaluations using the Bullet library.
-- Weights: loaded from `weights.bin` in the current working directory.
+- Tapered evaluation.
 
 ## TimeControl Policy
 
