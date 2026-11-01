@@ -624,7 +624,7 @@ TEST(StagedMovePicker, PreservesMoveCountAndIntegrityAcrossStages) {
 
   MoveList pickedMoves;
   for (size_t i = 0; i < originalMoves.size(); ++i) {
-    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    const auto [m, heuristicScore] = picker.pick<kMeta>(Move{}, state);
     ASSERT_TRUE(static_cast<bool>(m));
     pickedMoves.push(m);
   }
@@ -660,9 +660,9 @@ TEST(StagedMovePicker, YieldsTTMoveFirstWithCorrectSEE) {
 
   const int32_t expectedSee = searching::StagedMovePicker::staticExchangeEvaluation<White>(state, ttMove);
 
-  const auto [m, see] = picker.pick<kMeta>(ttMove, state);
+  const auto [m, heuristicScore] = picker.pick<kMeta>(ttMove, state);
   EXPECT_EQ(m, ttMove);
-  EXPECT_EQ(see, expectedSee);
+  EXPECT_EQ(heuristicScore, expectedSee);
 }
 
 TEST(StagedMovePicker, CachesExactSEEForViolentMoves) {
@@ -676,12 +676,12 @@ TEST(StagedMovePicker, CachesExactSEEForViolentMoves) {
   const size_t totalMoves = picker.size();
 
   for (size_t i = 0; i < totalMoves; ++i) {
-    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    const auto [m, heuristicScore] = picker.pick<kMeta>(Move{}, state);
     if (m.isViolentMove()) {
       const int32_t directSee = searching::StagedMovePicker::staticExchangeEvaluation<White>(state, m);
-      EXPECT_EQ(see, directSee);
+      EXPECT_EQ(heuristicScore, directSee);
     } else {
-      EXPECT_EQ(see, 0);
+      EXPECT_EQ(heuristicScore, history.getQuietScore<White>(m, {}, {}));
     }
   }
 }
@@ -709,7 +709,7 @@ TEST(StagedMovePicker, StrictStageOrderMaintained) {
 
     int lastStage = 0; // 1: GoodViolent, 2: Quiet/Killer, 3: BadViolent
     for (size_t i = 0; i < totalMoves; ++i) {
-      const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+      const auto [m, heuristicScore] = picker.pick<kMeta>(Move{}, state);
       ASSERT_TRUE(static_cast<bool>(m));
 
       int stage = 0;
@@ -718,10 +718,10 @@ TEST(StagedMovePicker, StrictStageOrderMaintained) {
         const Piece promo = m.getPromotedPieceType();
         const bool isGood = (promo == Queen) || (promo == NoPiece && realSee >= 0);
         stage = isGood ? 1 : 3;
-        EXPECT_EQ(see, realSee) << "Violent move SEE mismatch for move " << i << " in FEN: " << fenStr;
+        EXPECT_EQ(heuristicScore, realSee) << "Violent move SEE mismatch for move " << i << " in FEN: " << fenStr;
       } else {
         stage = 2;
-        EXPECT_EQ(see, 0);
+        EXPECT_EQ(heuristicScore, history.getQuietScore<White>(m, {}, {}));
       }
 
       if (stage == 3) {
@@ -778,7 +778,7 @@ TEST(StagedMovePicker, BadViolentAtEndOfListIsNotClassifiedAsQuiet) {
   const auto pick2 = picker.pick<kMeta>(Move{}, state);
   EXPECT_EQ(pick2.move, *badCapture);
   EXPECT_TRUE(picker.isBadViolentMove()) << "BUG CONFIRMED: Bad capture at end was NOT flagged as bad violent move!";
-  EXPECT_EQ(pick2.see, searching::StagedMovePicker::staticExchangeEvaluation<White>(state, *badCapture))
+  EXPECT_EQ(pick2.heuristicScore, searching::StagedMovePicker::staticExchangeEvaluation<White>(state, *badCapture))
     << "BUG CONFIRMED: Bad capture at end did NOT receive cached SEE!";
 }
 
@@ -795,7 +795,7 @@ TEST(StagedMovePicker, RePickRestoresStageAndPointersWithoutLosingMoves) {
 
   MoveList firstPass;
   for (size_t i = 0; i < totalMoves; ++i) {
-    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    const auto [m, heuristicScore] = picker.pick<kMeta>(Move{}, state);
     firstPass.push(m);
   }
   EXPECT_EQ(firstPass.size(), totalMoves);
@@ -805,7 +805,7 @@ TEST(StagedMovePicker, RePickRestoresStageAndPointersWithoutLosingMoves) {
 
   MoveList secondPass;
   for (size_t i = 0; i < totalMoves; ++i) {
-    const auto [m, see] = picker.pick<kMeta>(Move{}, state);
+    const auto [m, heuristicScore] = picker.pick<kMeta>(Move{}, state);
     secondPass.push(m);
   }
   EXPECT_EQ(secondPass.size(), totalMoves);

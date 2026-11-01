@@ -5,25 +5,33 @@ namespace bb::searching {
   struct NegamaxSearchConfig {
     // Reverse Futility Pruning (Static Null Move Pruning)
     int reverseFutilityDepth = 3;
-    int32_t reverseFutilityMarginPerDepth = 100;
-    int32_t reverseFutilityImprovingMarginBonus = 30;
+    int32_t reverseFutilityMultiplier = 100;
+    int32_t reverseFutilityBase = 0;
+    int32_t reverseFutilityImprovingBonus = 30;
 
     // Null Move Pruning
     int nullMoveDepth = 2;
 
     // Futility Pruning
     int futilityDepth = 3;
-    int32_t futilityMarginPerDepth = 100;
-    int32_t futilityImprovingMarginBonus = 20;
+    int32_t futilityMultiplier = 100;
+    int32_t futilityBase = 0;
+    int32_t futilityImprovingBonus = 20;
 
     // SEE Pruning
     int seePruningDepth = 3;
-    int32_t seePruningMarginPerDepth = 100;
+    int32_t seePruningMultiplier = -100;
+    int32_t seePruningBase = 0;
 
     // Late Move Pruning
     int lateMovePruningDepth = 4;
-    int lateMovePruningBase = 6;
     int lateMovePruningMultiplier = 2;
+    int lateMovePruningBase = 6;
+
+    // History Pruning
+    int historyPruningDepth = 3;
+    int32_t historyPruningMultiplier = -300;
+    int32_t historyPruningBase = -500;
 
     // Late Move Reductions
     int lateMoveReductionDepth = 3;

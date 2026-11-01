@@ -59,6 +59,7 @@ namespace bb::searching {
     TranspositionTable ttTable_;
     HistoryHeuristics historyHeuristics_;
     StagedMovePicker rootMovePicker_{ 0, {}, {}, historyHeuristics_ };
+    int drawHistoryIndex_ = 0;
 
     int getPly(const SearchFrame* frame) const noexcept {
       return static_cast<int>(frame - frames_.data());
@@ -115,21 +116,20 @@ namespace bb::searching {
       return normalizeScore(score, -ply);
     }
 
-    static std::optional<Eval> checkDraw(const SearchContext& context, int ply) noexcept {
-      const auto halfmove = context.state.getHalfmove();
+    std::optional<Eval> checkDraw(const SearchContext& context, int ply) const noexcept {
+      const int halfmove = context.state.getHalfmove();
       if (halfmove < 4) {
         return std::nullopt;
       }
       if (halfmove >= 100) {
         return Eval(0, true);
       }
-      auto it = context.history.rbegin();
-      const auto end = it + std::min(context.history.size(), static_cast<size_t>(halfmove) + 1);
-      // Don't use std::find, because it uses ! instead of <, and "end" might be before "it".
-      for (++it; it < end; ++it) {
-        if (*it == context.state.getHash()) {
-          const bool inGameHistory = int(std::distance(it, end)) >= ply;
-          return Eval(0, !inGameHistory);
+
+      const int currentIdx = static_cast<int>(context.history.size()) - 1;
+      const int maxPlies = std::min(halfmove, currentIdx - drawHistoryIndex_);
+      for (int i = 4; i <= maxPlies; i += 2) {
+        if (context.history[currentIdx - i] == context.state.getHash()) {
+          return Eval(0, i <= ply);
         }
       }
       return std::nullopt;
@@ -282,7 +282,7 @@ namespace bb::searching {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
             if (depth <= config_.reverseFutilityDepth) {
-              const int32_t margin = depth * config_.reverseFutilityMarginPerDepth + (isImproved ? 0 : config_.reverseFutilityImprovingMarginBonus);
+              const int32_t margin = config_.reverseFutilityMultiplier * depth + config_.reverseFutilityBase + (isImproved ? 0 : config_.reverseFutilityImprovingBonus);
               if (currentStaticScore >= beta + margin) {
                 const Eval eval(beta, false);
                 storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
@@ -337,7 +337,7 @@ namespace bb::searching {
 
       // Explore moves.
       for (size_t i = 0; i < moves.size(); ++i) {
-        const auto [move, see] = movePicker.pick<meta>(ttMove, context.state);
+        const auto [move, heuristicScore] = movePicker.pick<meta>(ttMove, context.state);
         frame->move = move;
         const bool isViolent = move.isViolentMove();
 
@@ -349,7 +349,7 @@ namespace bb::searching {
           if (!inCheck && i > 0) {
             if (!isViolent) {
               // Late Move Pruning (LMP).
-              const int lmpThreshold = (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) * (isImproved ? 2 : 1);
+              const int lmpThreshold = (config_.lateMovePruningMultiplier * depth * depth + config_.lateMovePruningBase) * (isImproved ? 2 : 1);
               if (depth <= config_.lateMovePruningDepth &&
                   quietCount >= lmpThreshold &&
                   !historyHeuristics_.isKillerMove(ply, move) &&
@@ -357,17 +357,26 @@ namespace bb::searching {
                 continue;
               }
 
+              // History Pruning.
+              if (depth <= config_.historyPruningDepth &&
+                  !historyHeuristics_.isKillerMove(ply, move) &&
+                  !isCheckmateScore(bestEval.score)) {
+                if (heuristicScore < config_.historyPruningMultiplier * depth + config_.historyPruningBase) {
+                  continue;
+                }
+              }
+
               // Futility Pruning.
               if (depth <= config_.futilityDepth &&
                   !historyHeuristics_.isKillerMove(ply, move)) {
-                const int32_t margin = config_.futilityMarginPerDepth * depth + (isImproved ? config_.futilityImprovingMarginBonus : 0);
+                const int32_t margin = config_.futilityMultiplier * depth + config_.futilityBase + (isImproved ? config_.futilityImprovingBonus : 0);
                 if (currentStaticScore + margin <= bestEval.score) {
                   continue;
                 }
               }
             } else if (depth <= config_.seePruningDepth &&
                        move.getPromotedPieceType() == NoPiece &&
-                       see < -config_.seePruningMarginPerDepth * depth) {
+                       heuristicScore < config_.seePruningMultiplier * depth + config_.seePruningBase) {
               // SEE Pruning.
               continue;
             }
@@ -405,8 +414,7 @@ namespace bb::searching {
               if (movePicker.isBadViolentMove()) {
                 ++reduction;
               } else if (!isViolent) {
-                const int32_t historyScore = historyHeuristics_.template getQuietScore<meta.side>(move, prev1, prev2);
-                reduction += historyHeuristics_.getHistoryReduction(historyScore);
+                reduction += historyHeuristics_.getHistoryReduction(heuristicScore);
               }
 
               // Improving-based LMR adjustment.
@@ -498,6 +506,7 @@ namespace bb::searching {
       ttTable_.clear();
       historyHeuristics_.clear();
       rootMovePicker_.clear();
+      drawHistoryIndex_ = 0;
     }
 
     void resetEvaluation() {
@@ -528,11 +537,12 @@ namespace bb::searching {
       probeTT<meta, true>(context, frame, context.maxDepth, 0, 0, ttMove);
 
       // Lazy initialization.
-      if (context.maxDepth == 1 || rootMovePicker_.empty()) {
+      if (context.maxDepth == 1) {
         rootMovePicker_.clear();
         state.template generateMoves<side>(rootMovePicker_.getMoveBuffer());
         historyHeuristics_.clearKillers();
         ttTable_.age();
+        drawHistoryIndex_ = std::max(0, static_cast<int>(context.history.size()) - 1 - state.getHalfmove());
 
         // Checkmate or draw.
         if (rootMovePicker_.empty()) {
@@ -562,7 +572,7 @@ namespace bb::searching {
         rootMovePicker_.rePick();
         const size_t totalMoves = rootMovePicker_.size();
         for (size_t i = 0; i < totalMoves; ++i) {
-          const auto [move, see] = rootMovePicker_.pick<meta>(ttMove, state);
+          const auto [move, heuristicScore] = rootMovePicker_.pick<meta>(ttMove, state);
 
           const MoveUndo undo = state.template makeMove<side>(move, evalPolicy_);
           context.history.push(state.getHash());
@@ -588,8 +598,7 @@ namespace bb::searching {
               if (rootMovePicker_.isBadViolentMove()) {
                 ++reduction;
               } else if (!move.isViolentMove()) {
-                const int32_t historyScore = historyHeuristics_.template getQuietScore<meta.side>(move, prev1, prev2);
-                reduction += historyHeuristics_.getHistoryReduction(historyScore);
+                reduction += historyHeuristics_.getHistoryReduction(heuristicScore);
               }
               reduction = std::clamp(reduction, 0, childDepth - 1);
             }

@@ -62,8 +62,8 @@ namespace bb::searching {
     }
 
     int ply_;
-    Move prev1_{};
-    Move prev2_{};
+    Move prev1_;
+    Move prev2_;
     const HistoryHeuristics& historyHeuristics_;
 
     Stage stage_ = Stage::TTMove;
@@ -73,13 +73,13 @@ namespace bb::searching {
     size_t badQuietBegin_ = 0;
     size_t badViolentBegin_ = 0;
 
-    MoveList moves_{};
+    MoveList moves_;
     ScoreEntry scores_[MoveList{}.capacity()];
 
   public:
     struct PickResult {
       Move move;
-      int32_t see = 0;
+      int32_t heuristicScore = 0;
 
       constexpr operator Move() const noexcept { return move; }
     };
@@ -235,9 +235,9 @@ namespace bb::searching {
               auto it = std::find(moves_.begin(), moves_.end(), ttMove);
               assert(it != moves_.end());
               std::swap(moves_[0], *it);
-              const int32_t see = ttMove.isViolentMove() ? staticExchangeEvaluation<meta.side>(state, ttMove) : 0;
+              const int32_t heuristicScore = ttMove.isViolentMove() ? staticExchangeEvaluation<meta.side>(state, ttMove) : 0;
               const size_t idx = current_++;
-              return { moves_[idx], see };
+              return { moves_[idx], heuristicScore };
             }
           }
           [[fallthrough]];
@@ -385,7 +385,7 @@ namespace bb::searching {
         case Stage::YieldQuiets: {
           if (current_ < badViolentBegin_) {
             const size_t idx = current_++;
-            return { moves_[idx], 0 };
+            return { moves_[idx], scores_[idx].score };
           }
           stage_ = Stage::BadViolent;
           [[fallthrough]];
