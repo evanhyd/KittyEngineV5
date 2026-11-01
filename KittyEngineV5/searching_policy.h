@@ -34,7 +34,7 @@ namespace bb {
       { policy.search<White>(state, param) } -> std::same_as<SearchResult>;
       { policy.search<Black>(state, param) } -> std::same_as<SearchResult>;
       { policy.reset() } -> std::same_as<void>;
-      { policy.resetEvaluation() } -> std::same_as<void>;
+      { policy.resetTurn() } -> std::same_as<void>;
       { policy.isCheckmateScore(int32_t{}) } -> std::same_as<bool>;
       { policy.template markPiece<true>(White, Pawn, A1) } -> std::same_as<void>;
       { policy.template markPiece<false>(White, Pawn, A1) } -> std::same_as<void>;

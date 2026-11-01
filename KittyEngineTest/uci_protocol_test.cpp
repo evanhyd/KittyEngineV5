@@ -51,7 +51,7 @@ namespace {
       }
     }
 
-    void resetEvaluation() {}
+    void resetTurn() {}
     bool isCheckmateScore(int32_t score) const noexcept {
       const int32_t absScore = std::abs(score);
       return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
@@ -99,7 +99,7 @@ namespace {
 
   struct ZeroTimeSearchPolicy {
     void reset() {}
-    void resetEvaluation() {}
+    void resetTurn() {}
     bool isCheckmateScore(int32_t score) const noexcept {
       const int32_t absScore = std::abs(score);
       return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
@@ -118,7 +118,7 @@ namespace {
     std::chrono::milliseconds pause;
 
     void reset() {}
-    void resetEvaluation() {}
+    void resetTurn() {}
     bool isCheckmateScore(int32_t score) const noexcept {
       const int32_t absScore = std::abs(score);
       return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
@@ -141,7 +141,7 @@ namespace {
     static constexpr auto kDuration = std::chrono::microseconds{250};
 
     void reset() {}
-    void resetEvaluation() {}
+    void resetTurn() {}
     bool isCheckmateScore(int32_t score) const noexcept {
       const int32_t absScore = std::abs(score);
       return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
@@ -161,7 +161,7 @@ namespace {
     const std::vector<int32_t>* scores;
 
     void reset() {}
-    void resetEvaluation() {}
+    void resetTurn() {}
     bool isCheckmateScore(int32_t score) const noexcept {
       const int32_t absScore = std::abs(score);
       return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
@@ -185,7 +185,7 @@ namespace {
     searching::PVLine pvToReturn;
 
     void reset() {}
-    void resetEvaluation() {}
+    void resetTurn() {}
     bool isCheckmateScore(int32_t score) const noexcept {
       const int32_t absScore = std::abs(score);
       return absScore >= evaluation::kCheckmateWinScore - searching::kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;

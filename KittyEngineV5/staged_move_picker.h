@@ -347,37 +347,35 @@ namespace bb::searching {
 
         case Stage::Quiets: {
           stage_ = Stage::YieldQuiets;
-          if constexpr (meta.isInternal()) {
-            const size_t n = badViolentBegin_ - current_;
-            if (n > 1) {
-              for (size_t i = current_; i < badViolentBegin_; ++i) {
-                scores_[i].score = historyHeuristics_.getQuietScore<meta.side>(moves_[i], prev1_, prev2_);
-              }
-
-              for (size_t i = current_ + 1; i < badViolentBegin_; ++i) {
-                const Move keyMove = moves_[i];
-                const int32_t keyScore = scores_[i].score;
-                size_t j = i;
-                while (j > current_ && scores_[j - 1].score < keyScore) {
-                  moves_[j] = moves_[j - 1];
-                  scores_[j].score = scores_[j - 1].score;
-                  --j;
-                }
-                moves_[j] = keyMove;
-                scores_[j].score = keyScore;
-              }
-
-              badQuietBegin_ = current_;
-              while (badQuietBegin_ < badViolentBegin_ && scores_[badQuietBegin_].score >= 0) {
-                ++badQuietBegin_;
-              }
-            } else if (n == 1) {
-              const int32_t s = historyHeuristics_.getQuietScore<meta.side>(moves_[current_], prev1_, prev2_);
-              scores_[current_].score = s;
-              badQuietBegin_ = (s < 0) ? current_ : badViolentBegin_;
-            } else {
-              badQuietBegin_ = current_;
+          const size_t n = badViolentBegin_ - current_;
+          if (n > 1) {
+            for (size_t i = current_; i < badViolentBegin_; ++i) {
+              scores_[i].score = historyHeuristics_.getQuietScore<meta.side>(moves_[i], prev1_, prev2_);
             }
+
+            for (size_t i = current_ + 1; i < badViolentBegin_; ++i) {
+              const Move keyMove = moves_[i];
+              const int32_t keyScore = scores_[i].score;
+              size_t j = i;
+              while (j > current_ && scores_[j - 1].score < keyScore) {
+                moves_[j] = moves_[j - 1];
+                scores_[j].score = scores_[j - 1].score;
+                --j;
+              }
+              moves_[j] = keyMove;
+              scores_[j].score = keyScore;
+            }
+
+            badQuietBegin_ = current_;
+            while (badQuietBegin_ < badViolentBegin_ && scores_[badQuietBegin_].score >= 0) {
+              ++badQuietBegin_;
+            }
+          } else if (n == 1) {
+            const int32_t s = historyHeuristics_.getQuietScore<meta.side>(moves_[current_], prev1_, prev2_);
+            scores_[current_].score = s;
+            badQuietBegin_ = (s < 0) ? current_ : badViolentBegin_;
+          } else {
+            badQuietBegin_ = current_;
           }
           [[fallthrough]];
         }

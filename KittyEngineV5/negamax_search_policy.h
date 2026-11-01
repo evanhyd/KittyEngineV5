@@ -53,7 +53,7 @@ namespace bb::searching {
     const NegamaxSearchConfig config_;
     const int32_t aspirationWindow_;
     std::array<int32_t, kSideSize> finalScore_{};
-    std::array<SearchFrame, kMaxDepthHardCutoff + 1> frames_;
+    std::array<SearchFrame, kMaxDepthHardCutoff + 2> frames_;
     std::array<Move, kPvSlots> pvTable_{}; // PV row at ply p has room for at most 65 - p moves.
     std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> lateMoveReductions_{};
     TranspositionTable ttTable_;
@@ -227,6 +227,10 @@ namespace bb::searching {
       const int ply = getPly(frame);
       Move ttMove{};
 
+      if (ply >= kMaxDepthHardCutoff) {
+        return Eval(getStaticScore(context, frame), false);
+      }
+
       if constexpr (meta.isInternal()) {
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
@@ -237,12 +241,6 @@ namespace bb::searching {
         if (depth <= 0) {
           --context.nodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
-        }
-      } else {
-        // TOOD: move to the top if our search depth indeed reach 64 in the future.
-        // Right now it is not even close to searching up to 64 depth.
-        if (ply == kMaxDepthHardCutoff) {
-          return Eval(getStaticScore(context, frame), false);
         }
       }
 
@@ -510,8 +508,9 @@ namespace bb::searching {
       drawHistoryIndex_ = 0;
     }
 
-    void resetEvaluation() {
+    void resetTurn() {
       evalPolicy_.reset();
+      rootMovePicker_.clear();
     }
 
     static bool isCheckmateScore(int32_t score) noexcept {
@@ -526,32 +525,35 @@ namespace bb::searching {
 
     template <Side side>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      // Result statistics.
       SearchContext context{.state = state, .maxDepth = param.maxDepth, .history = param.history, .nodes = 1};
 
-      // Prepare the frame.
       constexpr NodeMeta meta(side, NodeMeta::NodeType::Internal, true, true);
       SearchFrame* frame = frames_.data();
-      frame->clear();
-      const int ply = getPly(frame);
-      Move ttMove{};
-      probeTT<meta, true>(context, frame, context.maxDepth, 0, 0, ttMove);
 
-      // Lazy initialization.
-      if (context.maxDepth == 1) {
-        rootMovePicker_.clear();
+      // Lazy move generation.
+      if (rootMovePicker_.empty()) {
+        frame->clear();
         state.template generateMoves<side>(rootMovePicker_.getMoveBuffer());
         historyHeuristics_.clearKillers();
         ttTable_.age();
         drawHistoryIndex_ = std::max(0, static_cast<int>(context.history.size()) - 1 - state.getHalfmove());
-
-        // Checkmate or draw.
-        if (rootMovePicker_.empty()) {
-          const bool inCheck = isInCheck<side>(context, frame);
-          const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
-          return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}};
-        }
       }
+
+      // Check checkmate and stalemate.
+      const bool inCheck = isInCheck<side>(context, frame);
+      if (rootMovePicker_.empty()) {
+        const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
+        return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}};
+      }
+
+      if (!inCheck) {
+        getStaticScore(context, frame);
+      }
+
+      // Root node invariants: ply is guaranteed 0, prev1 and prev2 are empty.
+      constexpr int ply = 0;
+      Move ttMove{};
+      probeTT<meta, true>(context, frame, context.maxDepth, 0, 0, ttMove);
 
       // Aspiration window.
       int searchAttempt = 0;
@@ -563,12 +565,10 @@ namespace bb::searching {
       }();
 
       // Search for the best move.
-      const bool inCheck = isInCheck<side>(context, frame);
-      const Move prev1 = getPrevMove(frame, 1);
-      const Move prev2 = getPrevMove(frame, 2);
       for (;;) {
         Eval bestEval(alpha, false);
         Move bestMove{};
+        frame->pvLength = 0;
 
         rootMovePicker_.rePick();
         const size_t totalMoves = rootMovePicker_.size();
@@ -628,7 +628,7 @@ namespace bb::searching {
             acceptChildPVLine(frame, bestMove);
             if (bestEval.score >= beta) {
               if (!move.isViolentMove()) {
-                historyHeuristics_.template recordQuietCutoff<meta.side>(ply, context.maxDepth, rootMovePicker_.getMoveBuffer(), i, prev1, prev2);
+                historyHeuristics_.template recordQuietCutoff<meta.side>(ply, context.maxDepth, rootMovePicker_.getMoveBuffer(), i);
               } else if (undo.capturedPiece != NoPiece) {
                 historyHeuristics_.template recordCaptureCutoff<meta.side>(move.getMovedPiece(), move.to(), undo.capturedPiece, context.maxDepth);
               }

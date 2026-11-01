@@ -49,7 +49,6 @@ namespace bb {
     // Keep evaluation cache: no.
     void setPosition(std::string_view fen, std::span<const std::string_view> moves = {}) {
       state_.setPosition(fen);
-      searchPolicy_.resetEvaluation();
       history_.clear();
       history_.push(state_.getHash());
       for (const auto& moveText : moves) {
@@ -82,6 +81,7 @@ namespace bb {
     void search(int maxDepth, const std::optional<time_control::TimeControl>& timeControl, auto resultCallback) {
       timePolicy_.set(timeControl);
       maxDepth = std::clamp(maxDepth, 1, searching::kMaxDepthHardCutoff);
+      searchPolicy_.resetTurn();
 
       const auto iterativeDeepening = [&]<Side side>() {
         searching::SearchResult result{};
