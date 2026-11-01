@@ -355,7 +355,8 @@ namespace bb::searching {
                 continue;
               }
 
-              // History Pruning. Unreliable.
+              // History Pruning disabled: Unreliable and blinds search to quiet defensive resources.
+              /*
               if (depth <= config_.historyPruningDepth &&
                   !isImproved &&
                   !historyHeuristics_.isKillerMove(ply, move) &&
@@ -364,6 +365,7 @@ namespace bb::searching {
                   continue;
                 }
               }
+              */
 
               // Futility Pruning.
               if (depth <= config_.futilityDepth &&
@@ -655,6 +657,7 @@ namespace bb::searching {
           bestMove = rootMovePicker_.getMoveBuffer()[0];
         }
         finalScore_[side] = bestEval.score;
+        bestEval.isUnreliable = false;
         storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, context.maxDepth, bestEval, bestMove, inCheck);
         const std::span<const Move> pvSpan{pvMoves(frame), frame->pvLength};
         return SearchResult{.score = bestEval.score, .move = bestMove, .pvLine = pvSpan, .nodes = context.nodes, .searchingTime = {}};
