@@ -357,8 +357,9 @@ namespace bb::searching {
                 continue;
               }
 
-              // History Pruning.
+              // History Pruning. Unreliable.
               if (depth <= config_.historyPruningDepth &&
+                  !isImproved &&
                   !historyHeuristics_.isKillerMove(ply, move) &&
                   !isCheckmateScore(bestEval.score)) {
                 if (heuristicScore < config_.historyPruningMultiplier * depth + config_.historyPruningBase) {
