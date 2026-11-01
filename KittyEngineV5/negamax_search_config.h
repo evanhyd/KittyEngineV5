@@ -6,6 +6,7 @@ namespace bb::searching {
     // Reverse Futility Pruning (Static Null Move Pruning)
     int reverseFutilityDepth = 3;
     int32_t reverseFutilityMarginPerDepth = 100;
+    int32_t reverseFutilityImprovingMarginBonus = 30;
 
     // Null Move Pruning
     int nullMoveDepth = 2;
@@ -13,16 +14,16 @@ namespace bb::searching {
     // Futility Pruning
     int futilityDepth = 3;
     int32_t futilityMarginPerDepth = 100;
+    int32_t futilityImprovingMarginBonus = 20;
 
     // SEE Pruning
     int seePruningDepth = 3;
-    int32_t seePruningMarginPerDepth = -100;
+    int32_t seePruningMarginPerDepth = 100;
 
     // Late Move Pruning
     int lateMovePruningDepth = 4;
     int lateMovePruningBase = 6;
     int lateMovePruningMultiplier = 2;
-    int32_t lateMovePruningStaticScoreGainedThreshold = -30;
 
     // Late Move Reductions
     int lateMoveReductionDepth = 3;
@@ -30,7 +31,9 @@ namespace bb::searching {
     double lateMoveReductionDivisor = 2.69;
     double lateMoveReductionHistoryK = 1.0 / 1000.0;
     double lateMoveReductionHistoryB = 0.0;
-    int32_t lateMoveReductionStaticScoreGainedThreshold = -20;
+
+    // Improving Heuristic
+    int32_t improvingThreshold = 15;
 
     // History Heuristics Limits
     int32_t maxQuietHistory = 770;

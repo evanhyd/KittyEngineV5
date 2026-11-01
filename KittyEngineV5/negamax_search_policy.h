@@ -248,11 +248,26 @@ namespace bb::searching {
 
       const Move prev1 = getPrevMove(frame, 1);
       const Move prev2 = getPrevMove(frame, 2);
-      const int32_t staticScoreGained = (ply >= 2 ? getStaticScore(context, frame) - getStaticScore(context, frame - 2) : 0);
       StagedMovePicker movePicker(ply, prev1, prev2, historyHeuristics_);
       MoveList& moves = movePicker.getMoveBuffer();
       Eval bestEval(alpha, false);
       const bool inCheck = isInCheck<meta.side>(context, frame);
+
+      const int32_t currentStaticScore = (!inCheck ? getStaticScore(context, frame) : 0);
+      const int32_t staticScoreGained = [&]() noexcept -> int32_t {
+        if (inCheck) {
+          return 0;
+        }
+        if (ply >= 2 && (frame - 2)->staticScore.has_value()) {
+          return currentStaticScore - *(frame - 2)->staticScore;
+        }
+        if (ply >= 4 && (frame - 4)->staticScore.has_value()) {
+          return currentStaticScore - *(frame - 4)->staticScore;
+        }
+        return 0;
+      }();
+
+      const bool isImproved = !inCheck && (staticScoreGained >= config_.improvingThreshold);
 
       if constexpr (meta.isInternal()) {
         // Checkmate or draw.
@@ -266,11 +281,13 @@ namespace bb::searching {
           if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= config_.kNullMoveMinPieces) {
 
             // Reverse Futility Pruning (Static Null Move Pruning).
-            if (depth <= config_.reverseFutilityDepth && 
-                getStaticScore(context, frame) - depth * config_.reverseFutilityMarginPerDepth >= beta + staticScoreGained) {
-              const Eval eval(beta, false);
-              storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
-              return eval;
+            if (depth <= config_.reverseFutilityDepth) {
+              const int32_t margin = depth * config_.reverseFutilityMarginPerDepth + (isImproved ? 0 : config_.reverseFutilityImprovingMarginBonus);
+              if (currentStaticScore >= beta + margin) {
+                const Eval eval(beta, false);
+                storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
+                return eval;
+              }
             }
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
@@ -332,9 +349,9 @@ namespace bb::searching {
           if (!inCheck && i > 0) {
             if (!isViolent) {
               // Late Move Pruning (LMP).
+              const int lmpThreshold = (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) * (isImproved ? 2 : 1);
               if (depth <= config_.lateMovePruningDepth &&
-                  staticScoreGained < config_.lateMovePruningStaticScoreGainedThreshold &&
-                  quietCount >= (config_.lateMovePruningBase + config_.lateMovePruningMultiplier * depth * depth) &&
+                  quietCount >= lmpThreshold &&
                   !historyHeuristics_.isKillerMove(ply, move) &&
                   !isCheckmateScore(bestEval.score)) {
                 continue;
@@ -342,13 +359,15 @@ namespace bb::searching {
 
               // Futility Pruning.
               if (depth <= config_.futilityDepth &&
-                  !historyHeuristics_.isKillerMove(ply, move) &&
-                  getStaticScore(context, frame) + config_.futilityMarginPerDepth * depth <= bestEval.score) {
-                continue;
+                  !historyHeuristics_.isKillerMove(ply, move)) {
+                const int32_t margin = config_.futilityMarginPerDepth * depth + (isImproved ? config_.futilityImprovingMarginBonus : 0);
+                if (currentStaticScore + margin <= bestEval.score) {
+                  continue;
+                }
               }
             } else if (depth <= config_.seePruningDepth &&
                        move.getPromotedPieceType() == NoPiece &&
-                       see < config_.seePruningMarginPerDepth * depth) {
+                       see < -config_.seePruningMarginPerDepth * depth) {
               // SEE Pruning.
               continue;
             }
@@ -390,9 +409,8 @@ namespace bb::searching {
                 reduction += historyHeuristics_.getHistoryReduction(historyScore);
               }
 
-              if (staticScoreGained < config_.lateMoveReductionStaticScoreGainedThreshold) {
-                ++reduction;
-              }
+              // Improving-based LMR adjustment.
+              reduction += (isImproved ? -1 : 1);
 
               reduction = std::clamp(reduction, 0, childDepth - 1);
             }
