@@ -296,8 +296,10 @@ namespace bb::searching {
             if constexpr (meta.canNullMove) {
               if (depth >= config_.nullMoveDepth && currentStaticScore >= beta) {
                 const int32_t evalMargin = currentStaticScore - beta;
-                const int evalBonus = std::min(config_.nullMoveMaxEvalBonus, static_cast<int>(evalMargin / config_.nullMoveEvalDivisor));
-                const int reduction = config_.nullMoveBase + depth / config_.nullMoveDepthDivisor + evalBonus;
+                const int evalBonus = isImproved ? std::min(config_.nullMoveMaxEvalBonus, static_cast<int>(evalMargin / config_.nullMoveEvalDivisor)) : 0;
+                int reduction = config_.nullMoveBase + depth / config_.nullMoveDepthDivisor + evalBonus;
+                reduction = std::clamp(reduction, 1, depth - 1);
+
                 MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
                 context.history.push(context.state.getHash());
                 Eval eval = searchChild<meta.flip().disableNullMove()>(context, frame + 1, depth - reduction, beta - 1, beta);

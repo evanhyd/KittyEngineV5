@@ -216,17 +216,18 @@ namespace bb::user_interface {
             const int64_t score = static_cast<int64_t>(result.score);
             const int64_t magnitude = std::abs(score);
             const bool isMateScore = magnitude >= mateScore - mateWindow && magnitude <= mateScore;
+            const uint64_t hashfull = totalProbes > 0 ? std::clamp((totalHits * 1000) / totalProbes, 0ULL, 1000ULL) : 0;
 
             uciBuffer_.clear();
             if (isMateScore) {
               const int64_t movesToMate = (mateScore - magnitude + 1) / 2;
               std::format_to(std::back_inserter(uciBuffer_),
-                             "info depth {} score mate {} time {} nodes {} nps {}",
-                             completedDepth, score < 0 ? -movesToMate : movesToMate, elapsedMs, totalNodes, nps);
+                             "info depth {} score mate {} time {} nodes {} nps {} hashfull {}",
+                             completedDepth, score < 0 ? -movesToMate : movesToMate, elapsedMs, totalNodes, nps, hashfull);
             } else {
               std::format_to(std::back_inserter(uciBuffer_),
-                             "info depth {} score cp {} time {} nodes {} nps {}",
-                             completedDepth, score, elapsedMs, totalNodes, nps);
+                             "info depth {} score cp {} time {} nodes {} nps {} hashfull {}",
+                             completedDepth, score, elapsedMs, totalNodes, nps, hashfull);
             }
 
             const auto& pv = result.pvLine;
@@ -236,12 +237,6 @@ namespace bb::user_interface {
                 uciBuffer_.push_back(' ');
                 appendMove(uciBuffer_, move);
               }
-            }
-            if (totalProbes > 0) {
-              const double hitPercentage = (static_cast<double>(totalHits) / static_cast<double>(totalProbes)) * 100.0;
-              std::format_to(std::back_inserter(uciBuffer_),
-                             " string tt hit rate: {:.1f}% ({}/{})",
-                             hitPercentage, totalHits, totalProbes);
             }
             uciBuffer_.push_back('\n');
             uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));

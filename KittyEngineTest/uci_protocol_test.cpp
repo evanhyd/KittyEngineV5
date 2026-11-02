@@ -226,10 +226,22 @@ namespace {
       return std::nullopt;
     }
     if (stream >> extra) {
+      if (extra == "hashfull") {
+        uint64_t hf = 0;
+        if (!(stream >> hf)) {
+          return std::nullopt;
+        }
+        if (!(stream >> extra)) {
+          return parsed;
+        }
+      }
       if (extra != "pv") {
         return std::nullopt;
       }
       while (stream >> extra) {
+        if (extra == "string") {
+          break;
+        }
         parsed.pv.push_back(extra);
       }
       if (parsed.pv.empty()) {

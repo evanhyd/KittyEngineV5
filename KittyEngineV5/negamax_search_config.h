@@ -10,7 +10,7 @@ namespace bb::searching {
     int32_t reverseFutilityImprovingBonus = 30;
 
     // Null Move Pruning
-    int nullMoveDepth = 3;
+    int nullMoveDepth = 4;
     int nullMoveBase = 3;
     int nullMoveDepthDivisor = 4;
     int32_t nullMoveEvalDivisor = 200;
@@ -45,7 +45,7 @@ namespace bb::searching {
     double lateMoveReductionHistoryB = 0.0;
 
     // Improving Heuristic
-    int32_t improvingThreshold = 15;
+    int32_t improvingThreshold = 20;
 
     // History Heuristics Limits
     int32_t maxQuietHistory = 770;
