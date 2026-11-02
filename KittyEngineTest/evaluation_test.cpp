@@ -489,8 +489,9 @@ TEST(TranspositionTable, PVEntriesAreProtectedFromNonPVEviction) {
   bb::TranspositionTable table(capacity);
 
   const bb::ZobristHash::Hash key1 = 0x12345678ULL;
-  // key2 maps to the exact same index as key1: (key1 & 1023) == (key2 & 1023)
+  // key2 and key3 map to the exact same bucket as key1
   const bb::ZobristHash::Hash key2 = key1 + capacity;
+  const bb::ZobristHash::Hash key3 = key1 + 2 * capacity;
 
   const bb::Move pvMove(E2, E4, Pawn);
   const bb::Move nonPvMove(D2, D4, Pawn);
@@ -515,7 +516,7 @@ TEST(TranspositionTable, PVEntriesAreProtectedFromNonPVEviction) {
   EXPECT_TRUE(e1->isPV);
   EXPECT_EQ(e1->bestMove, pvMove);
 
-  // 2. A non-PV collision at depth 12 (shallow depth advantage of +2) must NOT evict the PV node!
+  // 2. On collision with key2: key2 uses the adjacent slot in the bucket!
   table.put(bb::TranspositionTable::Entry{
     .key = key2,
     .score = -30,
@@ -530,11 +531,47 @@ TEST(TranspositionTable, PVEntriesAreProtectedFromNonPVEviction) {
     .isPV = false,
   });
 
-  // key1 must still be retained because of slotPvBonus (+4 effective depth => 14 > 12)
+  // Both key1 (slot 0) and key2 (slot 1) are retained in the same bucket
+  EXPECT_NE(table.get(key1), nullptr);
+  EXPECT_NE(table.get(key2), nullptr);
+
+  // 3. A 3rd collision key3 with shallow depth 11 cannot evict key1 (effective 14) or key2 (effective 12)
+  table.put(bb::TranspositionTable::Entry{
+    .key = key3,
+    .score = -40,
+    .staticScore = -30,
+    .bestMove = nonPvMove,
+    .depth = 11,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::LowerBound,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
+  EXPECT_NE(table.get(key1), nullptr);
+  EXPECT_NE(table.get(key2), nullptr);
+  EXPECT_EQ(table.get(key3), nullptr);
+
+  // 4. A collision at depth 13 can evict key2 (depth 12), while key1 (PV, effective depth 14) remains protected
+  table.put(bb::TranspositionTable::Entry{
+    .key = key3,
+    .score = -40,
+    .staticScore = -30,
+    .bestMove = nonPvMove,
+    .depth = 13,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::LowerBound,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
   EXPECT_NE(table.get(key1), nullptr);
   EXPECT_EQ(table.get(key2), nullptr);
+  EXPECT_NE(table.get(key3), nullptr);
 
-  // 3. A non-PV collision at depth 15 (exceeding 10 + 4 = 14) CAN evict key1
+  // 5. A non-PV collision key2 at depth 15 evicts key3 (effective 13 < 14)
   table.put(bb::TranspositionTable::Entry{
     .key = key2,
     .score = -30,
@@ -548,9 +585,75 @@ TEST(TranspositionTable, PVEntriesAreProtectedFromNonPVEviction) {
     .hasInCheck = true,
     .isPV = false,
   });
+  EXPECT_NE(table.get(key1), nullptr);
+  EXPECT_NE(table.get(key2), nullptr);
+  EXPECT_EQ(table.get(key3), nullptr);
+
+  // 6. With key1 (effective 14) and key2 (effective 15) in the bucket,
+  // key1 is now the weakest slot. An insertion at depth 15 finally evicts PV key1!
+  table.put(bb::TranspositionTable::Entry{
+    .key = key3,
+    .score = -40,
+    .staticScore = -30,
+    .bestMove = nonPvMove,
+    .depth = 15,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::LowerBound,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
 
   EXPECT_EQ(table.get(key1), nullptr);
   EXPECT_NE(table.get(key2), nullptr);
+  EXPECT_NE(table.get(key3), nullptr);
+}
+
+TEST(TranspositionTable, BucketAlignmentAndExactSingleStorage) {
+  static_assert(sizeof(bb::TranspositionTable::TTBucket) == std::hardware_destructive_interference_size);
+  static_assert(alignof(bb::TranspositionTable::TTBucket) == std::hardware_destructive_interference_size);
+
+  constexpr size_t capacity = 1024;
+  bb::TranspositionTable table(capacity);
+
+  const bb::ZobristHash::Hash key = 0xabcdef12ULL;
+  const bb::Move move1(E2, E4, Pawn);
+  const bb::Move move2(E7, E5, Pawn);
+
+  table.put(bb::TranspositionTable::Entry{
+    .key = key,
+    .score = 10,
+    .staticScore = 10,
+    .bestMove = move1,
+    .depth = 4,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::Exact,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
+
+  // Update same key at depth 6
+  table.put(bb::TranspositionTable::Entry{
+    .key = key,
+    .score = 20,
+    .staticScore = 10,
+    .bestMove = move2,
+    .depth = 6,
+    .age = 0,
+    .scoreType = bb::TranspositionTable::ScoreType::Exact,
+    .hasStaticScore = true,
+    .inCheck = false,
+    .hasInCheck = true,
+    .isPV = false,
+  });
+
+  const auto* e = table.get(key);
+  ASSERT_NE(e, nullptr);
+  EXPECT_EQ(e->depth, 6);
+  EXPECT_EQ(e->bestMove, move2);
 }
 
 TEST(TranspositionTable, SameKeyPreservesPVMoveAndStatusAgainstNonPVBounds) {
