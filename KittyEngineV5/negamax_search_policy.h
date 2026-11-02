@@ -60,7 +60,7 @@ namespace bb::searching {
     std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> lateMoveReductions_{};
     TranspositionTable ttTable_;
     HistoryHeuristics historyHeuristics_;
-    StagedMovePicker rootMovePicker_{ 0, {}, {}, historyHeuristics_ };
+    MoveList rootMoves_;
     int drawHistoryIndex_ = 0;
 
     int getPly(const SearchFrame* frame) const noexcept {
@@ -302,6 +302,7 @@ namespace bb::searching {
                 const int evalBonus = isImproved ? std::min(config_.nullMoveMaxEvalBonus, static_cast<int>(evalMargin / config_.nullMoveEvalDivisor)) : 0;
                 int reduction = config_.nullMoveBase + depth / config_.nullMoveDepthDivisor + evalBonus;
                 reduction = std::clamp(reduction, 1, depth - 1);
+                assert(depth - reduction >= 1);
 
                 MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
                 context.history.push(context.state.getHash());
@@ -517,13 +518,13 @@ namespace bb::searching {
       finalScore_.fill(0);
       ttTable_.clear();
       historyHeuristics_.clear();
-      rootMovePicker_.clear();
+      rootMoves_.clear();
       drawHistoryIndex_ = 0;
     }
 
     void resetTurn() {
       evalPolicy_.reset();
-      rootMovePicker_.clear();
+      rootMoves_.clear();
     }
 
     static bool isCheckmateScore(int32_t score) noexcept {
@@ -544,17 +545,20 @@ namespace bb::searching {
       SearchFrame* frame = frames_.data();
 
       // Lazy move generation.
-      if (rootMovePicker_.empty()) {
+      if (rootMoves_.empty()) {
         frame->clear();
-        state.template generateMoves<side>(rootMovePicker_.getMoveBuffer());
+        state.template generateMoves<side>(rootMoves_);
         historyHeuristics_.clearKillers();
         ttTable_.age();
         drawHistoryIndex_ = std::max(0, static_cast<int>(context.history.size()) - 1 - state.getHalfmove());
+        // Always call evaluate to sync NNUE state. Otherwise it desyncs in make/unmake.
+        // TODO: Fix this brittle design.
+        evalPolicy_.evaluate(state);
       }
 
       // Check checkmate and stalemate.
       const bool inCheck = isInCheck<side>(context, frame);
-      if (rootMovePicker_.empty()) {
+      if (rootMoves_.empty()) {
         const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
         return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits};
       }
@@ -577,16 +581,19 @@ namespace bb::searching {
         return std::pair{ finalScore_[side] - aspirationWindow_, finalScore_[side] + aspirationWindow_ };
       }();
 
+      StagedMovePicker movePicker(0, {}, {}, historyHeuristics_);
+      movePicker.getMoveBuffer() = rootMoves_;
+
       // Search for the best move.
       for (;;) {
         Eval bestEval(alpha, false);
         Move bestMove{};
         frame->pvLength = 0;
 
-        rootMovePicker_.rePick();
-        const size_t totalMoves = rootMovePicker_.size();
+        movePicker.rePick();
+        const size_t totalMoves = movePicker.size();
         for (size_t i = 0; i < totalMoves; ++i) {
-          const auto [move, heuristicScore] = rootMovePicker_.pick<meta>(ttMove, state);
+          const auto [move, heuristicScore] = movePicker.pick<meta>(ttMove, state);
 
           const MoveUndo undo = state.template makeMove<side>(move, evalPolicy_);
           context.history.push(state.getHash());
@@ -607,9 +614,9 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (depth >= config_.lateMoveReductionDepth && !inCheck && (rootMovePicker_.isBadViolentMove() || (!move.isViolentMove() && !historyHeuristics_.isKillerMove(ply, move)))) {
+            if (depth >= config_.lateMoveReductionDepth && !inCheck && (movePicker.isBadViolentMove() || (!move.isViolentMove() && !historyHeuristics_.isKillerMove(ply, move)))) {
               reduction = int(lateMoveReductions_[depth][i]);
-              if (rootMovePicker_.isBadViolentMove()) {
+              if (movePicker.isBadViolentMove()) {
                 ++reduction;
               } else if (!move.isViolentMove()) {
                 reduction += historyHeuristics_.getHistoryReduction(heuristicScore);
@@ -641,7 +648,7 @@ namespace bb::searching {
             acceptChildPVLine(frame, bestMove);
             if (bestEval.score >= beta) {
               if (!move.isViolentMove()) {
-                historyHeuristics_.template recordQuietCutoff<meta.side>(ply, context.maxDepth, rootMovePicker_.getMoveBuffer(), i);
+                historyHeuristics_.template recordQuietCutoff<meta.side>(ply, context.maxDepth, movePicker.getMoveBuffer(), i);
               } else if (undo.capturedPiece != NoPiece) {
                 historyHeuristics_.template recordCaptureCutoff<meta.side>(move.getMovedPiece(), move.to(), undo.capturedPiece, context.maxDepth);
               }
@@ -657,7 +664,7 @@ namespace bb::searching {
             beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(searchAttempt));
             continue;
           } else if (bestEval.score <= alpha) {
-            bestMove = rootMovePicker_.getMoveBuffer()[0];
+            bestMove = movePicker.getMoveBuffer()[0];
             alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(searchAttempt));
             continue;
           }
@@ -665,7 +672,7 @@ namespace bb::searching {
 
         // Update TT and PV.
         if (!bestMove) {
-          bestMove = rootMovePicker_.getMoveBuffer()[0];
+          bestMove = movePicker.getMoveBuffer()[0];
         }
         finalScore_[side] = bestEval.score;
         bestEval.isUnreliable = false;

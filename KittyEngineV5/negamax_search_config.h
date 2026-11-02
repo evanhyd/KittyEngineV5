@@ -12,7 +12,7 @@ namespace bb::searching {
     // Null Move Pruning
     int nullMoveDepth = 4;
     int nullMoveBase = 3;
-    int nullMoveDepthDivisor = 4;
+    int nullMoveDepthDivisor = 6;
     int32_t nullMoveEvalDivisor = 200;
     int nullMoveMaxEvalBonus = 2;
 

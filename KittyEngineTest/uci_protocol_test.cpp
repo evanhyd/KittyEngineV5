@@ -443,6 +443,18 @@ TEST(SearchFrame, ReducedAndNullMoveSearchesKeepLegalPVAndWarmTTResult) {
   EXPECT_TRUE(std::equal(warm.pvLine.begin(), warm.pvLine.end(), coldPV.begin()));
 }
 
+TEST(SearchFrame, NullMovePruningRemainingDepthAndCutoffInvariants) {
+  UciBoard board{makeUciSearch(80, 1u << 16),
+                 TestTimePolicy{kTestTimePercentage}};
+  // Position with comfortable advantage where NMP is triggered
+  board.setPosition("r1bq1rk1/ppp2ppp/2n5/3np3/8/2NBPN2/PPP2PPP/R2QK2R w KQ - 0 1");
+  searching::SearchResult res{};
+  board.search(6, std::nullopt, [&](const searching::SearchResult& r) { res = r; });
+  EXPECT_TRUE(static_cast<bool>(res.move));
+  EXPECT_FALSE(res.pvLine.empty());
+  EXPECT_EQ(res.move, res.pvLine.front());
+}
+
 TEST(SearchFrame, MateDistanceUsesActualPlyAcrossDepths) {
   BoardState state{"7k/8/5KQ1/8/8/8/8/8 w - - 0 1"};
   UciSearch search{makeUciSearch(80, 1u << 16)};

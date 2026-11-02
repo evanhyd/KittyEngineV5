@@ -414,6 +414,41 @@ TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
   EXPECT_TRUE(static_cast<bool>(changed.move));
 }
 
+TEST(Nnue, SearchRootInCheckInitializesAccumulatorSafely) {
+  evaluation::NNUEEvaluationPolicy fresh{testWeightsPath()};
+  evaluation::NNUEEvaluationPolicy searchPolicy{testWeightsPath()};
+
+  Board board{
+    searching::NegamaxSearchPolicy{
+      std::move(searchPolicy), searching::NegamaxSearchConfig{}, 80, 1u << 16
+    },
+    time_control::EqualPercentageTimeControlPolicy{0.05f}
+  };
+
+  // Position where White is in check from Black Queen on e2.
+  const std::string_view fenInCheck = "rnb1kbnr/pppp1ppp/8/8/8/8/PPPPqPPP/RNBQKBNR w KQkq - 0 1";
+  board.setPosition(fenInCheck);
+
+  searching::SearchResult result{};
+  board.search(3, std::nullopt, [&](const searching::SearchResult& r) { result = r; });
+  EXPECT_TRUE(static_cast<bool>(result.move));
+
+  const std::string bestMoveStr = notation::moveToString(result.move);
+  EXPECT_TRUE(bestMoveStr == "d1e2" || bestMoveStr == "f1e2" || bestMoveStr == "g1e2");
+
+  // Subsequent search and evaluation from a normal position must remain intact.
+  board.setPosition(fen::kStartPosition);
+  searching::SearchResult startResult{};
+  board.search(2, std::nullopt, [&](const searching::SearchResult& r) { startResult = r; });
+  EXPECT_TRUE(static_cast<bool>(startResult.move));
+
+  BoardState startState{fen::kStartPosition};
+  const int32_t freshScore = fresh.evaluate(startState);
+  EXPECT_GT(freshScore, -100);
+  EXPECT_LT(freshScore, 100);
+}
+
+
 // Expected to fail: at depth 10 the current engine still chooses 26...Bxd3?
 // Enable this regression test when the search or evaluation can avoid g6d3.
 #if 0
