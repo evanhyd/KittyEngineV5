@@ -27,14 +27,31 @@ namespace bb::user_interface {
     std::ostream& uciOutput_;
     std::ostream& humanOutput_;
     std::string printBuffer_;
+    std::string uciBuffer_;
     std::string lastFrame_;
     bool running_ = false;
 
+    static void appendMove(std::string& out, Move move) noexcept {
+      const Square from = move.from();
+      const Square to = move.to();
+      out.push_back(static_cast<char>('a' + getSquareFile(from)));
+      out.push_back(static_cast<char>('8' - getSquareRank(from)));
+      out.push_back(static_cast<char>('a' + getSquareFile(to)));
+      out.push_back(static_cast<char>('8' - getSquareRank(to)));
+      if (const Piece promo = move.getPromotedPieceType(); promo != NoPiece) {
+        out.push_back(notation::pieceToAscii(Black, promo));
+      }
+    }
+
     void reportProtocolError(std::string_view message) {
-      std::string safeMessage{message};
-      std::replace_if(safeMessage.begin(), safeMessage.end(),
-                      [](char ch) { return ch == '\r' || ch == '\n'; }, ' ');
-      uciOutput_ << std::format("info string error: {}\n", safeMessage);
+      uciBuffer_.clear();
+      uciBuffer_ += "info string error: ";
+      for (const char ch : message) {
+        uciBuffer_.push_back((ch == '\r' || ch == '\n') ? ' ' : ch);
+      }
+      uciBuffer_.push_back('\n');
+      uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));
+      uciOutput_.flush();
     }
 
     void renderState(const BoardState& state) {
@@ -83,7 +100,11 @@ namespace bb::user_interface {
     TerminalUI(BoardT& board, std::istream& uciInput, std::ostream& uciOutput,
                std::ostream& humanOutput)
       : board_(board), uciInput_(uciInput), uciOutput_(uciOutput),
-        humanOutput_(humanOutput) {}
+        humanOutput_(humanOutput) {
+      uciInput_.tie(&uciOutput_);
+      uciBuffer_.reserve(1024);
+      printBuffer_.reserve(1024);
+    }
 
     void run() {
       humanOutput_ << std::format("Welcome to KittyEngineV5.\nBuild Version: {}_{}\n", __DATE__, __TIME__);
@@ -91,10 +112,14 @@ namespace bb::user_interface {
 
       uci::UciProtocol protocol{
         [this] {
-          uciOutput_ << "id name KittyEngineV5\nid author UnboxTheCat\nuciok\n";
+          static constexpr std::string_view kUciOk = "id name KittyEngineV5\nid author UnboxTheCat\nuciok\n";
+          uciOutput_.write(kUciOk.data(), static_cast<std::streamsize>(kUciOk.size()));
+          uciOutput_.flush();
         },
         [this] {
-          uciOutput_ << "readyok\n";
+          static constexpr std::string_view kReadyOk = "readyok\n";
+          uciOutput_.write(kReadyOk.data(), static_cast<std::streamsize>(kReadyOk.size()));
+          uciOutput_.flush();
         },
         [this] {
           board_.newGame();
@@ -191,33 +216,48 @@ namespace bb::user_interface {
             const int64_t score = static_cast<int64_t>(result.score);
             const int64_t magnitude = std::abs(score);
             const bool isMateScore = magnitude >= mateScore - mateWindow && magnitude <= mateScore;
-            std::string scoreText;
+
+            uciBuffer_.clear();
             if (isMateScore) {
               const int64_t movesToMate = (mateScore - magnitude + 1) / 2;
-              scoreText = std::format("mate {}", score < 0 ? -movesToMate : movesToMate);
+              std::format_to(std::back_inserter(uciBuffer_),
+                             "info depth {} score mate {} time {} nodes {} nps {}",
+                             completedDepth, score < 0 ? -movesToMate : movesToMate, elapsedMs, totalNodes, nps);
             } else {
-              scoreText = std::format("cp {}", score);
+              std::format_to(std::back_inserter(uciBuffer_),
+                             "info depth {} score cp {} time {} nodes {} nps {}",
+                             completedDepth, score, elapsedMs, totalNodes, nps);
             }
-            std::string infoLine = std::format("info depth {} score {} time {} nodes {} nps {}",
-                                               completedDepth, scoreText, elapsedMs, totalNodes, nps);
+
             const auto& pv = result.pvLine;
             if (!pv.empty()) {
-              infoLine += " pv";
+              uciBuffer_ += " pv";
               for (const Move& move : pv) {
-                std::format_to(std::back_inserter(infoLine), " {}", notation::moveToString(move));
+                uciBuffer_.push_back(' ');
+                appendMove(uciBuffer_, move);
               }
             }
             if (totalProbes > 0) {
               const double hitPercentage = (static_cast<double>(totalHits) / static_cast<double>(totalProbes)) * 100.0;
-              std::format_to(std::back_inserter(infoLine), " string tt hit rate: {:.1f}% ({}/{})",
+              std::format_to(std::back_inserter(uciBuffer_),
+                             " string tt hit rate: {:.1f}% ({}/{})",
                              hitPercentage, totalHits, totalProbes);
             }
-            infoLine += '\n';
-            uciOutput_.write(infoLine.data(), static_cast<std::streamsize>(infoLine.size()));
+            uciBuffer_.push_back('\n');
+            uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));
             uciOutput_.flush();
           });
-          uciOutput_ << std::format("bestmove {}\n",
-                                    lastResult.move ? notation::moveToString(lastResult.move) : "0000");
+
+          uciBuffer_.clear();
+          uciBuffer_ += "bestmove ";
+          if (lastResult.move) {
+            appendMove(uciBuffer_, lastResult.move);
+          } else {
+            uciBuffer_ += "0000";
+          }
+          uciBuffer_.push_back('\n');
+          uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));
+          uciOutput_.flush();
         },
         [this] {
           running_ = false;

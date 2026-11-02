@@ -53,6 +53,8 @@ void runEngine(EvalPolicy&& evalPolicy, size_t ttCapacity) {
 }
 
 int main(int argc, char* argv[]) {
+  std::ios_base::sync_with_stdio(false);
+
   std::string_view type = "nnue";
   std::string_view mode = "rapid";
 
