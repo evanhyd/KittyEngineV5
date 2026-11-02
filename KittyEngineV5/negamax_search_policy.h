@@ -30,6 +30,8 @@ namespace bb::searching {
       const int maxDepth;
       PositionHistory& history;
       uint64_t nodes;
+      uint64_t probes = 0;
+      uint64_t hits = 0;
     };
 
     struct SearchFrame {
@@ -164,12 +166,14 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta, bool isRoot = false>
-    std::optional<Eval> probeTT(const SearchContext& context, SearchFrame* frame, int depth,
+    std::optional<Eval> probeTT(SearchContext& context, SearchFrame* frame, int depth,
                                 int32_t alpha, int32_t beta, Move& ttMove) noexcept {
+      ++context.probes;
       auto ttEntry = ttTable_.get(context.state.getHash());
       if (!ttEntry) {
         return std::nullopt;
       }
+      ++context.hits;
 
       ttMove = ttEntry->bestMove;
       if (ttEntry->hasStaticScore) {
@@ -527,7 +531,7 @@ namespace bb::searching {
 
     template <Side side>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      SearchContext context{.state = state, .maxDepth = param.maxDepth, .history = param.history, .nodes = 1};
+      SearchContext context{.state = state, .maxDepth = param.maxDepth, .history = param.history, .nodes = 1, .probes = 0, .hits = 0};
 
       constexpr NodeMeta meta(side, NodeMeta::NodeType::Internal, true, true);
       SearchFrame* frame = frames_.data();
@@ -545,7 +549,7 @@ namespace bb::searching {
       const bool inCheck = isInCheck<side>(context, frame);
       if (rootMovePicker_.empty()) {
         const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
-        return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}};
+        return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits};
       }
 
       if (!inCheck) {
@@ -660,7 +664,7 @@ namespace bb::searching {
         bestEval.isUnreliable = false;
         storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, context.maxDepth, bestEval, bestMove, inCheck);
         const std::span<const Move> pvSpan{pvMoves(frame), frame->pvLength};
-        return SearchResult{.score = bestEval.score, .move = bestMove, .pvLine = pvSpan, .nodes = context.nodes, .searchingTime = {}};
+        return SearchResult{.score = bestEval.score, .move = bestMove, .pvLine = pvSpan, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits};
       }
     }
   };

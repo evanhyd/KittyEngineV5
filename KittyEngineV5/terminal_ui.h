@@ -170,13 +170,17 @@ namespace bb::user_interface {
 
           int completedDepth = 0;
           uint64_t totalNodes = 0;
+          uint64_t totalProbes = 0;
+          uint64_t totalHits = 0;
           const auto searchStart = std::chrono::steady_clock::now();
           const int searchDepth = std::min(depth.value_or(searching::kMaxDepthHardCutoff), searching::kMaxDepthHardCutoff);
           searching::SearchResult lastResult{};
-          board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, &lastResult, searchStart](const auto& result) {
+          board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, &totalProbes, &totalHits, &lastResult, searchStart](const auto& result) {
             lastResult = result;
             ++completedDepth;
             totalNodes += result.nodes;
+            totalProbes += result.probes;
+            totalHits += result.hits;
             const auto elapsed = std::chrono::steady_clock::now() - searchStart;
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             const double elapsedSeconds = std::chrono::duration<double>(elapsed).count();
@@ -202,6 +206,11 @@ namespace bb::user_interface {
               for (const Move& move : pv) {
                 std::format_to(std::back_inserter(infoLine), " {}", notation::moveToString(move));
               }
+            }
+            if (totalProbes > 0) {
+              const double hitPercentage = (static_cast<double>(totalHits) / static_cast<double>(totalProbes)) * 100.0;
+              std::format_to(std::back_inserter(infoLine), " string tt hit rate: {:.1f}% ({}/{})",
+                             hitPercentage, totalHits, totalProbes);
             }
             infoLine += '\n';
             uciOutput_.write(infoLine.data(), static_cast<std::streamsize>(infoLine.size()));
