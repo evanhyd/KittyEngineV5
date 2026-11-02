@@ -10,7 +10,11 @@ namespace bb::searching {
     int32_t reverseFutilityImprovingBonus = 30;
 
     // Null Move Pruning
-    int nullMoveDepth = 2;
+    int nullMoveDepth = 3;
+    int nullMoveBase = 3;
+    int nullMoveDepthDivisor = 4;
+    int32_t nullMoveEvalDivisor = 200;
+    int nullMoveMaxEvalBonus = 2;
 
     // Futility Pruning
     int futilityDepth = 3;
@@ -50,7 +54,6 @@ namespace bb::searching {
     int32_t maxCaptureHistory = 400;
 
     // Safety and Stability Invariants
-    static constexpr int kNullMoveReductionDivisor = 2;
     static constexpr int kNullMoveMinPieces = 2;
   };
 }

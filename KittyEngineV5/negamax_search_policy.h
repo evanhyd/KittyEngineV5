@@ -294,8 +294,10 @@ namespace bb::searching {
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
             if constexpr (meta.canNullMove) {
-              if (depth >= config_.nullMoveDepth && getStaticScore(context, frame) >= beta) {
-                const int reduction = std::max(1, depth / config_.kNullMoveReductionDivisor);
+              if (depth >= config_.nullMoveDepth && currentStaticScore >= beta) {
+                const int32_t evalMargin = currentStaticScore - beta;
+                const int evalBonus = std::min(config_.nullMoveMaxEvalBonus, static_cast<int>(evalMargin / config_.nullMoveEvalDivisor));
+                const int reduction = config_.nullMoveBase + depth / config_.nullMoveDepthDivisor + evalBonus;
                 MoveUndo undo = context.state.template makeMove<meta.side, true>(Move{}, evalPolicy_);
                 context.history.push(context.state.getHash());
                 Eval eval = searchChild<meta.flip().disableNullMove()>(context, frame + 1, depth - reduction, beta - 1, beta);
