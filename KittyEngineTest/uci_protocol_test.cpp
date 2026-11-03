@@ -1014,3 +1014,69 @@ TEST(UciIntegration, ReplaysPromotionCastlingAndEnPassant) {
     EXPECT_TRUE(uciOutput.str().empty());
   }
 }
+
+
+TEST(SearchConfigYaml, SerializesDefaultConfigToStream) {
+  searching::NegamaxSearchConfig config{};
+  std::ostringstream os;
+  config.serialize(os);
+  const std::string yaml = os.str();
+
+  EXPECT_FALSE(yaml.empty());
+  EXPECT_NE(yaml.find("aspiration_window: 60"), std::string::npos);
+  EXPECT_NE(yaml.find("improving_threshold: 20"), std::string::npos);
+  EXPECT_NE(yaml.find("reverse_futility_pruning:"), std::string::npos);
+  EXPECT_NE(yaml.find("null_move_pruning:"), std::string::npos);
+  EXPECT_NE(yaml.find("late_move_reductions:"), std::string::npos);
+}
+
+TEST(SearchConfigYaml, DeserializesFromStreamAndRoundTrips) {
+  searching::NegamaxSearchConfig config{};
+
+  constexpr std::string_view customYaml = R"(
+aspiration_window: 85
+improving_threshold: 35
+
+reverse_futility_pruning:
+  depth: 5
+  multiplier: 120
+  base: 10
+  improving_bonus: 45
+
+null_move_pruning:
+  depth: 6
+  base: 4
+  depth_divisor: 5
+  eval_divisor: 250
+  max_eval_bonus: 3
+)";
+
+  std::istringstream is{std::string(customYaml)};
+  config.deserialize(is);
+
+  EXPECT_EQ(config.aspirationWindow, 85);
+  EXPECT_EQ(config.improvingThreshold, 35);
+  EXPECT_EQ(config.reverseFutilityDepth, 5);
+  EXPECT_EQ(config.reverseFutilityMultiplier, 120);
+  EXPECT_EQ(config.reverseFutilityBase, 10);
+  EXPECT_EQ(config.reverseFutilityImprovingBonus, 45);
+  EXPECT_EQ(config.nullMoveDepth, 6);
+  EXPECT_EQ(config.nullMoveBase, 4);
+  EXPECT_EQ(config.nullMoveDepthDivisor, 5);
+  EXPECT_EQ(config.nullMoveEvalDivisor, 250);
+  EXPECT_EQ(config.nullMoveMaxEvalBonus, 3);
+
+  std::ostringstream os1;
+  config.serialize(os1);
+  const std::string roundTrip1 = os1.str();
+
+  searching::NegamaxSearchConfig config2{};
+  std::istringstream is2{roundTrip1};
+  config2.deserialize(is2);
+
+  std::ostringstream os2;
+  config2.serialize(os2);
+  const std::string roundTrip2 = os2.str();
+
+  EXPECT_EQ(roundTrip1, roundTrip2);
+}

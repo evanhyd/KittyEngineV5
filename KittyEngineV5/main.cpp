@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <bit>
 #include <cctype>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <span>
@@ -34,17 +35,16 @@ void printHelp() {
             << "Options:\n"
             << "  --type <hce|nnue|noop>                Evaluation policy: hce, nnue(default), noop\n"
             << "  --mode <bullet|blitz|rapid|classical> TT size: bullet=128MB, blitz=256MB, rapid=1GB(default), classical=2GB\n"
+            << "  --search_config <path>                Search configuration YAML file (default: search_config.yaml)\n"
             << "  --help, -h                            Print CLI help and exit\n";
 }
 
 template <typename EvalPolicy>
-void runEngine(EvalPolicy&& evalPolicy, size_t ttCapacity) {
-  constexpr bb::searching::NegamaxSearchConfig searchConfig{};
-  constexpr int aspirationWindow = 60;
+void runEngine(EvalPolicy&& evalPolicy, size_t ttCapacity, const bb::searching::NegamaxSearchConfig& searchConfig) {
   constexpr float timePercentage = 0.05f;
 
   bb::Board board{
-    bb::searching::NegamaxSearchPolicy{std::forward<EvalPolicy>(evalPolicy), searchConfig, aspirationWindow, ttCapacity},
+    bb::searching::NegamaxSearchPolicy{std::forward<EvalPolicy>(evalPolicy), searchConfig, searchConfig.aspirationWindow, ttCapacity},
     bb::time_control::EqualPercentageTimeControlPolicy{timePercentage}
   };
 
@@ -57,6 +57,7 @@ int main(int argc, char* argv[]) {
 
   std::string_view type = "nnue";
   std::string_view mode = "rapid";
+  std::string_view searchConfigPath = "search_config.yaml";
 
   const std::span args(argv + 1, static_cast<size_t>(std::max(0, argc - 1)));
   for (size_t i = 0; i < args.size(); ++i) {
@@ -69,6 +70,8 @@ int main(int argc, char* argv[]) {
       type = args[++i];
     } else if (arg == "--mode" && i + 1 < args.size()) {
       mode = args[++i];
+    } else if (arg == "--search_config" && i + 1 < args.size()) {
+      searchConfigPath = args[++i];
     } else {
       printHelp();
       return 1;
@@ -81,13 +84,22 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  bb::searching::NegamaxSearchConfig searchConfig{};
+  std::ifstream configFile{std::string(searchConfigPath)};
+  if (configFile.is_open()) {
+    searchConfig.deserialize(configFile);
+  } else if (searchConfigPath != "search_config.yaml") {
+    std::cerr << "Error: Could not open search config file: " << searchConfigPath << '\n';
+    return 1;
+  }
+
   try {
     if (type == "nnue") {
-      runEngine(bb::evaluation::NNUEEvaluationPolicy{"weights.bin"}, *ttCapacity);
+      runEngine(bb::evaluation::NNUEEvaluationPolicy{"weights.bin"}, *ttCapacity, searchConfig);
     } else if (type == "hce") {
-      runEngine(bb::evaluation::HandCraftEvaluationPolicy{}, *ttCapacity);
+      runEngine(bb::evaluation::HandCraftEvaluationPolicy{}, *ttCapacity, searchConfig);
     } else if (type == "noop") {
-      runEngine(bb::evaluation::NoopEvaluationPolicy{}, *ttCapacity);
+      runEngine(bb::evaluation::NoopEvaluationPolicy{}, *ttCapacity, searchConfig);
     } else {
       printHelp();
       return 1;
