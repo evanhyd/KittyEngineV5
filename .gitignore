@@ -370,3 +370,5 @@ DiagnosticsScratch/
 
 *.json
 *.ps1
+/KittyEngineV5/search_config.yaml
+/search_config.yaml
