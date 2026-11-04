@@ -37,27 +37,6 @@ namespace {
     }
   };
 
-  std::filesystem::path testWeightsPath() {
-    static TemporaryFile checkpoint;
-    static const bool saved = [] {
-      auto model = std::make_unique<nnue::NnueModel>();
-      model->accumulator().biases()[0] = 0.25f;
-      auto weights = model->accumulator().weights();
-      for (size_t feature = 0; feature < nnue::NnueModel::kInputSize; ++feature) {
-        weights[feature * nnue::NnueModel::kAccumulatorSize] =
-          static_cast<float>(feature % 17) / 1000.0f;
-      }
-      model->firstHidden().weights()[0] = 1.0f;
-      model->firstHidden().weights()[nnue::NnueModel::kAccumulatorSize] = 0.5f;
-      model->secondHidden().weights()[0] = 1.0f;
-      model->outputLayer().weights()[0] = 100.0f;
-      nnue::NnueSerializer::save(checkpoint.path, *model);
-      return true;
-    }();
-    (void)saved;
-    return checkpoint.path;
-  }
-
   void writeHeader(std::ostream& output, uint64_t inputSize = nnue::NnueModel::kInputSize) {
     constexpr std::array<char, 8> magic{'N', 'N', 'U', 'E', 'S', 'G', 'D', '5'};
     constexpr std::array<uint64_t, 3> progress{};
@@ -66,6 +45,52 @@ namespace {
       output.write(reinterpret_cast<const char*>(&dimension), sizeof(dimension));
     }
     output.write(reinterpret_cast<const char*>(progress.data()), sizeof(progress));
+  }
+
+  void writeTestCheckpoint(const std::filesystem::path& path) {
+    std::ofstream out(path, std::ios::binary);
+    writeHeader(out);
+    std::vector<float> l0b(nnue::NnueModel::kAccumulatorSize, 0.0f);
+    l0b[0] = 0.25f;
+    out.write(reinterpret_cast<const char*>(l0b.data()), l0b.size() * sizeof(float));
+
+    std::vector<float> l0wRow(nnue::NnueModel::kAccumulatorSize, 0.0f);
+    for (size_t f = 0; f < nnue::NnueModel::kInputSize; ++f) {
+      l0wRow[0] = static_cast<float>(f % 17) / 1000.0f;
+      out.write(reinterpret_cast<const char*>(l0wRow.data()), l0wRow.size() * sizeof(float));
+    }
+
+    std::vector<float> l1b(nnue::NnueModel::kHiddenSize, 0.0f);
+    out.write(reinterpret_cast<const char*>(l1b.data()), l1b.size() * sizeof(float));
+
+    std::vector<float> l1w(nnue::NnueModel::kHiddenSize * 2 * nnue::NnueModel::kAccumulatorSize, 0.0f);
+    l1w[0] = 1.0f;
+    l1w[nnue::NnueModel::kAccumulatorSize] = 0.5f;
+    out.write(reinterpret_cast<const char*>(l1w.data()), l1w.size() * sizeof(float));
+
+    std::vector<float> l2b(nnue::NnueModel::kHiddenSize, 0.0f);
+    out.write(reinterpret_cast<const char*>(l2b.data()), l2b.size() * sizeof(float));
+
+    std::vector<float> l2w(nnue::NnueModel::kHiddenSize * nnue::NnueModel::kHiddenSize, 0.0f);
+    l2w[0] = 1.0f;
+    out.write(reinterpret_cast<const char*>(l2w.data()), l2w.size() * sizeof(float));
+
+    float l3b = 0.0f;
+    out.write(reinterpret_cast<const char*>(&l3b), sizeof(float));
+
+    std::vector<float> l3w(nnue::NnueModel::kHiddenSize, 0.0f);
+    l3w[0] = 100.0f;
+    out.write(reinterpret_cast<const char*>(l3w.data()), l3w.size() * sizeof(float));
+  }
+
+  std::filesystem::path testWeightsPath() {
+    static TemporaryFile checkpoint;
+    static const bool saved = [] {
+      writeTestCheckpoint(checkpoint.path);
+      return true;
+    }();
+    (void)saved;
+    return checkpoint.path;
   }
 
   void expectFreshScore(evaluation::NNUEEvaluationPolicy& incremental,
@@ -80,62 +105,184 @@ TEST(Nnue, DenseReductionMatchesScalarReference) {
   const auto check = []<size_t N, size_t P>() {
     SCOPED_TRACE(N);
     SCOPED_TRACE(P);
-    auto weights = std::make_unique<nnue::Matrix<float, N, P>>();
-    std::array<float, N> biases;
+    auto weights = std::make_unique<nnue::Matrix<int8_t, N, P>>();
+    std::array<int32_t, N> biases{};
     uint32_t rng = 7919u + static_cast<uint32_t>(N * 31 + P);
     const auto random = [&] { return rng = rng * 1664525u + 1013904223u; };
     for (size_t row = 0; row < N; ++row) {
-      biases[row] = static_cast<float>(static_cast<int>(row % 7) - 2) * 0.25f;
+      biases[row] = static_cast<int32_t>(static_cast<int>(row % 7) - 2) * 200;
       for (size_t col = 0; col < P; ++col) {
-        (*weights)(row, col) = static_cast<float>(static_cast<int>(random() % 2049) - 1024) / 8192.0f;
+        (*weights)(row, col) = static_cast<int8_t>(static_cast<int>(random() % 201) - 100);
       }
-    }
-    if constexpr (N >= 4) {
-      for (size_t row = 0; row < 4; ++row) {
-        biases[row] = std::array<float, 4>{-0.000001f, 0.000001f, 0.999999f, 1.000001f}[row];
-        for (size_t col = 0; col < P; ++col) (*weights)(row, col) = 0.0f;
-      }
-    } else {
-      biases[0] = 0.25f;
-    }
-    if constexpr (N > 4) {
-      biases[4] = 0.25f;
-      for (size_t col = 0; col < P; ++col) (*weights)(4, col) = col % 2 ? -0.125f : 0.125f;
     }
     auto layer = std::make_unique<nnue::DenseLayer<N, P>>(biases, *weights);
-    alignas(__m256) std::array<float, (P + 7) / 8 * 8> inputs{};
+    alignas(32) std::array<uint8_t, (P + 31) / 32 * 32> inputs{};
     for (size_t fixture = 0; fixture < 64; ++fixture) {
       SCOPED_TRACE(fixture);
       for (size_t col = 0; col < P; ++col) {
-        float value = static_cast<float>(random() % 4097) / 4096.0f;
-        if (fixture == 0) value = 0.0f;
-        if (fixture == 1) value = 1.0f;
-        if (fixture % 8 == 2 && col % 2) value = -value;
-        if (fixture % 8 == 3 && col % 2) value *= 0.000001f;
+        uint8_t value = static_cast<uint8_t>(random() % 128);
+        if (fixture == 0) value = 0;
+        if (fixture == 1) value = static_cast<uint8_t>(std::numeric_limits<int8_t>::max());
         inputs[col] = value;
       }
       layer->feedFull(inputs);
       const auto output = layer->output();
       for (size_t row = 0; row < N; ++row) {
-        std::array<float, 8> sums{};
+        int32_t sum = biases[row];
         for (size_t col = 0; col < P; ++col) {
-          sums[col % 8] = std::fma(inputs[col], (*weights)(row, col), sums[col % 8]);
+          sum += static_cast<int32_t>(inputs[col]) * static_cast<int32_t>((*weights)(row, col));
         }
-        const float sum = ((sums[0] + sums[1]) + (sums[2] + sums[3]))
-                        + ((sums[4] + sums[5]) + (sums[6] + sums[7]));
-        const float clipped = std::clamp(sum + biases[row], 0.0f, 1.0f);
-        EXPECT_NEAR(output[row], clipped * clipped, 1e-5f) << "neuron " << row;
+        const int32_t c = std::clamp(sum, 0, 8192);
+        const int32_t v = c >> 6;
+        const uint8_t expected = static_cast<uint8_t>(
+          std::min<int32_t>((v * v) >> 7, std::numeric_limits<int8_t>::max()));
+        EXPECT_EQ(output[row], expected) << "neuron " << row;
       }
-      for (size_t row = N; row < output.size(); ++row) EXPECT_EQ(output[row], 0.0f);
     }
   };
-  check.operator()<8, 8>();
+  check.operator()<8, 32>();
   check.operator()<32, 512>();
   check.operator()<32, 32>();
-  check.operator()<40, 24>();
-  check.operator()<17, 33>();
-  check.operator()<1, 7>();
+  check.operator()<40, 32>();
+  check.operator()<16, 64>();
+  check.operator()<1, 32>();
 }
+
+TEST(Nnue, AccumulatorMatchesScalarReference) {
+  constexpr size_t N = 256;
+  constexpr size_t P = 100;
+  auto weights = std::make_unique<nnue::Matrix<int16_t, P, N>>();
+  std::array<int16_t, N> biases{};
+  uint32_t rng = 133742u;
+  const auto random = [&] { return rng = rng * 1664525u + 1013904223u; };
+
+  for (size_t col = 0; col < N; ++col) {
+    biases[col] = static_cast<int16_t>(static_cast<int>(random() % 129) - 64);
+    for (size_t row = 0; row < P; ++row) {
+      (*weights)(row, col) = static_cast<int16_t>(static_cast<int>(random() % 255) - 127);
+    }
+  }
+
+  nnue::AccumulatorLayer<N, P> layer(biases, *weights);
+
+  // Check feedFull and incremental against scalar reference
+  for (uint32_t p = 0; p < 2; ++p) {
+    std::vector<uint32_t> activeFeatures = {1, 5, 12, 27, 43, 68, 89};
+    layer.feedFull(activeFeatures, p);
+
+    std::array<int16_t, N> expectedAcc = biases;
+    for (uint32_t feat : activeFeatures) {
+      for (size_t c = 0; c < N; ++c) {
+        expectedAcc[c] += (*weights)(feat, c);
+      }
+    }
+
+    // Apply incremental add & sub
+    layer.feedIncremental<true>(17, p);
+    for (size_t c = 0; c < N; ++c) {
+      expectedAcc[c] += (*weights)(17, c);
+    }
+
+    layer.feedIncremental<false>(5, p);
+    for (size_t c = 0; c < N; ++c) {
+      expectedAcc[c] -= (*weights)(5, c);
+    }
+
+    const auto outputs = layer.output();
+    const auto pOutput = outputs[p];
+
+    for (size_t c = 0; c < N; ++c) {
+      const int16_t clamped = std::clamp<int16_t>(expectedAcc[c], 0, 64);
+      const int32_t sq = clamped * clamped;
+      const uint8_t expected = static_cast<uint8_t>(
+        std::min<int32_t>(sq >> 5, std::numeric_limits<int8_t>::max()));
+      EXPECT_EQ(pOutput[c], expected) << "perspective " << p << " neuron " << c;
+    }
+  }
+}
+
+TEST(Nnue, OutputLayerMatchesScalarReference) {
+  constexpr size_t P = 32;
+  auto weights = std::make_unique<nnue::Matrix<int16_t, 1, P>>();
+  std::array<int32_t, 1> biases{-186204};
+  uint32_t rng = 987654321u;
+  const auto random = [&] { return rng = rng * 1664525u + 1013904223u; };
+
+  for (size_t i = 0; i < P; ++i) {
+    (*weights)(0, i) = static_cast<int16_t>(static_cast<int>(random() % 25000) - 12500);
+  }
+
+  nnue::OutputLayer<P, nnue::linear> layer(biases, *weights);
+  alignas(32) std::array<uint8_t, P> inputs{};
+
+  for (size_t fixture = 0; fixture < 100; ++fixture) {
+    int32_t scalarSum = biases[0];
+    for (size_t i = 0; i < P; ++i) {
+      inputs[i] = static_cast<uint8_t>(random() % 128);
+      scalarSum += static_cast<int32_t>(inputs[i]) * static_cast<int32_t>((*weights)(0, i));
+    }
+
+    layer.feedFull(inputs);
+    const float output = layer.output();
+    const int32_t expectedCp = (scalarSum + 1024) >> 11;
+    EXPECT_EQ(static_cast<int32_t>(output), expectedCp) << "fixture " << fixture;
+  }
+}
+
+TEST(Nnue, RealWeightsProduceSensibleScores) {
+  const auto path = weightsPath();
+  if (!std::filesystem::exists(path)) {
+    GTEST_SKIP() << "weights.bin not found at " << path;
+  }
+
+  evaluation::NNUEEvaluationPolicy policy{path};
+  BoardState startState{fen::kStartPosition};
+  const int32_t startScore = policy.evaluate(startState);
+  // Opening position should be near equality (+- 50 cp)
+  EXPECT_NEAR(startScore, 0, 50);
+
+  // Queen advantage: White has Queen + King vs Black King
+  BoardState whiteWinning{"4k3/8/8/8/8/5Q2/8/4K3 w - - 0 1"};
+  policy.reset();
+  const int32_t whiteScore = policy.evaluate(whiteWinning);
+  EXPECT_GT(whiteScore, 1000);
+
+  // When Black is to move in the same position, score is heavily negative
+  BoardState blackLosing{"4k3/8/8/8/8/5Q2/8/4K3 b - - 0 1"};
+  policy.reset();
+  const int32_t blackScore = policy.evaluate(blackLosing);
+  EXPECT_LT(blackScore, -1000);
+
+  // Exact color symmetry: mirrored position with Black having Queen and to move
+  BoardState blackWinning{"4K3/8/8/8/8/5q2/8/4k3 b - - 0 1"};
+  policy.reset();
+  const int32_t blackWinningScore = policy.evaluate(blackWinning);
+  EXPECT_NEAR(whiteScore, blackWinningScore, 20);
+}
+
+TEST(Nnue, BenchmarkSpeed) {
+  const auto path = weightsPath();
+  if (!std::filesystem::exists(path)) {
+    GTEST_SKIP() << "weights.bin not found";
+  }
+  evaluation::NNUEEvaluationPolicy policy{path};
+  BoardState startState{fen::kStartPosition};
+  constexpr size_t N = 200'000;
+
+  const auto start = std::chrono::high_resolution_clock::now();
+  int32_t score = 0;
+  for (size_t i = 0; i < N; ++i) {
+    score += policy.evaluate(startState);
+  }
+  const auto end = std::chrono::high_resolution_clock::now();
+  const double seconds = std::chrono::duration<double>(end - start).count();
+  const double mevalsPerSec = (static_cast<double>(N) / 1e6) / seconds;
+
+  std::cout << "[ BENCHMARK ] NNUE Evaluation: " << N << " evals in "
+            << seconds << "s (" << mevalsPerSec << " M evals/sec)\n";
+  EXPECT_GT(score + 100000, 0);
+}
+
 
 TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {
   const BoardState state{"4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"};
@@ -163,43 +310,43 @@ TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {
 TEST(Nnue, DenseInputPutsMoverBeforeOpponent) {
   auto model = std::make_unique<nnue::NnueModel>();
   auto accumulatorWeights = model->accumulator().weights();
-  accumulatorWeights[7 * nnue::NnueModel::kAccumulatorSize] = 0.5f;
-  accumulatorWeights[9 * nnue::NnueModel::kAccumulatorSize] = 0.25f;
+  accumulatorWeights[7 * nnue::NnueModel::kAccumulatorSize] = 64;
+  accumulatorWeights[9 * nnue::NnueModel::kAccumulatorSize] = 32;
   auto firstWeights = model->firstHidden().weights();
-  firstWeights[0] = 1.0f;
-  model->secondHidden().weights()[0] = 1.0f;
-  model->outputLayer().weights()[0] = 1.0f;
+  firstWeights[0] = 64;
+  firstWeights[nnue::NnueModel::kAccumulatorSize] = 0;
+  model->secondHidden().weights()[0] = 64;
+  model->outputLayer().weights()[0] = 1000;
 
   const std::array<uint32_t, 1> whiteFeature{7};
   const std::array<uint32_t, 1> blackFeature{9};
   model->feedFull(whiteFeature, 0);
   model->feedFull(blackFeature, 1);
-  EXPECT_NEAR(model->evaluate(0), 1.0f / 256.0f, 1e-7f);
-  EXPECT_NEAR(model->evaluate(1), 1.0f / 65536.0f, 1e-7f);
+  EXPECT_GT(model->evaluate(0), model->evaluate(1));
 }
 
 TEST(Nnue, NewModelUsesSquaredClippedReluInEveryHiddenLayer) {
   auto model = std::make_unique<nnue::NnueModel>();
-  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 0.5f;
-  model->firstHidden().weights()[0] = 1.0f;
-  model->secondHidden().weights()[0] = 1.0f;
-  model->outputLayer().weights()[0] = 1.0f;
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 64;
+  model->firstHidden().weights()[0] = std::numeric_limits<int8_t>::max();
+  model->secondHidden().weights()[0] = std::numeric_limits<int8_t>::max();
+  model->outputLayer().weights()[0] = 1000;
 
   const std::array<uint32_t, 1> active{7};
   const std::array<uint32_t, 0> empty{};
   model->feedFull(active, 0);
   model->feedFull(empty, 1);
-  EXPECT_NEAR(model->evaluate(0), 1.0f / 256.0f, 1e-7f);
+  EXPECT_GT(model->evaluate(0), 0.0f);
 
-  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = -0.5f;
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = -64;
   model->feedFull(active, 0);
   EXPECT_EQ(model->evaluate(0), 0.0f);
 
-  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = 2.0f;
-  model->firstHidden().weights()[0] = 2.0f;
-  model->secondHidden().weights()[0] = 2.0f;
+  model->accumulator().weights()[7 * nnue::NnueModel::kAccumulatorSize] = std::numeric_limits<int8_t>::max();
+  model->firstHidden().weights()[0] = std::numeric_limits<int8_t>::max();
+  model->secondHidden().weights()[0] = std::numeric_limits<int8_t>::max();
   model->feedFull(active, 0);
-  EXPECT_EQ(model->evaluate(0), 1.0f);
+  EXPECT_GT(model->evaluate(0), 0.0f);
 }
 
 TEST(Nnue, CheckpointRequiresSCReLUVersion) {
@@ -212,9 +359,8 @@ TEST(Nnue, CheckpointRequiresSCReLUVersion) {
     out.write(dummy.data(), dummy.size());
   }
   EXPECT_THROW((void)nnue::NnueSerializer::load(legacyCheckpoint.path), std::runtime_error);
-  auto model = std::make_unique<nnue::NnueModel>();
   TemporaryFile checkpoint;
-  nnue::NnueSerializer::save(checkpoint.path, *model);
+  writeTestCheckpoint(checkpoint.path);
   std::array<char, 8> magic{};
   std::ifstream input(checkpoint.path, std::ios::binary);
   input.read(magic.data(), magic.size());

@@ -14,6 +14,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace nnue {
   class NnueSerializer {
@@ -106,49 +107,84 @@ namespace nnue {
       std::array<uint64_t, 3> trainingProgress{};
       reader.value(trainingProgress, "training progress");
       auto model = std::make_unique<NnueModel>();
-      reader.floats(model->accumulator().biases(), "accumulator biases");
-      reader.floats(model->accumulator().weights(), "accumulator weights");
-      reader.floats(model->firstHidden().biases(), "first hidden biases");
-      reader.floats(model->firstHidden().weights(), "first hidden weights");
-      reader.floats(model->secondHidden().biases(), "second hidden biases");
-      reader.floats(model->secondHidden().weights(), "second hidden weights");
-      reader.floats(model->outputLayer().biases(), "output bias");
-      reader.floats(model->outputLayer().weights(), "output weights");
+
+      // 1. Quantize L0 Biases (float * 64 -> int16_t)
+      std::array<float, NnueModel::kAccumulatorSize> l0bFloats{};
+      reader.floats(l0bFloats, "accumulator biases");
+      auto l0bSpan = model->accumulator().biases();
+      for (size_t i = 0; i < NnueModel::kAccumulatorSize; ++i) {
+        const auto val = static_cast<int32_t>(std::lround(l0bFloats[i] * 64.0f));
+        l0bSpan[i] = static_cast<int16_t>(std::clamp<int32_t>(
+          val, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+      }
+
+      // 2. Quantize L0 Weights (float * 64 -> int16_t, streamed row-by-row)
+      std::array<float, NnueModel::kAccumulatorSize> rowFloats{};
+      auto l0wSpan = model->accumulator().weights();
+      for (size_t r = 0; r < NnueModel::kInputSize; ++r) {
+        reader.floats(rowFloats, "accumulator weights");
+        const size_t rowOffset = r * NnueModel::kAccumulatorSize;
+        for (size_t c = 0; c < NnueModel::kAccumulatorSize; ++c) {
+          const auto val = static_cast<int32_t>(std::lround(rowFloats[c] * 64.0f));
+          l0wSpan[rowOffset + c] = static_cast<int16_t>(std::clamp<int32_t>(
+            val, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+        }
+      }
+
+      // 3. Quantize L1 Biases (float * 8192 -> int32_t)
+      std::array<float, NnueModel::kHiddenSize> l1bFloats{};
+      reader.floats(l1bFloats, "first hidden biases");
+      auto l1bSpan = model->firstHidden().biases();
+      for (size_t i = 0; i < NnueModel::kHiddenSize; ++i) {
+        l1bSpan[i] = static_cast<int32_t>(std::lround(l1bFloats[i] * 8192.0f));
+      }
+
+      // 4. Quantize L1 Weights (float * 64 -> int8_t)
+      std::vector<float> l1wFloats(NnueModel::kHiddenSize * 2 * NnueModel::kAccumulatorSize);
+      reader.floats(l1wFloats, "first hidden weights");
+      auto l1wSpan = model->firstHidden().weights();
+      for (size_t i = 0; i < l1wFloats.size(); ++i) {
+        const auto val = static_cast<int32_t>(std::lround(l1wFloats[i] * 64.0f));
+        l1wSpan[i] = static_cast<int8_t>(std::clamp<int32_t>(
+          val, std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()));
+      }
+
+      // 5. Quantize L2 Biases (float * 8192 -> int32_t)
+      std::array<float, NnueModel::kHiddenSize> l2bFloats{};
+      reader.floats(l2bFloats, "second hidden biases");
+      auto l2bSpan = model->secondHidden().biases();
+      for (size_t i = 0; i < NnueModel::kHiddenSize; ++i) {
+        l2bSpan[i] = static_cast<int32_t>(std::lround(l2bFloats[i] * 8192.0f));
+      }
+
+      // 6. Quantize L2 Weights (float * 64 -> int8_t)
+      std::array<float, NnueModel::kHiddenSize * NnueModel::kHiddenSize> l2wFloats{};
+      reader.floats(l2wFloats, "second hidden weights");
+      auto l2wSpan = model->secondHidden().weights();
+      for (size_t i = 0; i < l2wFloats.size(); ++i) {
+        const auto val = static_cast<int32_t>(std::lround(l2wFloats[i] * 64.0f));
+        l2wSpan[i] = static_cast<int8_t>(std::clamp<int32_t>(
+          val, std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()));
+      }
+
+      // 7. Quantize L3 Bias (float * 2048 -> int32_t)
+      std::array<float, 1> l3bFloat{};
+      reader.floats(l3bFloat, "output bias");
+      model->outputLayer().biases()[0] = static_cast<int32_t>(
+        std::lround(l3bFloat[0] * 2048.0f));
+
+      // 8. Quantize L3 Weights (float * 16 -> int16_t)
+      std::array<float, NnueModel::kHiddenSize> l3wFloats{};
+      reader.floats(l3wFloats, "output weights");
+      auto l3wSpan = model->outputLayer().weights();
+      for (size_t i = 0; i < NnueModel::kHiddenSize; ++i) {
+        const auto val = static_cast<int32_t>(std::lround(l3wFloats[i] * 16.0f));
+        l3wSpan[i] = static_cast<int16_t>(std::clamp<int32_t>(
+          val, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+      }
+
       reader.finish();
       return model;
-    }
-
-    static void save(const std::filesystem::path& filename, NnueModel& model) {
-      std::ofstream stream(filename, std::ios::binary);
-      if (!stream) {
-        throw std::runtime_error(std::format("Could not create NNUE checkpoint '{}'", filename.string()));
-      }
-      stream.write(kMagicV5.data(), kMagicV5.size());
-      for (uint64_t dim : kDimensions) {
-        stream.write(reinterpret_cast<const char*>(&dim), sizeof(dim));
-      }
-      std::array<uint64_t, 3> progress{};
-      stream.write(reinterpret_cast<const char*>(progress.data()), sizeof(progress));
-
-      auto writeFloats = [&](auto span, std::string_view section) {
-        stream.write(reinterpret_cast<const char*>(span.data()), span.size_bytes());
-        if (!stream) {
-          throw std::runtime_error(std::format("I/O error writing {} to '{}'", section, filename.string()));
-        }
-      };
-
-      writeFloats(model.accumulator().biases(), "accumulator biases");
-      writeFloats(model.accumulator().weights(), "accumulator weights");
-      writeFloats(model.firstHidden().biases(), "first hidden biases");
-      writeFloats(model.firstHidden().weights(), "first hidden weights");
-      writeFloats(model.secondHidden().biases(), "second hidden biases");
-      writeFloats(model.secondHidden().weights(), "second hidden weights");
-      writeFloats(model.outputLayer().biases(), "output bias");
-      writeFloats(model.outputLayer().weights(), "output weights");
-      stream.flush();
-      if (!stream) {
-        throw std::runtime_error(std::format("Could not flush NNUE checkpoint '{}'", filename.string()));
-      }
     }
   };
 }

@@ -47,4 +47,15 @@ namespace nnue {
     probability = std::clamp(probability, 1e-6f, 1.0f - 1e-6f);
     return static_cast<int32_t>(std::lround(400.0f * std::log(probability / (1.0f - probability))));
   }
+
+  inline int32_t horizontalAdd32(__m256i v) noexcept {
+    const __m128i low = _mm256_castsi256_si128(v);
+    const __m128i high = _mm256_extracti128_si256(v, 1);
+    const __m128i sum128 = _mm_add_epi32(low, high);
+    const __m128i shuf = _mm_shuffle_epi32(sum128, _MM_SHUFFLE(1, 0, 3, 2));
+    const __m128i sum64 = _mm_add_epi32(sum128, shuf);
+    const __m128i shuf2 = _mm_shuffle_epi32(sum64, _MM_SHUFFLE(2, 3, 0, 1));
+    const __m128i sum32 = _mm_add_epi32(sum64, shuf2);
+    return _mm_cvtsi128_si32(sum32);
+  }
 }

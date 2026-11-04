@@ -18,7 +18,7 @@ namespace nnue {
     DenseLayer<kHiddenSize, 2 * kAccumulatorSize> firstHidden_;
     DenseLayer<kHiddenSize, kHiddenSize> secondHidden_;
     OutputLayer<kHiddenSize, linear> output_;
-    alignas(__m256) std::array<float, 2 * kAccumulatorSize> combined_{};
+    alignas(32) std::array<uint8_t, 2 * kAccumulatorSize> combined_{};
 
   public:
     AccumulatorLayer<kAccumulatorSize, kInputSize>& accumulator() noexcept {
