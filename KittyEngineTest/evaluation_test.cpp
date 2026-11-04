@@ -280,6 +280,7 @@ TEST(Nnue, BenchmarkSpeed) {
 
   std::cout << "[ BENCHMARK ] NNUE Evaluation: " << N << " evals in "
             << seconds << "s (" << mevalsPerSec << " M evals/sec)\n";
+  std::cout << "           Per eval: " << (seconds / N * 1e9) << " ns\n";
   EXPECT_GT(score + 100000, 0);
 }
 
@@ -558,6 +559,67 @@ TEST(Nnue, RepeatedSearchesAndBoardResetKeepScores) {
   searching::SearchResult changed{};
   board.search(1, std::nullopt, [&](const searching::SearchResult& r) { changed = r; });
   EXPECT_TRUE(static_cast<bool>(changed.move));
+}
+
+TEST(Nnue, StateNeverCorruptedAcrossMakeUnmakeTreeAndPositionChanges) {
+  evaluation::NNUEEvaluationPolicy incremental{testWeightsPath()};
+  evaluation::NNUEEvaluationPolicy fresh{testWeightsPath()};
+
+  // 1. Stress test with recursive make/unmake tree traversal on Kiwipete
+  BoardState kiwipete{fen::kKiwipete};
+  expectFreshScore(incremental, fresh, kiwipete);
+
+  auto explore = [&](auto& self, BoardState& state, int depth) -> void {
+    if (depth == 0) {
+      expectFreshScore(incremental, fresh, state);
+      return;
+    }
+    const Side side = state.getSide();
+    MoveList moves;
+    if (side == White) {
+      state.generateMoves<White>(moves);
+      for (size_t i = 0; i < std::min<size_t>(moves.size(), 6); ++i) {
+        const MoveUndo undo = state.makeMove<White>(moves[i], incremental);
+        self(self, state, depth - 1);
+        state.unmakeMove<White>(moves[i], undo, incremental);
+        expectFreshScore(incremental, fresh, state);
+      }
+    } else {
+      state.generateMoves<Black>(moves);
+      for (size_t i = 0; i < std::min<size_t>(moves.size(), 6); ++i) {
+        const MoveUndo undo = state.makeMove<Black>(moves[i], incremental);
+        self(self, state, depth - 1);
+        state.unmakeMove<Black>(moves[i], undo, incremental);
+        expectFreshScore(incremental, fresh, state);
+      }
+    }
+  };
+
+  explore(explore, kiwipete, 3);
+  expectFreshScore(incremental, fresh, kiwipete);
+
+  // 2. Position changes with board.setPosition
+  Board board{
+    searching::NegamaxSearchPolicy{
+      evaluation::NNUEEvaluationPolicy{testWeightsPath()}, searching::NegamaxSearchConfig{}, 80, 1u << 16
+    },
+    time_control::EqualPercentageTimeControlPolicy{0.05f}
+  };
+
+  board.setPosition(fen::kStartPosition);
+  board.search(2, std::nullopt, [](const auto&) {});
+
+  // Same king square, completely different pieces
+  board.setPosition("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+  board.search(2, std::nullopt, [](const auto&) {});
+
+  // Different king square
+  board.setPosition("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
+  board.search(2, std::nullopt, [](const auto&) {});
+
+  // Back to startpos
+  board.setPosition(fen::kStartPosition);
+  board.search(2, std::nullopt, [](const auto&) {});
 }
 
 TEST(Nnue, SearchRootInCheckInitializesAccumulatorSafely) {

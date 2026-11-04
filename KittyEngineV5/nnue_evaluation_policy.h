@@ -143,28 +143,56 @@ namespace bb::evaluation {
 
     int32_t evaluate(const BoardState& state) {
       const size_t firstPending = applied_;
+
+      // Fast-path: return cached evaluation directly if no moves are pending and king positions are unchanged.
+      if (firstPending == history_.size()) {
+        const Square whiteKing = NnueLayout::kingSquare(state, White);
+        const Square blackKing = NnueLayout::kingSquare(state, Black);
+        if (model_->hasAccumulator(White) && model_->hasAccumulator(Black) &&
+            whiteKing == cachedKingSquares_[White] &&
+            blackKing == cachedKingSquares_[Black]) {
+          return model_->evaluate(state.getSide());
+        }
+      }
+
+      // Update the accumulator for each perspective (White and Black).
       for (Side perspective = White; perspective <= Black; ++perspective) {
         const Square king = NnueLayout::kingSquare(state, perspective);
+
+        // Rebuild accumulator from scratch if it is uninitialized or if the king has moved.
         if (!model_->hasAccumulator(perspective) || king != cachedKingSquares_[perspective]) {
           rebuild(state, perspective, king);
           continue;
         }
 
         const uint32_t kingBase = NnueLayout::kingBase(perspective, king);
-        for (size_t i = firstPending; i < history_.size(); ++i) {
-          const PieceChange& change = history_[i];
-          const uint32_t index = kingBase + NnueLayout::pieceOffset(
-            perspective, change.side, change.piece, change.square);
-          if (change.add) {
-            model_->feedIncremental<true>(index, perspective);
-          } else {
-            model_->feedIncremental<false>(index, perspective);
+        const size_t pendingCount = history_.size() - firstPending;
+
+        // Fast-path for quiet moves: apply piece removal and addition in a single memory pass.
+        if (pendingCount == 2 && !history_[firstPending].add && history_[firstPending + 1].add) {
+          const auto& c0 = history_[firstPending];
+          const auto& c1 = history_[firstPending + 1];
+          const uint32_t subIdx = kingBase + NnueLayout::pieceOffset(perspective, c0.side, c0.piece, c0.square);
+          const uint32_t addIdx = kingBase + NnueLayout::pieceOffset(perspective, c1.side, c1.piece, c1.square);
+          model_->feedIncrementalPair(subIdx, addIdx, perspective);
+        } else {
+          // Fallback path: apply all pending piece additions and subtractions sequentially.
+          for (size_t i = firstPending; i < history_.size(); ++i) {
+            const PieceChange& change = history_[i];
+            const uint32_t index = kingBase + NnueLayout::pieceOffset(
+              perspective, change.side, change.piece, change.square);
+            if (change.add) {
+              model_->feedIncremental<true>(index, perspective);
+            } else {
+              model_->feedIncremental<false>(index, perspective);
+            }
           }
         }
       }
 
+      // Mark all pending changes as processed and compute the final evaluation score.
       applied_ = history_.size();
-      return static_cast<int32_t>(std::lround(model_->evaluate(state.getSide())));
+      return model_->evaluate(state.getSide());
     }
   };
 

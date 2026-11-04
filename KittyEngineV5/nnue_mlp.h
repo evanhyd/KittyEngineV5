@@ -18,7 +18,6 @@ namespace nnue {
     DenseLayer<kHiddenSize, 2 * kAccumulatorSize> firstHidden_;
     DenseLayer<kHiddenSize, kHiddenSize> secondHidden_;
     OutputLayer<kHiddenSize, linear> output_;
-    alignas(32) std::array<uint8_t, 2 * kAccumulatorSize> combined_{};
 
   public:
     AccumulatorLayer<kAccumulatorSize, kInputSize>& accumulator() noexcept {
@@ -54,16 +53,23 @@ namespace nnue {
       accumulator_.template feedIncremental<Add>(index, perspectiveIndex);
     }
 
-    float evaluate(uint32_t perspectiveIndex) {
+    void feedIncrementalPair(uint32_t subIndex, uint32_t addIndex, uint32_t perspectiveIndex) noexcept {
+      accumulator_.feedIncrementalPair(subIndex, addIndex, perspectiveIndex);
+    }
+
+    int32_t evaluate(uint32_t perspectiveIndex) {
+      // Retrieve activated accumulator outputs for both perspectives (side to move first, then opponent).
       const auto perspectives = accumulator_.output();
       const auto selected = perspectives[perspectiveIndex];
       const auto opposite = perspectives[perspectiveIndex ^ 1];
-      std::copy(selected.begin(), selected.end(), combined_.begin());
-      std::copy(opposite.begin(), opposite.end(), combined_.begin() + kAccumulatorSize);
-      firstHidden_.feedFull(combined_);
+
+      // Forward activations through the first and second hidden layers.
+      firstHidden_.feedFull(selected, opposite);
       secondHidden_.feedFull(firstHidden_.output());
+
+      // Compute final output layer activation and return the centipawn score directly.
       output_.feedFull(secondHidden_.output());
-      return output_.output();
+      return output_.outputCp();
     }
   };
 }
