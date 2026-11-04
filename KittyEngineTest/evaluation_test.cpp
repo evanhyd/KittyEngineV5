@@ -223,9 +223,9 @@ TEST(Nnue, OutputLayerMatchesScalarReference) {
     }
 
     layer.feedFull(inputs);
-    const float output = layer.output();
+    const int32_t output = layer.output();
     const int32_t expectedCp = (scalarSum + 1024) >> 11;
-    EXPECT_EQ(static_cast<int32_t>(output), expectedCp) << "fixture " << fixture;
+    EXPECT_EQ(output, expectedCp) << "fixture " << fixture;
   }
 }
 

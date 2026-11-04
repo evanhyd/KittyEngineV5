@@ -170,11 +170,13 @@ namespace bb::evaluation {
 
         // Fast-path for quiet moves: apply piece removal and addition in a single memory pass.
         if (pendingCount == 2 && !history_[firstPending].add && history_[firstPending + 1].add) {
-          const auto& c0 = history_[firstPending];
-          const auto& c1 = history_[firstPending + 1];
-          const uint32_t subIdx = kingBase + NnueLayout::pieceOffset(perspective, c0.side, c0.piece, c0.square);
-          const uint32_t addIdx = kingBase + NnueLayout::pieceOffset(perspective, c1.side, c1.piece, c1.square);
-          model_->feedIncrementalPair(subIdx, addIdx, perspective);
+          const auto& removedChange = history_[firstPending];
+          const auto& addedChange = history_[firstPending + 1];
+          const uint32_t subIndex = kingBase + NnueLayout::pieceOffset(
+            perspective, removedChange.side, removedChange.piece, removedChange.square);
+          const uint32_t addIndex = kingBase + NnueLayout::pieceOffset(
+            perspective, addedChange.side, addedChange.piece, addedChange.square);
+          model_->feedIncrementalPair(subIndex, addIndex, perspective);
         } else {
           // Fallback path: apply all pending piece additions and subtractions sequentially.
           for (size_t i = firstPending; i < history_.size(); ++i) {

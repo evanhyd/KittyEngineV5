@@ -69,7 +69,7 @@ namespace nnue {
 
       // Compute final output layer activation and return the centipawn score directly.
       output_.feedFull(secondHidden_.output());
-      return output_.outputCp();
+      return output_.output();
     }
   };
 }

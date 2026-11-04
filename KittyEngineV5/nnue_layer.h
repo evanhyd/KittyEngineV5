@@ -165,20 +165,20 @@ namespace nnue {
         const size_t offset2 = (i + 2) * internal::kInt16PerBlock;
         const size_t offset3 = (i + 3) * internal::kInt16PerBlock;
 
-        __m256i ws0 = internal::loadVec(&weights_(subIndex, offset0));
-        __m256i ws1 = internal::loadVec(&weights_(subIndex, offset1));
-        __m256i ws2 = internal::loadVec(&weights_(subIndex, offset2));
-        __m256i ws3 = internal::loadVec(&weights_(subIndex, offset3));
+        __m256i weightSub0 = internal::loadVec(&weights_(subIndex, offset0));
+        __m256i weightSub1 = internal::loadVec(&weights_(subIndex, offset1));
+        __m256i weightSub2 = internal::loadVec(&weights_(subIndex, offset2));
+        __m256i weightSub3 = internal::loadVec(&weights_(subIndex, offset3));
 
-        __m256i wa0 = internal::loadVec(&weights_(addIndex, offset0));
-        __m256i wa1 = internal::loadVec(&weights_(addIndex, offset1));
-        __m256i wa2 = internal::loadVec(&weights_(addIndex, offset2));
-        __m256i wa3 = internal::loadVec(&weights_(addIndex, offset3));
+        __m256i weightAdd0 = internal::loadVec(&weights_(addIndex, offset0));
+        __m256i weightAdd1 = internal::loadVec(&weights_(addIndex, offset1));
+        __m256i weightAdd2 = internal::loadVec(&weights_(addIndex, offset2));
+        __m256i weightAdd3 = internal::loadVec(&weights_(addIndex, offset3));
 
-        __m256i diff0 = _mm256_sub_epi16(wa0, ws0);
-        __m256i diff1 = _mm256_sub_epi16(wa1, ws1);
-        __m256i diff2 = _mm256_sub_epi16(wa2, ws2);
-        __m256i diff3 = _mm256_sub_epi16(wa3, ws3);
+        __m256i diff0 = _mm256_sub_epi16(weightAdd0, weightSub0);
+        __m256i diff1 = _mm256_sub_epi16(weightAdd1, weightSub1);
+        __m256i diff2 = _mm256_sub_epi16(weightAdd2, weightSub2);
+        __m256i diff3 = _mm256_sub_epi16(weightAdd3, weightSub3);
 
         __m256i acc0 = internal::loadVec(&accumulators_[perspectiveIndex][offset0]);
         __m256i acc1 = internal::loadVec(&accumulators_[perspectiveIndex][offset1]);
@@ -199,8 +199,8 @@ namespace nnue {
 
     std::array<std::span<const uint8_t, Shape::kSize>, 2> output() noexcept {
       const __m256i zero = _mm256_setzero_si256();
-      const __m256i clamp_max = _mm256_set1_epi16(64);
-      const __m256i clamp_max_act = _mm256_set1_epi16(std::numeric_limits<int8_t>::max());
+      const __m256i clampMax = _mm256_set1_epi16(64);
+      const __m256i clampMaxActivation = _mm256_set1_epi16(std::numeric_limits<int8_t>::max());
 
       for (size_t p = 0; p < accumulators_.size(); ++p) {
         if (!isComputed[p]) {
@@ -213,30 +213,30 @@ namespace nnue {
             const size_t offset2 = (i + 2) * internal::kInt16PerBlock;
             const size_t offset3 = (i + 3) * internal::kInt16PerBlock;
 
-            __m256i a0 = internal::loadVec(&accumulators_[p][offset0]);
-            __m256i a1 = internal::loadVec(&accumulators_[p][offset1]);
-            __m256i a2 = internal::loadVec(&accumulators_[p][offset2]);
-            __m256i a3 = internal::loadVec(&accumulators_[p][offset3]);
+            __m256i acc0 = internal::loadVec(&accumulators_[p][offset0]);
+            __m256i acc1 = internal::loadVec(&accumulators_[p][offset1]);
+            __m256i acc2 = internal::loadVec(&accumulators_[p][offset2]);
+            __m256i acc3 = internal::loadVec(&accumulators_[p][offset3]);
 
-            a0 = _mm256_min_epi16(_mm256_max_epi16(a0, zero), clamp_max);
-            a1 = _mm256_min_epi16(_mm256_max_epi16(a1, zero), clamp_max);
-            a2 = _mm256_min_epi16(_mm256_max_epi16(a2, zero), clamp_max);
-            a3 = _mm256_min_epi16(_mm256_max_epi16(a3, zero), clamp_max);
+            acc0 = _mm256_min_epi16(_mm256_max_epi16(acc0, zero), clampMax);
+            acc1 = _mm256_min_epi16(_mm256_max_epi16(acc1, zero), clampMax);
+            acc2 = _mm256_min_epi16(_mm256_max_epi16(acc2, zero), clampMax);
+            acc3 = _mm256_min_epi16(_mm256_max_epi16(acc3, zero), clampMax);
 
-            __m256i sq0 = _mm256_mullo_epi16(a0, a0);
-            __m256i sq1 = _mm256_mullo_epi16(a1, a1);
-            __m256i sq2 = _mm256_mullo_epi16(a2, a2);
-            __m256i sq3 = _mm256_mullo_epi16(a3, a3);
+            __m256i sq0 = _mm256_mullo_epi16(acc0, acc0);
+            __m256i sq1 = _mm256_mullo_epi16(acc1, acc1);
+            __m256i sq2 = _mm256_mullo_epi16(acc2, acc2);
+            __m256i sq3 = _mm256_mullo_epi16(acc3, acc3);
 
-            __m256i sh0 = _mm256_min_epi16(_mm256_srai_epi16(sq0, 5), clamp_max_act);
-            __m256i sh1 = _mm256_min_epi16(_mm256_srai_epi16(sq1, 5), clamp_max_act);
-            __m256i sh2 = _mm256_min_epi16(_mm256_srai_epi16(sq2, 5), clamp_max_act);
-            __m256i sh3 = _mm256_min_epi16(_mm256_srai_epi16(sq3, 5), clamp_max_act);
+            __m256i shift0 = _mm256_min_epi16(_mm256_srai_epi16(sq0, 5), clampMaxActivation);
+            __m256i shift1 = _mm256_min_epi16(_mm256_srai_epi16(sq1, 5), clampMaxActivation);
+            __m256i shift2 = _mm256_min_epi16(_mm256_srai_epi16(sq2, 5), clampMaxActivation);
+            __m256i shift3 = _mm256_min_epi16(_mm256_srai_epi16(sq3, 5), clampMaxActivation);
 
-            __m256i packed0 = _mm256_packus_epi16(sh0, sh1);
+            __m256i packed0 = _mm256_packus_epi16(shift0, shift1);
             packed0 = _mm256_permute4x64_epi64(packed0, _MM_SHUFFLE(3, 1, 2, 0));
 
-            __m256i packed1 = _mm256_packus_epi16(sh2, sh3);
+            __m256i packed1 = _mm256_packus_epi16(shift2, shift3);
             packed1 = _mm256_permute4x64_epi64(packed1, _MM_SHUFFLE(3, 1, 2, 0));
 
             internal::storeVec(&output_[p][offset0], packed0);
@@ -274,16 +274,16 @@ namespace nnue {
       const __m128i dots4567 = _mm_add_epi32(_mm256_castsi256_si128(h4567), _mm256_extracti128_si256(h4567, 1));
 
       const __m256i dots8 = _mm256_set_m128i(dots4567, dots0123);
-      const __m256i b8 = internal::loadVec(&biases_[row]);
-      const __m256i z8 = _mm256_add_epi32(dots8, b8);
-      const __m256i c8 = _mm256_min_epi32(_mm256_max_epi32(z8, _mm256_setzero_si256()), _mm256_set1_epi32(8192));
-      const __m256i v8 = _mm256_srli_epi32(c8, 6);
-      const __m256i sq8 = _mm256_mullo_epi32(v8, v8);
-      const __m256i act8 = _mm256_min_epi32(_mm256_srli_epi32(sq8, 7), _mm256_set1_epi32(std::numeric_limits<int8_t>::max()));
+      const __m256i biases8 = internal::loadVec(&biases_[row]);
+      const __m256i sumWithBiases = _mm256_add_epi32(dots8, biases8);
+      const __m256i clamped = _mm256_min_epi32(_mm256_max_epi32(sumWithBiases, _mm256_setzero_si256()), _mm256_set1_epi32(8192));
+      const __m256i scaled = _mm256_srli_epi32(clamped, 6);
+      const __m256i squared = _mm256_mullo_epi32(scaled, scaled);
+      const __m256i activated = _mm256_min_epi32(_mm256_srli_epi32(squared, 7), _mm256_set1_epi32(std::numeric_limits<int8_t>::max()));
 
-      const __m128i act_low = _mm256_castsi256_si128(act8);
-      const __m128i act_high = _mm256_extracti128_si256(act8, 1);
-      const __m128i pack16 = _mm_packus_epi32(act_low, act_high);
+      const __m128i activatedLow = _mm256_castsi256_si128(activated);
+      const __m128i activatedHigh = _mm256_extracti128_si256(activated, 1);
+      const __m128i pack16 = _mm_packus_epi32(activatedLow, activatedHigh);
       const __m128i pack8 = _mm_packus_epi16(pack16, pack16);
       const uint64_t val8 = static_cast<uint64_t>(_mm_cvtsi128_si64(pack8));
       std::memcpy(&output_[row], &val8, sizeof(val8));
@@ -297,14 +297,14 @@ namespace nnue {
       const __m256i h2 = _mm256_hadd_epi32(s01, s23);
       const __m128i dots = _mm_add_epi32(_mm256_castsi256_si128(h2), _mm256_extracti128_si256(h2, 1));
 
-      const __m128i b4 = internal::loadVec128U(&biases_[row]);
-      const __m128i z4 = _mm_add_epi32(dots, b4);
-      const __m128i c4 = _mm_min_epi32(_mm_max_epi32(z4, _mm_setzero_si128()), _mm_set1_epi32(8192));
-      const __m128i v4 = _mm_srli_epi32(c4, 6);
-      const __m128i sq4 = _mm_mullo_epi32(v4, v4);
-      const __m128i act4 = _mm_min_epi32(_mm_srli_epi32(sq4, 7), _mm_set1_epi32(std::numeric_limits<int8_t>::max()));
+      const __m128i biases4 = internal::loadVec128U(&biases_[row]);
+      const __m128i sumWithBiases = _mm_add_epi32(dots, biases4);
+      const __m128i clamped = _mm_min_epi32(_mm_max_epi32(sumWithBiases, _mm_setzero_si128()), _mm_set1_epi32(8192));
+      const __m128i scaled = _mm_srli_epi32(clamped, 6);
+      const __m128i squared = _mm_mullo_epi32(scaled, scaled);
+      const __m128i activated = _mm_min_epi32(_mm_srli_epi32(squared, 7), _mm_set1_epi32(std::numeric_limits<int8_t>::max()));
 
-      const __m128i pack16 = _mm_packus_epi32(act4, act4);
+      const __m128i pack16 = _mm_packus_epi32(activated, activated);
       const __m128i pack8 = _mm_packus_epi16(pack16, pack16);
       const uint32_t val4 = static_cast<uint32_t>(_mm_cvtsi128_si32(pack8));
       std::memcpy(&output_[row], &val4, sizeof(val4));
@@ -312,11 +312,11 @@ namespace nnue {
 
     // Scalar reduction and activation fallback.
     inline void reduceAndActivateScalar(size_t row, __m256i sum) noexcept {
-      const int32_t dot = horizontalAdd32(sum);
-      const int32_t z = dot + biases_[row];
-      const int32_t c = std::clamp(z, 0, 8192);
-      const int32_t v = c >> 6;
-      output_[row] = static_cast<uint8_t>(std::min<int32_t>((v * v) >> 7, std::numeric_limits<int8_t>::max()));
+      const int32_t dotProduct = horizontalAdd32(sum);
+      const int32_t sumWithBias = dotProduct + biases_[row];
+      const int32_t clamped = std::clamp(sumWithBias, 0, 8192);
+      const int32_t scaled = clamped >> 6;
+      output_[row] = static_cast<uint8_t>(std::min<int32_t>((scaled * scaled) >> 7, std::numeric_limits<int8_t>::max()));
     }
 
   public:
@@ -466,19 +466,19 @@ namespace nnue {
         __m256i sum6 = _mm256_setzero_si256();
         __m256i sum7 = _mm256_setzero_si256();
 
-        auto accumulateBlock = [&](std::span<const uint8_t, HalfSize> inSpan, size_t colOffset) {
+        auto accumulateBlock = [&](std::span<const uint8_t, HalfSize> inputSpan, size_t columnOffset) {
           for (size_t col = 0; col < HalfSize; col += internal::kInt8PerBlock) {
-            const size_t wCol = colOffset + col;
-            __m256i in = internal::loadVec(&inSpan[col]);
+            const size_t weightColumn = columnOffset + col;
+            __m256i in = internal::loadVec(&inputSpan[col]);
 
-            sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, wCol))), ones));
-            sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, wCol))), ones));
-            sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, wCol))), ones));
-            sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, wCol))), ones));
-            sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, wCol))), ones));
-            sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, wCol))), ones));
-            sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, wCol))), ones));
-            sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, wCol))), ones));
+            sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, weightColumn))), ones));
+            sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, weightColumn))), ones));
+            sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, weightColumn))), ones));
+            sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, weightColumn))), ones));
+            sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, weightColumn))), ones));
+            sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, weightColumn))), ones));
+            sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, weightColumn))), ones));
+            sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, weightColumn))), ones));
           }
         };
 
@@ -501,8 +501,7 @@ namespace nnue {
 
     alignas(32) std::array<int16_t, Shape::kInputSize> weights_{};
     int32_t bias_{};
-    int32_t evalCp_{};
-    float output_{};
+    int32_t output_{};
 
   public:
     OutputLayer() = default;
@@ -530,32 +529,27 @@ namespace nnue {
       __m256i sumVec = _mm256_setzero_si256();
       for (size_t col = 0; col < Shape::kInputSize; col += 32) {
         // Zero-extend 32 unsigned 8-bit activations into two 16-element signed 16-bit vectors.
-        __m128i in128_low = internal::loadVec128U(inputs.data() + col);
-        __m128i in128_high = internal::loadVec128U(inputs.data() + col + 16);
+        __m128i inputLow128 = internal::loadVec128U(inputs.data() + col);
+        __m128i inputHigh128 = internal::loadVec128U(inputs.data() + col + 16);
 
-        __m256i in16_low = _mm256_cvtepu8_epi16(in128_low);
-        __m256i in16_high = _mm256_cvtepu8_epi16(in128_high);
+        __m256i inputLow16 = _mm256_cvtepu8_epi16(inputLow128);
+        __m256i inputHigh16 = _mm256_cvtepu8_epi16(inputHigh128);
 
-        __m256i w16_low = internal::loadVec(weights_.data() + col);
-        __m256i w16_high = internal::loadVec(weights_.data() + col + 16);
+        __m256i weightLow = internal::loadVec(weights_.data() + col);
+        __m256i weightHigh = internal::loadVec(weights_.data() + col + 16);
 
-        __m256i prod_low = _mm256_madd_epi16(in16_low, w16_low);
-        __m256i prod_high = _mm256_madd_epi16(in16_high, w16_high);
+        __m256i productLow = _mm256_madd_epi16(inputLow16, weightLow);
+        __m256i productHigh = _mm256_madd_epi16(inputHigh16, weightHigh);
 
-        sumVec = _mm256_add_epi32(sumVec, _mm256_add_epi32(prod_low, prod_high));
+        sumVec = _mm256_add_epi32(sumVec, _mm256_add_epi32(productLow, productHigh));
       }
       const int32_t total = horizontalAdd32(sumVec) + bias_;
 
       // Descale by 2048 (2^11) directly to centipawns with nearest-integer rounding (+1024).
-      evalCp_ = (total + 1024) >> 11;
-      output_ = activation(static_cast<float>(evalCp_));
+      output_ = (total + 1024) >> 11;
     }
 
-    int32_t outputCp() const noexcept {
-      return evalCp_;
-    }
-
-    float output() const noexcept {
+    int32_t output() const noexcept {
       return output_;
     }
   };
