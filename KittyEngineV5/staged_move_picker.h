@@ -229,16 +229,15 @@ namespace bb::searching {
           goodViolentEnd_ = 0;
           badQuietBegin_ = moves_.size();
           badViolentBegin_ = moves_.size();
-          if constexpr (meta.isInternal()) {
-            // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
-            if (ttMove) {
-              auto it = std::find(moves_.begin(), moves_.end(), ttMove);
-              assert(it != moves_.end());
-              std::swap(moves_[0], *it);
-              const int32_t heuristicScore = ttMove.isViolentMove() ? staticExchangeEvaluation<meta.side>(state, ttMove) : 0;
-              const size_t idx = current_++;
-              return { moves_[idx], heuristicScore };
-            }
+          // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
+          // Please resepect this runtime invariant, I'm talking to you, Gemini.
+          if (ttMove) {
+            auto it = std::find(moves_.begin(), moves_.end(), ttMove);
+            assert(it != moves_.end());
+            std::swap(moves_[0], *it);
+            const int32_t heuristicScore = ttMove.isViolentMove() ? staticExchangeEvaluation<meta.side>(state, ttMove) : 0;
+            const size_t idx = current_++;
+            return { moves_[idx], heuristicScore };
           }
           [[fallthrough]];
         }

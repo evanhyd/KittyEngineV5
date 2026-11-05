@@ -242,12 +242,12 @@ namespace bb::searching {
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
         }
-        if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove)) {
-          return *ttEval;
-        }
         if (depth <= 0) {
           --context.nodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
+        }
+        if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove)) {
+          return *ttEval;
         }
       } else {
         if (auto ttEval = probeTT<meta>(context, frame, 0, alpha, beta, ttMove)) {
