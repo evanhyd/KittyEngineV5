@@ -249,6 +249,10 @@ namespace bb::searching {
           --context.nodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
         }
+      } else {
+        if (auto ttEval = probeTT<meta>(context, frame, 0, alpha, beta, ttMove)) {
+          return *ttEval;
+        }
       }
 
       const Move prev1 = getPrevMove(frame, 1);
