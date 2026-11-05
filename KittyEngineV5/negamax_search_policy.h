@@ -275,12 +275,6 @@ namespace bb::searching {
       const bool isImproved = !inCheck && (staticScoreGained >= config_.improvingThreshold);
 
       if constexpr (meta.isInternal()) {
-        // Checkmate or draw.
-        context.state.template generateMoves<meta.side>(moves);
-        if (moves.empty()) {
-          return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
-        }
-
         if constexpr (!meta.isPV) {
           // Disable in check, or with low material (zugzwang risk).
           if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= config_.kNullMoveMinPieces) {
@@ -320,6 +314,12 @@ namespace bb::searching {
               }
             }
           }
+        }
+
+        // Checkmate or draw.
+        context.state.template generateMoves<meta.side>(moves);
+        if (moves.empty()) {
+          return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
         }
       } else {
         // Quiescence search: no stand-pat when in check.
