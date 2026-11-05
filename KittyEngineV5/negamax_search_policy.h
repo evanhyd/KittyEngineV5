@@ -13,8 +13,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <ranges>
 #include <utility>
+#include <iostream>
 
 namespace bb::searching {
   template <evaluation::EvaluationPolicy EvalPolicy>
@@ -252,6 +252,9 @@ namespace bb::searching {
       } else {
         if (auto ttEval = probeTT<meta>(context, frame, 0, alpha, beta, ttMove)) {
           return *ttEval;
+        }
+        if (ttMove && !ttMove.isViolentMove() && !isInCheck<meta.side>(context, frame)) {
+          ttMove = Move{};
         }
       }
 
