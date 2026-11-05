@@ -242,11 +242,9 @@ namespace bb::searching {
         if (auto drawEval = checkDraw(context, ply)) {
           return *drawEval;
         }
-      }
-      if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove)) {
-        return *ttEval;
-      }
-      if constexpr (meta.isInternal()) {
+        if (auto ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove)) {
+          return *ttEval;
+        }
         if (depth <= 0) {
           --context.nodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
@@ -334,9 +332,7 @@ namespace bb::searching {
         } else {
           const int32_t standPat = getStaticScore(context, frame);
           if (standPat >= beta) {
-            const Eval eval(beta, false);
-            storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, 0, eval, Move{}, inCheck);
-            return eval;
+            return Eval(beta, false);
           }
           bestEval.score = std::max(alpha, standPat);
           context.state.template generateMoves<meta.side, true>(moves);
@@ -455,7 +451,7 @@ namespace bb::searching {
             }
             return result;
           } else {
-            return searchChild<meta.flip().setPV(false)>(context, frame + 1, 0, bestEval.score, beta);
+            return searchChild<meta.flip().setPV(false)>(context, frame + 1, depth - 1, bestEval.score, beta);
           }
         }();
 
@@ -463,8 +459,8 @@ namespace bb::searching {
         context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
 
         if (eval.score >= beta) {
-          storeTT<meta.isPV, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, move, inCheck);
           if constexpr (meta.isInternal()) {
+            storeTT<meta.isPV, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, move, inCheck);
             if (!move.isViolentMove()) {
               historyHeuristics_.template recordQuietCutoff<meta.side>(ply, depth, moves, i, prev1, prev2);
             } else if (undo.capturedPiece != NoPiece) {
@@ -475,22 +471,24 @@ namespace bb::searching {
         }
         if (eval.score > bestEval.score) {
           bestEval = eval;
-          bestMove = move;
           if constexpr (meta.isInternal()) {
+            bestMove = move;
             acceptChildPVLine(frame, bestMove);
           }
         }
       }
-
-      const Move storedMove = bestMove ? bestMove : (meta.isInternal() ? moves[0] : Move{});
-      if constexpr (meta.isPV) {
-        if (bestEval.score <= alpha) {
-          storeTT<true, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
+      
+      if constexpr (meta.isInternal()) {
+        const Move storedMove = bestMove ? bestMove : moves[0];
+        if constexpr (meta.isPV) {
+          if (bestEval.score <= alpha) {
+            storeTT<true, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
+          } else {
+            storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, depth, bestEval, storedMove, inCheck);
+          }
         } else {
-          storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, depth, bestEval, storedMove, inCheck);
+          storeTT<false, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
         }
-      } else {
-        storeTT<false, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
       }
       return bestEval;
     }
