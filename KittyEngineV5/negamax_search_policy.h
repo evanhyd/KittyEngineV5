@@ -474,8 +474,10 @@ namespace bb::searching {
           }
           return eval;
         }
+
+        bestEval.isUnreliable |= eval.isUnreliable;
         if (eval.score > bestEval.score) {
-          bestEval = eval;
+          bestEval.score = eval.score;
           if constexpr (meta.isInternal()) {
             bestMove = move;
             acceptChildPVLine(frame, bestMove);
