@@ -512,9 +512,9 @@ namespace bb::searching {
                  searchConfig.maxCaptureHistory,
                  searchConfig.lateMoveReductionHistoryK,
                  searchConfig.lateMoveReductionHistoryB) {
-      for (size_t depth = static_cast<size_t>(std::max(0, config_.lateMoveReductionDepth)); depth < lateMoveReductions_.size(); ++depth) {
+      for (int depth = std::max(0, config_.lateMoveReductionDepth); depth < lateMoveReductions_.size(); ++depth) {
         const double lnDepth = std::log(double(depth));
-        for (size_t i = 1; i < lateMoveReductions_[depth].size(); ++i) {
+        for (int i = 1; i < lateMoveReductions_[depth].size(); ++i) {
           lateMoveReductions_[depth][i] = uint8_t(std::min(double(depth - 2 + 0.1), config_.lateMoveReductionBase + lnDepth * std::log(double(i)) / config_.lateMoveReductionDivisor));
         }
       }
@@ -535,7 +535,7 @@ namespace bb::searching {
 
     static bool isCheckmateScore(int32_t score) noexcept {
       const int32_t absScore = std::abs(score);
-      return absScore >= evaluation::kCheckmateWinScore - kMaxDepthHardCutoff && absScore <= evaluation::kCheckmateWinScore;
+      return evaluation::kCheckmateWinScore - 2 * kMaxDepthHardCutoff <= absScore && absScore <= evaluation::kCheckmateWinScore;
     }
 
     template <bool Add>
@@ -552,25 +552,23 @@ namespace bb::searching {
 
       // Lazy move generation.
       if (rootMoves_.empty()) {
-        frame->clear();
         state.template generateMoves<side>(rootMoves_);
         historyHeuristics_.clearKillers();
         ttTable_.age();
         drawHistoryIndex_ = std::max(0, static_cast<int>(context.history.size()) - 1 - state.getHalfmove());
+        
         // Always call evaluate to sync NNUE state. Otherwise it desyncs in make/unmake.
         // TODO: Fix this brittle design.
-        evalPolicy_.evaluate(state);
+        frame->clear();
+        frame->staticScore = evalPolicy_.evaluate(state);
+        frame->inCheck = context.state.template isInCheck<side>();
       }
 
       // Check checkmate and stalemate.
-      const bool inCheck = isInCheck<side>(context, frame);
-      if (rootMoves_.empty()) {
+      const bool inCheck = *frame->inCheck;
+      if (rootMoves_.empty()) [[unlikely]] {
         const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
         return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits};
-      }
-
-      if (!inCheck) {
-        getStaticScore(context, frame);
       }
 
       // Root node invariants: ply is guaranteed 0, prev1 and prev2 are empty.
@@ -671,7 +669,6 @@ namespace bb::searching {
             beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(searchAttempt));
             continue;
           } else if (bestEval.score <= alpha) {
-            bestMove = movePicker.getMoveBuffer()[0];
             alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(searchAttempt));
             continue;
           }
@@ -679,6 +676,8 @@ namespace bb::searching {
 
         // Update TT and PV.
         if (!bestMove) {
+          // Not reachable, because it can not fail lower on checkmate in 0.
+          // But just in case...
           bestMove = movePicker.getMoveBuffer()[0];
         }
         bestEval.isUnreliable = false;
