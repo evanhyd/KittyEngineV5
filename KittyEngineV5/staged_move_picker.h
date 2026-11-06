@@ -167,6 +167,9 @@ namespace bb::searching {
           break;
         }
         gains.push(kVictimPriority[exchangedPiece]);
+        if (exchangedPiece == King) {
+          break;
+        }
         exchangedPiece = nextAttacker;
         side = getOtherSide(side);
       }

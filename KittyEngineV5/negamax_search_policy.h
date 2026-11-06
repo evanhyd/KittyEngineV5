@@ -484,7 +484,7 @@ namespace bb::searching {
       }
       
       if constexpr (meta.isInternal()) {
-        const Move storedMove = bestMove ? bestMove : moves[0];
+        const Move storedMove = bestMove ? bestMove : ttMove;
         if constexpr (meta.isPV) {
           if (bestEval.score <= alpha) {
             storeTT<true, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
