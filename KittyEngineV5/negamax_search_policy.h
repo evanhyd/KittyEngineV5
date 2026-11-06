@@ -186,8 +186,6 @@ namespace bb::searching {
         frame->inCheck = ttEntry->inCheck;
       }
 
-      // Dynamically adjusting aspiration window range.
-      // Accept exact, lowerbound, upperbound, better than going blind.
       if constexpr (isRoot) {
         return Eval(ttEntry->score, false);
       }
@@ -197,8 +195,8 @@ namespace bb::searching {
         return std::nullopt;
       }
 
-      // Always full search pv nodes to avoid path dependent issues.
-      // It also fully popualtes PV table.
+      // Always full search pv nodes to avoid pruning and pathe dependent evaluations.
+      // This also popualtes the PV.
       if constexpr (!meta.isPV) {
         const int ply = getPly(frame);
         const int32_t score = denormalizeScore(ttEntry->score, ply);
