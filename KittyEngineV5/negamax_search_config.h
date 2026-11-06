@@ -10,57 +10,57 @@
 namespace bb::searching {
   struct NegamaxSearchConfig {
     // Aspiration Window
-    int32_t aspirationWindow = 60;
+    int32_t aspirationWindow;
 
     // Reverse Futility Pruning (Static Null Move Pruning)
-    int reverseFutilityDepth = 3;
-    int32_t reverseFutilityMultiplier = 100;
-    int32_t reverseFutilityBase = 0;
-    int32_t reverseFutilityImprovingBonus = 30;
+    int reverseFutilityDepth;
+    int32_t reverseFutilityMultiplier;
+    int32_t reverseFutilityBase;
+    int32_t reverseFutilityImprovingBonus;
 
     // Null Move Pruning
-    int nullMoveDepth = 4;
-    int nullMoveBase = 3;
-    int nullMoveDepthDivisor = 6;
-    int32_t nullMoveEvalDivisor = 200;
-    int nullMoveMaxEvalBonus = 2;
+    int nullMoveDepth;
+    int nullMoveBase;
+    int nullMoveDepthDivisor;
+    int32_t nullMoveEvalDivisor;
+    int nullMoveMaxEvalBonus;
 
     // Futility Pruning
-    int futilityDepth = 3;
-    int32_t futilityMultiplier = 100;
-    int32_t futilityBase = 0;
-    int32_t futilityImprovingBonus = 20;
+    int futilityDepth;
+    int32_t futilityMultiplier;
+    int32_t futilityBase;
+    int32_t futilityImprovingBonus;
 
     // SEE Pruning
-    int seePruningDepth = 3;
-    int32_t seePruningMultiplier = -100;
-    int32_t seePruningBase = 0;
+    int seePruningDepth;
+    int32_t seePruningMultiplier;
+    int32_t seePruningBase;
 
     // Late Move Pruning
-    int lateMovePruningDepth = 4;
-    int lateMovePruningMultiplier = 2;
-    int lateMovePruningBase = 6;
+    int lateMovePruningDepth;
+    int lateMovePruningMultiplier;
+    int lateMovePruningBase;
 
     // History Pruning
-    int historyPruningDepth = 3;
-    int32_t historyPruningMultiplier = -300;
-    int32_t historyPruningBase = -500;
+    int historyPruningDepth;
+    int32_t historyPruningMultiplier;
+    int32_t historyPruningBase;
 
     // Late Move Reductions
-    int lateMoveReductionDepth = 3;
-    double lateMoveReductionBase = 0.7844;
-    double lateMoveReductionDivisor = 2.69;
-    double lateMoveReductionHistoryK = 1.0 / 1000.0;
-    double lateMoveReductionHistoryB = 0.0;
+    int lateMoveReductionDepth;
+    double lateMoveReductionBase;
+    double lateMoveReductionDivisor;
+    double lateMoveReductionHistoryK;
+    double lateMoveReductionHistoryB;
 
     // Improving Heuristic
-    int32_t improvingThreshold = 20;
+    int32_t improvingThreshold;
 
     // History Heuristics Limits
-    int32_t maxQuietHistory = 770;
-    int32_t maxRefutationHistory = 1230;
-    int32_t maxFollowupHistory = 500;
-    int32_t maxCaptureHistory = 400;
+    int32_t maxQuietHistory;
+    int32_t maxRefutationHistory;
+    int32_t maxFollowupHistory;
+    int32_t maxCaptureHistory;
 
     // Safety and Stability Invariants
     static constexpr int kNullMoveMinPieces = 2;
