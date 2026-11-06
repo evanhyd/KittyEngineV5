@@ -254,10 +254,10 @@ TEST(Nnue, RealWeightsProduceSensibleScores) {
   EXPECT_LT(blackScore, -1000);
 
   // Exact color symmetry: mirrored position with Black having Queen and to move
-  BoardState blackWinning{"4K3/8/8/8/8/5q2/8/4k3 b - - 0 1"};
+  BoardState blackWinning{"4k3/8/5q2/8/8/8/8/4K3 b - - 0 1"};
   policy.reset();
   const int32_t blackWinningScore = policy.evaluate(blackWinning);
-  EXPECT_NEAR(whiteScore, blackWinningScore, 20);
+  EXPECT_EQ(whiteScore, blackWinningScore);
 }
 
 TEST(Nnue, BenchmarkSpeed) {

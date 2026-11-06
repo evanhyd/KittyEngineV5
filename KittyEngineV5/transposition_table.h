@@ -1,6 +1,8 @@
 #pragma once
+
 #include "move.h"
 #include "zobrist_hash.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -12,6 +14,7 @@
 #include <xmmintrin.h>
 
 namespace bb {
+
   class TranspositionTable {
   public:
     enum class ScoreType : uint8_t {
@@ -20,7 +23,7 @@ namespace bb {
       Exact = 2,
       UpperBound = 3,
     };
-    
+
     struct alignas(32) Entry {
       ZobristHash::Hash key = 0;              // 8 bytes (0..7)
       int32_t score = 0;                      // 4 bytes (8..11)
@@ -35,10 +38,26 @@ namespace bb {
       bool isPV = false;                      // 1 byte  (28)
       // 3 bytes padding (29..31)
 
-      constexpr bool isValid() const noexcept {
+      [[nodiscard]] constexpr bool isExact() const noexcept {
+        return scoreType == ScoreType::Exact;
+      }
+
+      [[nodiscard]] constexpr bool isLowerBound() const noexcept {
+        return scoreType == ScoreType::LowerBound;
+      }
+
+      [[nodiscard]] constexpr bool isUpperBound() const noexcept {
+        return scoreType == ScoreType::UpperBound;
+      }
+
+      [[nodiscard]] constexpr bool isValid() const noexcept {
         return scoreType != ScoreType::None;
       }
     };
+    static_assert(std::is_aggregate_v<Entry>, "Entry must remain an aggregate for designated initializers");
+    static_assert(std::is_trivially_copyable_v<Entry>, "Entry must be trivially copyable");
+    static_assert(sizeof(Entry) == 32, "Entry must be exactly 32 bytes to fit into a cache");
+
     static constexpr size_t kBucketSize = std::hardware_constructive_interference_size / sizeof(Entry);
 
     struct alignas(std::hardware_destructive_interference_size) TTBucket {
@@ -56,24 +75,24 @@ namespace bb {
       return key & (numBuckets_ - 1);
     }
 
-    [[nodiscard]] int getEffectiveDepth(const Entry& slot) const noexcept {
-      if (!slot.isValid()) return -1000;
-      const int ageDiff = std::clamp(static_cast<int>(currentAge_) - static_cast<int>(slot.age), 0, 100);
-      const int slotPvBonus = (slot.isPV && slot.age == currentAge_) ? 4 : 0;
-      return slot.depth + slotPvBonus - 3 * ageDiff;
+    [[nodiscard]] constexpr int getEffectiveDepth(const Entry& slot) const noexcept {
+      if (!slot.isValid()) {
+        return -1000;
+      }
+      const int ageDiff = static_cast<int>(currentAge_ - slot.age);
+      const int pvAndExactBonus = (slot.isPV ? 4 : 0) + (slot.isExact() ? 1 : 0);
+      return slot.depth + pvAndExactBonus - 4 * ageDiff;
     }
 
-    template <bool isEntryPV, ScoreType entryScoreType>
     void updateSlot(Entry& slot, const Entry& entry) noexcept {
-      const bool isExact = (entryScoreType == ScoreType::Exact) || (entry.scoreType == ScoreType::Exact);
-      const bool entryIsPV = isEntryPV || entry.isPV;
-      const int pvBonus = entryIsPV ? (slot.isPV ? 0 : -1) : (slot.isPV ? 4 : 0);
-
-      if ((isExact && slot.scoreType != ScoreType::Exact) || (entry.depth >= slot.depth + pvBonus)) {
-        const Move prevMove = slot.bestMove;
-        slot = entry;
-        if (slot.bestMove == Move{}) slot.bestMove = prevMove;
-      } else if (slot.bestMove == Move{}) {
+      if ((entry.isExact() && !slot.isExact()) || (entry.isPV && !slot.isPV) || (entry.depth > slot.depth)) {
+        slot.score = entry.score;
+        slot.depth = entry.depth;
+        slot.scoreType = entry.scoreType;
+        if (entry.bestMove) {
+          slot.bestMove = entry.bestMove;
+        }
+      } else if (!slot.bestMove) {
         slot.bestMove = entry.bestMove;
       }
 
@@ -85,14 +104,14 @@ namespace bb {
         slot.inCheck = entry.inCheck;
         slot.hasInCheck = true;
       }
-      slot.isPV |= entryIsPV;
+      slot.isPV |= entry.isPV;
       slot.age = currentAge_;
     }
 
   public:
     explicit TranspositionTable(size_t capacity)
       : numBuckets_(capacity / kBucketSize),
-        capacity_(capacity) {
+      capacity_(capacity) {
       if (!std::has_single_bit(capacity) || capacity < kBucketSize) {
         throw std::invalid_argument("transposition table entry size must be a power of two and at least bucket size");
       }
@@ -111,7 +130,6 @@ namespace bb {
       _mm_prefetch(reinterpret_cast<const char*>(&buckets_[getIndex(key)]), _MM_HINT_T0);
     }
 
-    template <bool isEntryPV = false, ScoreType entryScoreType = ScoreType::None>
     void put(const Entry& entry) noexcept {
       auto& bucket = buckets_[getIndex(entry.key)];
       auto& slot0 = bucket.entries[0];
@@ -119,24 +137,25 @@ namespace bb {
 
       // Update existing entry if present
       if (slot0.isValid() && slot0.key == entry.key) {
-        updateSlot<isEntryPV, entryScoreType>(slot0, entry);
+        updateSlot(slot0, entry);
         return;
       }
       if (slot1.isValid() && slot1.key == entry.key) {
-        updateSlot<isEntryPV, entryScoreType>(slot1, entry);
+        updateSlot(slot1, entry);
         return;
       }
 
       // Pick slot with lower retention value (empty slots have lowest value)
       const int effectiveDepth0 = getEffectiveDepth(slot0);
       const int effectiveDepth1 = getEffectiveDepth(slot1);
-      auto& targetSlot = (effectiveDepth0 <= effectiveDepth1) ? slot0 : slot1;
-
-      const int entryPvBonus = (isEntryPV || entry.isPV) ? 4 : 0;
-      if (entry.depth + entryPvBonus >= std::min(effectiveDepth0, effectiveDepth1)) {
+      const bool pick0 = (effectiveDepth0 <= effectiveDepth1);
+      auto& targetSlot = pick0 ? slot0 : slot1;
+      //const int minEffectiveDepth = pick0 ? effectiveDepth0 : effectiveDepth1;
+      //const int entryBonus = (entry.isPV ? 4 : 0) + (entry.isExact() ? 1 : 0);
+      //if (entry.depth + entryBonus + 3 >= minEffectiveDepth) {
         targetSlot = entry;
         targetSlot.age = currentAge_;
-      }
+      //}
     }
 
     [[nodiscard]] const Entry* get(ZobristHash::Hash key) const noexcept {

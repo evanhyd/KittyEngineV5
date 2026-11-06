@@ -152,7 +152,7 @@ namespace bb::searching {
     void storeTT(const SearchContext& context, SearchFrame* frame, int depth,
                  Eval eval, Move bestMove, bool inCheck) noexcept {
       if (!eval.isUnreliable) {
-        ttTable_.template put<isPV, scoreType>(TranspositionTable::Entry{
+        ttTable_.put(TranspositionTable::Entry{
           .key = context.state.getHash(),
           .score = normalizeScore(eval.score, getPly(frame)),
           .staticScore = frame->staticScore.value_or(0),
@@ -204,13 +204,13 @@ namespace bb::searching {
         const int32_t score = denormalizeScore(ttEntry->score, ply);
 
         // Exact hits.
-        if (ttEntry->scoreType == TranspositionTable::ScoreType::Exact) {
+        if (ttEntry->isExact()) {
           return Eval(score, false);
         }
 
         // Lower upper bound hits.
-        if ((ttEntry->scoreType == TranspositionTable::ScoreType::UpperBound && score <= alpha) ||
-            (ttEntry->scoreType == TranspositionTable::ScoreType::LowerBound && score >= beta)) {
+        if ((ttEntry->isUpperBound() && score <= alpha) ||
+            (ttEntry->isLowerBound() && score >= beta)) {
           return Eval(score, false);
         }
         return std::nullopt;
