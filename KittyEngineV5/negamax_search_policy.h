@@ -15,6 +15,7 @@
 #include <optional>
 #include <utility>
 #include <iostream>
+#include <format>
 
 namespace bb::searching {
   template <evaluation::EvaluationPolicy EvalPolicy>
@@ -54,7 +55,6 @@ namespace bb::searching {
     EvalPolicy evalPolicy_;
     const NegamaxSearchConfig config_;
     const int32_t aspirationWindow_;
-    std::array<int32_t, kSideSize> finalScore_{};
     std::array<SearchFrame, kMaxDepthHardCutoff + 2> frames_;
     std::array<Move, kPvSlots> pvTable_{}; // PV row at ply p has room for at most 65 - p moves.
     std::array<std::array<uint8_t, MoveList{}.capacity()>, kMaxDepthHardCutoff + 1> lateMoveReductions_{};
@@ -186,8 +186,10 @@ namespace bb::searching {
         frame->inCheck = ttEntry->inCheck;
       }
 
+      // Dynamically adjusting aspiration window range.
+      // Accept exact, lowerbound, upperbound, better than going blind.
       if constexpr (isRoot) {
-        return std::nullopt;
+        return Eval(ttEntry->score, false);
       }
 
       // Ignore lower depth.
@@ -195,11 +197,9 @@ namespace bb::searching {
         return std::nullopt;
       }
 
-      // Always full search pv nodes, don't return score for early cut off.
-      // This helps populating the PV table and verify repetitions.
-      if constexpr (meta.isPV) {
-        return std::nullopt;
-      } else {
+      // Always full search pv nodes to avoid path dependent issues.
+      // It also fully popualtes PV table.
+      if constexpr (!meta.isPV) {
         const int ply = getPly(frame);
         const int32_t score = denormalizeScore(ttEntry->score, ply);
 
@@ -213,8 +213,8 @@ namespace bb::searching {
             (ttEntry->isLowerBound() && score >= beta)) {
           return Eval(score, false);
         }
-        return std::nullopt;
       }
+      return std::nullopt;
     }
 
     //////////////////
@@ -522,7 +522,6 @@ namespace bb::searching {
 
     void reset() {
       evalPolicy_.reset();
-      finalScore_.fill(0);
       ttTable_.clear();
       historyHeuristics_.clear();
       rootMoves_.clear();
@@ -577,7 +576,7 @@ namespace bb::searching {
       // Root node invariants: ply is guaranteed 0, prev1 and prev2 are empty.
       constexpr int ply = 0;
       Move ttMove{};
-      probeTT<meta, true>(context, frame, context.maxDepth, 0, 0, ttMove);
+      auto entry = probeTT<meta, true>(context, frame, context.maxDepth, 0, 0, ttMove);
 
       // Aspiration window.
       int searchAttempt = 0;
@@ -585,7 +584,8 @@ namespace bb::searching {
         if (context.maxDepth <= 4) {
           return std::pair{ evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore };
         }
-        return std::pair{ finalScore_[side] - aspirationWindow_, finalScore_[side] + aspirationWindow_ };
+        const int32_t score = entry ? entry->score : 0;
+        return std::pair{ score - aspirationWindow_, score + aspirationWindow_ };
       }();
 
       StagedMovePicker movePicker(0, {}, {}, historyHeuristics_);
@@ -681,7 +681,6 @@ namespace bb::searching {
         if (!bestMove) {
           bestMove = movePicker.getMoveBuffer()[0];
         }
-        finalScore_[side] = bestEval.score;
         bestEval.isUnreliable = false;
         storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, context.maxDepth, bestEval, bestMove, inCheck);
         const std::span<const Move> pvSpan{pvMoves(frame), frame->pvLength};
