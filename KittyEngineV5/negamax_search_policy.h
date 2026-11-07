@@ -475,13 +475,14 @@ namespace bb::searching {
           return eval;
         }
 
-        bestEval.isUnreliable |= eval.isUnreliable;
         if (eval.score > bestEval.score) {
-          bestEval.score = eval.score;
+          bestEval = eval;
           if constexpr (meta.isInternal()) {
             bestMove = move;
             acceptChildPVLine(frame, bestMove);
           }
+        } else {
+          bestEval.isUnreliable |= eval.isUnreliable;
         }
       }
       
