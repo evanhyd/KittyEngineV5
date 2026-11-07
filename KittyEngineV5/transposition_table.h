@@ -150,12 +150,12 @@ namespace bb {
       const int effectiveDepth1 = getEffectiveDepth(slot1);
       const bool pick0 = (effectiveDepth0 <= effectiveDepth1);
       auto& targetSlot = pick0 ? slot0 : slot1;
-      //const int minEffectiveDepth = pick0 ? effectiveDepth0 : effectiveDepth1;
-      //const int entryBonus = (entry.isPV ? 4 : 0) + (entry.isExact() ? 1 : 0);
-      //if (entry.depth + entryBonus + 3 >= minEffectiveDepth) {
+      const int minEffectiveDepth = pick0 ? effectiveDepth0 : effectiveDepth1;
+      const int entryBonus = entry.isPV ? 4 : 0;
+      if (entry.depth + entryBonus >= minEffectiveDepth) {
         targetSlot = entry;
         targetSlot.age = currentAge_;
-      //}
+      }
     }
 
     [[nodiscard]] const Entry* get(ZobristHash::Hash key) const noexcept {
