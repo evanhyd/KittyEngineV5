@@ -1,10 +1,23 @@
+<div align="center">
+
 # KittyEngineV5
+
 A high-performance C++ bitboard chess engine built with compile-time template metaprogramming optimizations.
+
+<p>
+  <a href="https://lichess.org/@/KittyEngineV5"><img src="https://img.shields.io/badge/Lichess-KittyEngineV5-black?logo=lichess&logoColor=white" alt="Lichess Bot" /></a>
+  <a href="https://lichess.org/@/KittyEngineV5"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Flichess.org%2Fapi%2Fuser%2FKittyEngineV5&query=%24.perfs.bullet.rating&label=Bullet&logo=lichess&logoColor=white&color=369" alt="Bullet Rating" /></a>
+  <a href="https://lichess.org/@/KittyEngineV5"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Flichess.org%2Fapi%2Fuser%2FKittyEngineV5&query=%24.perfs.blitz.rating&label=Blitz&logo=lichess&logoColor=white&color=369" alt="Blitz Rating" /></a>
+  <a href="https://lichess.org/@/KittyEngineV5"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Flichess.org%2Fapi%2Fuser%2FKittyEngineV5&query=%24.perfs.rapid.rating&label=Rapid&logo=lichess&logoColor=white&color=369" alt="Rapid Rating" /></a>
+  <a href="https://lichess.org/@/KittyEngineV5"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Flichess.org%2Fapi%2Fuser%2FKittyEngineV5&query=%24.perfs.classical.rating&label=Classical&logo=lichess&logoColor=white&color=369" alt="Classical Rating" /></a>
+</p>
+
+</div>
 
 ## Authorship
 - Coded and debugged with the assistance of AI.
-- Traiend with jw1912/bullet.
-- Dataset from HugginFace (Stockfish + LC0).
+- Trained with jw1912/bullet.
+- Dataset from Hugging Face (Stockfish + LC0).
 
 ## CLI Usage
 
@@ -17,8 +30,6 @@ Options:
   --search_config <path>                Search configuration YAML file (default: search_config.yaml)
   --help, -h                            Print CLI help and exit
 ```
-
----
 
 ## Features & Optimizations
 
@@ -72,8 +83,6 @@ Options:
 ### Time Management
 - `EqualPercentageTimeControlPolicy`: Dynamic move time allocation based on clock and increment.
 
----
-
 ## UCI Commands
 
 | Command | Action |
@@ -89,8 +98,6 @@ Options:
 | `quit` | Exit the engine. |
 | `play <move>` | Play a move directly on the board (terminal extension). |
 | `perft depth <N> [detail]` | Run perft move path enumeration test. |
-
----
 
 ## Perft Benchmarks
 AMD Ryzen 7 4800H, 2.90 GHz  
@@ -128,8 +135,6 @@ depth 4, nodes 43238, time 0 ms, speed 43238 knps
 depth 5, nodes 674624, time 2 ms, speed 337312 knps  
 depth 6, nodes 11030083, time 40 ms, speed 275752 knps  
 depth 7, nodes 178633661, time 652 ms, speed 273978 knps  
-
----
 
 ## Credits
 - [Code Monkey King](https://www.youtube.com/channel/UClA-jNuyJKqN-xCm7KPG_XA) and [Chess Programming](https://www.youtube.com/channel/UCB9-prLkPwgvlKKqDgXhsMQ).
