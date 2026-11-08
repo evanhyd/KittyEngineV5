@@ -339,8 +339,7 @@ namespace bb::searching {
               ttMove && ttEval.type == TTProbeResult::Type::NonCutoff && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
             const int childDepth = (depth - 1) / 2;
             const int depthDiff = depth - childDepth;
-            const int32_t baseMargin = config_.singularExtensionBase != 0 ? config_.singularExtensionBase : config_.improvingThreshold;
-            const int32_t rejectScore = ttEval.score - (baseMargin + depthDiff * config_.singularExtensionMultiplier);
+            const int32_t rejectScore = ttEval.score - (config_.singularExtensionBase + depthDiff * config_.singularExtensionMultiplier);
             movePicker.pick<meta>(ttMove, context.state); // filter out the singular move.
 
             bool rejected = false;

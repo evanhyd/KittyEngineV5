@@ -54,9 +54,9 @@ namespace bb::searching {
     double lateMoveReductionHistoryB;
 
     // Singular Extension
-    int singularExtensionDepth = 8;
-    int32_t singularExtensionMultiplier = 2;
-    int32_t singularExtensionBase = 0;
+    int singularExtensionDepth;
+    int32_t singularExtensionMultiplier;
+    int32_t singularExtensionBase;
 
     // Improving Heuristic
     int32_t improvingThreshold;
@@ -186,22 +186,19 @@ namespace bb::searching {
       };
 
       auto matchesKey = [](std::string_view section, std::string_view key, std::string_view targetNormalized) noexcept -> bool {
-        auto matches = [](std::string_view prefix, std::string_view name, std::string_view target) noexcept -> bool {
-          size_t i = 0, j = 0, k = 0;
-          while (i < prefix.size() || j < name.size()) {
-            char c;
-            if (i < prefix.size()) {
-              c = prefix[i++];
-            } else {
-              c = name[j++];
-            }
-            if (c == '_' || c == '-' || c == ' ') continue;
-            if (k >= target.size()) return false;
-            if (static_cast<char>(std::tolower(static_cast<unsigned char>(c))) != target[k++]) return false;
+        size_t i = 0, j = 0, k = 0;
+        while (i < section.size() || j < key.size()) {
+          char c;
+          if (i < section.size()) {
+            c = section[i++];
+          } else {
+            c = key[j++];
           }
-          return k == target.size();
-        };
-        return matches(section, key, targetNormalized) || matches({}, key, targetNormalized);
+          if (c == '_' || c == '-' || c == ' ') continue;
+          if (k >= targetNormalized.size()) return false;
+          if (static_cast<char>(std::tolower(static_cast<unsigned char>(c))) != targetNormalized[k++]) return false;
+        }
+        return k == targetNormalized.size();
       };
 
       std::string line;
@@ -235,51 +232,51 @@ namespace bb::searching {
           parseInt(rawVal, improvingThreshold);
         }
         // RFP
-        else if (matchesKey(section, rawKey, "reversefutilitypruningdepth") || matchesKey(section, rawKey, "reversefutilitydepth")) {
+        else if (matchesKey(section, rawKey, "reversefutilitypruningdepth")) {
           parseInt(rawVal, reverseFutilityDepth);
-        } else if (matchesKey(section, rawKey, "reversefutilitypruningmultiplier") || matchesKey(section, rawKey, "reversefutilitymultiplier")) {
+        } else if (matchesKey(section, rawKey, "reversefutilitypruningmultiplier")) {
           parseInt(rawVal, reverseFutilityMultiplier);
-        } else if (matchesKey(section, rawKey, "reversefutilitypruningbase") || matchesKey(section, rawKey, "reversefutilitybase")) {
+        } else if (matchesKey(section, rawKey, "reversefutilitypruningbase")) {
           parseInt(rawVal, reverseFutilityBase);
-        } else if (matchesKey(section, rawKey, "reversefutilitypruningimprovingbonus") || matchesKey(section, rawKey, "reversefutilityimprovingbonus")) {
+        } else if (matchesKey(section, rawKey, "reversefutilitypruningimprovingbonus")) {
           parseInt(rawVal, reverseFutilityImprovingBonus);
         }
         // NMP
-        else if (matchesKey(section, rawKey, "nullmovepruningdepth") || matchesKey(section, rawKey, "nullmovedepth")) {
+        else if (matchesKey(section, rawKey, "nullmovepruningdepth")) {
           parseInt(rawVal, nullMoveDepth);
-        } else if (matchesKey(section, rawKey, "nullmovepruningbase") || matchesKey(section, rawKey, "nullmovebase")) {
+        } else if (matchesKey(section, rawKey, "nullmovepruningbase")) {
           parseInt(rawVal, nullMoveBase);
-        } else if (matchesKey(section, rawKey, "nullmovepruningdepthdivisor") || matchesKey(section, rawKey, "nullmovedepthdivisor")) {
+        } else if (matchesKey(section, rawKey, "nullmovepruningdepthdivisor")) {
           parseInt(rawVal, nullMoveDepthDivisor);
-        } else if (matchesKey(section, rawKey, "nullmovepruningevaldivisor") || matchesKey(section, rawKey, "nullmoveevaldivisor")) {
+        } else if (matchesKey(section, rawKey, "nullmovepruningevaldivisor")) {
           parseInt(rawVal, nullMoveEvalDivisor);
-        } else if (matchesKey(section, rawKey, "nullmovepruningmaxevalbonus") || matchesKey(section, rawKey, "nullmovemaxevalbonus")) {
+        } else if (matchesKey(section, rawKey, "nullmovepruningmaxevalbonus")) {
           parseInt(rawVal, nullMoveMaxEvalBonus);
         }
         // FP
-        else if (matchesKey(section, rawKey, "futilitypruningdepth") || matchesKey(section, rawKey, "futilitydepth")) {
+        else if (matchesKey(section, rawKey, "futilitypruningdepth")) {
           parseInt(rawVal, futilityDepth);
-        } else if (matchesKey(section, rawKey, "futilitypruningmultiplier") || matchesKey(section, rawKey, "futilitymultiplier")) {
+        } else if (matchesKey(section, rawKey, "futilitypruningmultiplier")) {
           parseInt(rawVal, futilityMultiplier);
-        } else if (matchesKey(section, rawKey, "futilitypruningbase") || matchesKey(section, rawKey, "futilitybase")) {
+        } else if (matchesKey(section, rawKey, "futilitypruningbase")) {
           parseInt(rawVal, futilityBase);
-        } else if (matchesKey(section, rawKey, "futilitypruningimprovingbonus") || matchesKey(section, rawKey, "futilityimprovingbonus")) {
+        } else if (matchesKey(section, rawKey, "futilitypruningimprovingbonus")) {
           parseInt(rawVal, futilityImprovingBonus);
         }
         // SEE
-        else if (matchesKey(section, rawKey, "seepruningdepth") || matchesKey(section, rawKey, "seedepth")) {
+        else if (matchesKey(section, rawKey, "seepruningdepth")) {
           parseInt(rawVal, seePruningDepth);
-        } else if (matchesKey(section, rawKey, "seepruningmultiplier") || matchesKey(section, rawKey, "seemultiplier")) {
+        } else if (matchesKey(section, rawKey, "seepruningmultiplier")) {
           parseInt(rawVal, seePruningMultiplier);
-        } else if (matchesKey(section, rawKey, "seepruningbase") || matchesKey(section, rawKey, "seebase")) {
+        } else if (matchesKey(section, rawKey, "seepruningbase")) {
           parseInt(rawVal, seePruningBase);
         }
         // LMP
-        else if (matchesKey(section, rawKey, "latemovepruningdepth") || matchesKey(section, rawKey, "latemovedepth")) {
+        else if (matchesKey(section, rawKey, "latemovepruningdepth")) {
           parseInt(rawVal, lateMovePruningDepth);
-        } else if (matchesKey(section, rawKey, "latemovepruningmultiplier") || matchesKey(section, rawKey, "latemovemultiplier")) {
+        } else if (matchesKey(section, rawKey, "latemovepruningmultiplier")) {
           parseInt(rawVal, lateMovePruningMultiplier);
-        } else if (matchesKey(section, rawKey, "latemovepruningbase") || matchesKey(section, rawKey, "latemovebase")) {
+        } else if (matchesKey(section, rawKey, "latemovepruningbase")) {
           parseInt(rawVal, lateMovePruningBase);
         }
         // History Pruning
@@ -291,33 +288,33 @@ namespace bb::searching {
           parseInt(rawVal, historyPruningBase);
         }
         // LMR
-        else if (matchesKey(section, rawKey, "latemovereductionsdepth") || matchesKey(section, rawKey, "lmrdepth")) {
+        else if (matchesKey(section, rawKey, "latemovereductionsdepth")) {
           parseInt(rawVal, lateMoveReductionDepth);
-        } else if (matchesKey(section, rawKey, "latemovereductionsbase") || matchesKey(section, rawKey, "lmrbase")) {
+        } else if (matchesKey(section, rawKey, "latemovereductionsbase")) {
           parseDouble(rawVal, lateMoveReductionBase);
-        } else if (matchesKey(section, rawKey, "latemovereductionsdivisor") || matchesKey(section, rawKey, "lmrdivisor")) {
+        } else if (matchesKey(section, rawKey, "latemovereductionsdivisor")) {
           parseDouble(rawVal, lateMoveReductionDivisor);
-        } else if (matchesKey(section, rawKey, "latemovereductionshistoryk") || matchesKey(section, rawKey, "lmrhistoryk")) {
+        } else if (matchesKey(section, rawKey, "latemovereductionshistoryk")) {
           parseDouble(rawVal, lateMoveReductionHistoryK);
-        } else if (matchesKey(section, rawKey, "latemovereductionshistoryb") || matchesKey(section, rawKey, "lmrhistoryb")) {
+        } else if (matchesKey(section, rawKey, "latemovereductionshistoryb")) {
           parseDouble(rawVal, lateMoveReductionHistoryB);
         }
         // Singular Extension
-        else if (matchesKey(section, rawKey, "singularextensiondepth") || matchesKey(section, rawKey, "singulardepth")) {
+        else if (matchesKey(section, rawKey, "singularextensiondepth")) {
           parseInt(rawVal, singularExtensionDepth);
-        } else if (matchesKey(section, rawKey, "singularextensionmultiplier") || matchesKey(section, rawKey, "singularmultiplier")) {
+        } else if (matchesKey(section, rawKey, "singularextensionmultiplier")) {
           parseInt(rawVal, singularExtensionMultiplier);
-        } else if (matchesKey(section, rawKey, "singularextensionbase") || matchesKey(section, rawKey, "singularbase")) {
+        } else if (matchesKey(section, rawKey, "singularextensionbase")) {
           parseInt(rawVal, singularExtensionBase);
         }
         // History Limits
-        else if (matchesKey(section, rawKey, "historyheuristicsmaxquiethistory") || matchesKey(section, rawKey, "maxquiethistory")) {
+        else if (matchesKey(section, rawKey, "historyheuristicsmaxquiethistory")) {
           parseInt(rawVal, maxQuietHistory);
-        } else if (matchesKey(section, rawKey, "historyheuristicsmaxrefutationhistory") || matchesKey(section, rawKey, "maxrefutationhistory")) {
+        } else if (matchesKey(section, rawKey, "historyheuristicsmaxrefutationhistory")) {
           parseInt(rawVal, maxRefutationHistory);
-        } else if (matchesKey(section, rawKey, "historyheuristicsmaxfollowuphistory") || matchesKey(section, rawKey, "maxfollowuphistory")) {
+        } else if (matchesKey(section, rawKey, "historyheuristicsmaxfollowuphistory")) {
           parseInt(rawVal, maxFollowupHistory);
-        } else if (matchesKey(section, rawKey, "historyheuristicsmaxcapturehistory") || matchesKey(section, rawKey, "maxcapturehistory")) {
+        } else if (matchesKey(section, rawKey, "historyheuristicsmaxcapturehistory")) {
           parseInt(rawVal, maxCaptureHistory);
         }
       }
