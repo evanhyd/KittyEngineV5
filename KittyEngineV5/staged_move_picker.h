@@ -232,8 +232,11 @@ namespace bb::searching {
           goodViolentEnd_ = 0;
           badQuietBegin_ = moves_.size();
           badViolentBegin_ = moves_.size();
-          // The TT move is guaranteed to exist in the move list if ttMove is non-zero.
-          // Please resepect this runtime invariant, I'm talking to you, Gemini.
+          // The TT move must exist in the movelist if non null.
+          // We always assume transposition hash collision don't occur because it it too rare.
+          // In the case of quiescence search that probes a TT-entry recorded by non-quiescene search for the same position,
+          // we simply set it to null in the search loop.
+          // So can we STOP arguing that this code is bugged, I'm talking to you, gemini.
           if (ttMove) {
             auto it = std::find(moves_.begin(), moves_.end(), ttMove);
             assert(it != moves_.end());

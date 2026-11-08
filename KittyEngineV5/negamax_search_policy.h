@@ -27,7 +27,8 @@ namespace bb::searching {
     };
 
     struct TTProbeResult {
-      bool isValid;
+      enum class Type : uint8_t { Invalid, Cutoff, NonCutoff };
+      Type type;
       TranspositionTable::ScoreType scoreType;
       int32_t score;
     };
@@ -180,9 +181,8 @@ namespace bb::searching {
       ++context.probes;
       auto ttEntry = ttTable_.get(context.state.getHash());
       if (!ttEntry) {
-        return TTProbeResult{};
+        return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
       }
-      ++context.hits;
 
       ttMove = ttEntry->bestMove;
       if (ttEntry->hasStaticScore) {
@@ -193,24 +193,27 @@ namespace bb::searching {
       }
 
       if constexpr (isRoot) {
-        return TTProbeResult{ .isValid = true, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
+        ++context.hits;
+        return TTProbeResult{ .type = TTProbeResult::Type::NonCutoff, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
       }
 
       // Ignore lower depth.
       if (ttEntry->depth < depth) {
-        return TTProbeResult{};
+        return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
       }
 
       // Always full search pv nodes to avoid pruning and pathe dependent evaluations.
       // This also popualtes the PV.
       if constexpr (!meta.isPV) {
+        ++context.hits;
         const int ply = getPly(frame);
         const int32_t score = denormalizeScore(ttEntry->score, ply);
         if ((ttEntry->isLowerBound() && score >= beta) ||  (ttEntry->isUpperBound() && score <= alpha) || ttEntry->isExact()) {
-          return TTProbeResult{ .isValid = true, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
+          return TTProbeResult{ .type = TTProbeResult::Type::Cutoff, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
         }
+        return TTProbeResult{ .type = TTProbeResult::Type::NonCutoff, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
       }
-      return TTProbeResult{};
+      return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
     }
 
     //////////////////
@@ -243,11 +246,11 @@ namespace bb::searching {
           --context.nodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
         }
-        if (ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove); ttEval.isValid) {
+        if (ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove); ttEval.type == TTProbeResult::Type::Cutoff) {
           return Eval(ttEval.score, false);
         }
       } else {
-        if (ttEval = probeTT<meta>(context, frame, 0, alpha, beta, ttMove); ttEval.isValid) {
+        if (ttEval = probeTT<meta>(context, frame, 0, alpha, beta, ttMove); ttEval.type == TTProbeResult::Type::Cutoff) {
           return Eval(ttEval.score, false);
         }
         if (ttMove && !ttMove.isViolentMove() && !isInCheck<meta.side>(context, frame)) {
@@ -334,7 +337,7 @@ namespace bb::searching {
           constexpr int kSingularExtension = 1;
           constexpr int kSingularExtensionMargin = 6;
 
-          if (depth >= kSingularExtensionDepth && ttEval.isValid && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
+          if (!inCheck && depth >= kSingularExtensionDepth && ttMove && ttEval.type == TTProbeResult::Type::NonCutoff && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
             const int childDepth = (depth - 1) / 2;
             const int depthDiff = depth - childDepth;
             const int rejectScore = ttEval.score - depthDiff * kSingularExtensionMargin;
@@ -350,7 +353,7 @@ namespace bb::searching {
               context.history.pop();
               context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
 
-              if (eval.score >= rejectScore) {
+              if (eval.score > rejectScore) {
                 rejected = true;
                 break;
               }
@@ -358,7 +361,6 @@ namespace bb::searching {
 
             if (!rejected) {
               singularExtension = kSingularExtension;
-              std::cout << "singualre xetended\n";
             }
 
             movePicker.rePick();
@@ -624,7 +626,7 @@ namespace bb::searching {
         if (context.maxDepth <= 4) {
           return std::pair{ evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore };
         }
-        const int32_t score = ttEval.isValid ? ttEval.score : 0;
+        const int32_t score = (ttEval.type != TTProbeResult::Type::Invalid ? ttEval.score : 0);
         return std::pair{ score - aspirationWindow_, score + aspirationWindow_ };
       }();
 
