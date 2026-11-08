@@ -53,6 +53,11 @@ namespace bb::searching {
     double lateMoveReductionHistoryK;
     double lateMoveReductionHistoryB;
 
+    // Singular Extension
+    int singularExtensionDepth = 8;
+    int32_t singularExtensionMultiplier = 2;
+    int32_t singularExtensionBase = 0;
+
     // Improving Heuristic
     int32_t improvingThreshold;
 
@@ -106,6 +111,10 @@ namespace bb::searching {
         "  divisor: {}\n"
         "  history_k: {}\n"
         "  history_b: {}\n\n"
+        "singular_extension:\n"
+        "  depth: {}\n"
+        "  multiplier: {}\n"
+        "  base: {}\n\n"
         "history_heuristics:\n"
         "  max_quiet_history: {}\n"
         "  max_refutation_history: {}\n"
@@ -140,6 +149,9 @@ namespace bb::searching {
         lateMoveReductionDivisor,
         lateMoveReductionHistoryK,
         lateMoveReductionHistoryB,
+        singularExtensionDepth,
+        singularExtensionMultiplier,
+        singularExtensionBase,
         maxQuietHistory,
         maxRefutationHistory,
         maxFollowupHistory,
@@ -289,6 +301,14 @@ namespace bb::searching {
           parseDouble(rawVal, lateMoveReductionHistoryK);
         } else if (matchesKey(section, rawKey, "latemovereductionshistoryb") || matchesKey(section, rawKey, "lmrhistoryb")) {
           parseDouble(rawVal, lateMoveReductionHistoryB);
+        }
+        // Singular Extension
+        else if (matchesKey(section, rawKey, "singularextensiondepth") || matchesKey(section, rawKey, "singulardepth")) {
+          parseInt(rawVal, singularExtensionDepth);
+        } else if (matchesKey(section, rawKey, "singularextensionmultiplier") || matchesKey(section, rawKey, "singularmultiplier")) {
+          parseInt(rawVal, singularExtensionMultiplier);
+        } else if (matchesKey(section, rawKey, "singularextensionbase") || matchesKey(section, rawKey, "singularbase")) {
+          parseInt(rawVal, singularExtensionBase);
         }
         // History Limits
         else if (matchesKey(section, rawKey, "historyheuristicsmaxquiethistory") || matchesKey(section, rawKey, "maxquiethistory")) {

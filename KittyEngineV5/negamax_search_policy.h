@@ -333,14 +333,14 @@ namespace bb::searching {
 
         // Singular extension.
         if constexpr (!meta.isPV && meta.canSingularExtend) {
-          constexpr int kSingularExtensionDepth = 8;
           constexpr int kSingularExtension = 1;
-          constexpr int kSingularExtensionMargin = 6;
 
-          if (!inCheck && depth >= kSingularExtensionDepth && ttMove && ttEval.type == TTProbeResult::Type::NonCutoff && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
+          if (!inCheck && !isCheckmateScore(ttEval.score) && depth >= config_.singularExtensionDepth &&
+              ttMove && ttEval.type == TTProbeResult::Type::NonCutoff && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
             const int childDepth = (depth - 1) / 2;
             const int depthDiff = depth - childDepth;
-            const int rejectScore = ttEval.score - depthDiff * kSingularExtensionMargin;
+            const int32_t baseMargin = config_.singularExtensionBase != 0 ? config_.singularExtensionBase : config_.improvingThreshold;
+            const int32_t rejectScore = ttEval.score - (baseMargin + depthDiff * config_.singularExtensionMultiplier);
             movePicker.pick<meta>(ttMove, context.state); // filter out the singular move.
 
             bool rejected = false;

@@ -62,6 +62,11 @@ late_move_reductions:
   history_k: 0.001
   history_b: 0.0
 
+singular_extension:
+  depth: 8
+  multiplier: 2
+  base: 0
+
 history_heuristics:
   max_quiet_history: 770
   max_refutation_history: 1230

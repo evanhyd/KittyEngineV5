@@ -1031,6 +1031,7 @@ TEST(SearchConfigYaml, SerializesDefaultConfigToStream) {
   EXPECT_NE(yaml.find("reverse_futility_pruning:"), std::string::npos);
   EXPECT_NE(yaml.find("null_move_pruning:"), std::string::npos);
   EXPECT_NE(yaml.find("late_move_reductions:"), std::string::npos);
+  EXPECT_NE(yaml.find("singular_extension:"), std::string::npos);
 }
 
 TEST(SearchConfigYaml, DeserializesFromStreamAndRoundTrips) {
