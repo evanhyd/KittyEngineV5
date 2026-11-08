@@ -205,58 +205,62 @@ namespace {
   };
 
   struct ParsedInfo {
-    int depth;
-    int reachedPly;
+    int depth = 0;
+    int reachedPly = 0;
     std::string scoreKind;
-    int64_t score;
-    int64_t timeMs;
-    uint64_t nodes;
-    uint64_t nps;
+    int64_t score = 0;
+    int64_t timeMs = 0;
+    uint64_t nodes = 0;
+    uint64_t nps = 0;
     std::vector<std::string> pv;
   };
 
   std::optional<ParsedInfo> parseInfoLine(const std::string& line) {
     std::istringstream stream{line};
-    std::string info, depth, depthToken, score, time, nodes, nps, extra;
+    std::string token;
     ParsedInfo parsed{};
-    if (!(stream >> info >> depth >> depthToken >> score >> parsed.scoreKind >> parsed.score
-                 >> time >> parsed.timeMs >> nodes >> parsed.nodes >> nps >> parsed.nps)) {
+    if (!(stream >> token) || token != "info") {
       return std::nullopt;
     }
-    if (info != "info" || depth != "depth" || score != "score" ||
-        time != "time" || nodes != "nodes" || nps != "nps") {
-      return std::nullopt;
-    }
-    const auto slashPos = depthToken.find('/');
-    if (slashPos != std::string::npos) {
-      parsed.depth = std::stoi(depthToken.substr(0, slashPos));
-      parsed.reachedPly = std::stoi(depthToken.substr(slashPos + 1));
-    } else {
-      parsed.depth = std::stoi(depthToken);
-      parsed.reachedPly = parsed.depth;
-    }
-    if (stream >> extra) {
-      if (extra == "hashfull") {
+    bool hasDepth = false;
+    bool hasScore = false;
+    bool hasTime = false;
+    bool hasNodes = false;
+    bool hasNps = false;
+
+    while (stream >> token) {
+      if (token == "depth") {
+        if (!(stream >> parsed.depth)) return std::nullopt;
+        hasDepth = true;
+      } else if (token == "seldepth") {
+        if (!(stream >> parsed.reachedPly)) return std::nullopt;
+      } else if (token == "score") {
+        if (!(stream >> parsed.scoreKind >> parsed.score)) return std::nullopt;
+        hasScore = true;
+      } else if (token == "time") {
+        if (!(stream >> parsed.timeMs)) return std::nullopt;
+        hasTime = true;
+      } else if (token == "nodes") {
+        if (!(stream >> parsed.nodes)) return std::nullopt;
+        hasNodes = true;
+      } else if (token == "nps") {
+        if (!(stream >> parsed.nps)) return std::nullopt;
+        hasNps = true;
+      } else if (token == "hashfull") {
         uint64_t hf = 0;
-        if (!(stream >> hf)) {
-          return std::nullopt;
+        if (!(stream >> hf)) return std::nullopt;
+      } else if (token == "pv") {
+        while (stream >> token) {
+          if (token == "string") break;
+          parsed.pv.push_back(token);
         }
-        if (!(stream >> extra)) {
-          return parsed;
-        }
+        if (parsed.pv.empty()) return std::nullopt;
+        break;
       }
-      if (extra != "pv") {
-        return std::nullopt;
-      }
-      while (stream >> extra) {
-        if (extra == "string") {
-          break;
-        }
-        parsed.pv.push_back(extra);
-      }
-      if (parsed.pv.empty()) {
-        return std::nullopt;
-      }
+    }
+
+    if (!hasDepth || !hasScore || !hasTime || !hasNodes || !hasNps) {
+      return std::nullopt;
     }
     return parsed;
   }
