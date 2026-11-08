@@ -210,9 +210,9 @@ namespace bb::searching {
         const int ply = getPly(frame);
         const int32_t score = denormalizeScore(ttEntry->score, ply);
         if ((ttEntry->isLowerBound() && score >= beta) ||  (ttEntry->isUpperBound() && score <= alpha) || ttEntry->isExact()) {
-          return TTProbeResult{ .type = TTProbeResult::Type::Cutoff, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
+          return TTProbeResult{ .type = TTProbeResult::Type::Cutoff, .scoreType = ttEntry->scoreType, .score = score };
         }
-        return TTProbeResult{ .type = TTProbeResult::Type::NonCutoff, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
+        return TTProbeResult{ .type = TTProbeResult::Type::NonCutoff, .scoreType = ttEntry->scoreType, .score = score };
       }
       return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
     }
