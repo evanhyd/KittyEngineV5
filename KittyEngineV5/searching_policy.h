@@ -21,13 +21,14 @@ namespace bb {
     };
 
     struct SearchResult {
-      int32_t score = 0;
+      int32_t score;
       Move move{};
       std::span<const Move> pvLine{};
-      uint64_t nodes = 0;
+      uint64_t nodes;
       std::chrono::nanoseconds searchingTime{};
-      uint64_t probes = 0;
-      uint64_t hits = 0;
+      uint64_t probes;
+      uint64_t hits;
+      int plyReached;
     };
 
 

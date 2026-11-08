@@ -229,12 +229,12 @@ namespace bb::user_interface {
             if (isMateScore) {
               const int64_t movesToMate = (mateScore - magnitude + 1) / 2;
               std::format_to(std::back_inserter(uciBuffer_),
-                             "info depth {} score mate {} time {} nodes {} nps {} hashfull {}",
-                             completedDepth, score < 0 ? -movesToMate : movesToMate, elapsedMs, totalNodes, nps, hashfull);
+                             "info depth {}/{} score mate {} time {} nodes {} nps {} hashfull {}",
+                             completedDepth, result.plyReached, score < 0 ? -movesToMate : movesToMate, elapsedMs, totalNodes, nps, hashfull);
             } else {
               std::format_to(std::back_inserter(uciBuffer_),
-                             "info depth {} score cp {} time {} nodes {} nps {} hashfull {}",
-                             completedDepth, score, elapsedMs, totalNodes, nps, hashfull);
+                             "info depth {}/{} score cp {} time {} nodes {} nps {} hashfull {}",
+                             completedDepth, result.plyReached, score, elapsedMs, totalNodes, nps, hashfull);
             }
 
             const auto& pv = result.pvLine;

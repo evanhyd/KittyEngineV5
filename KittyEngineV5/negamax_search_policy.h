@@ -38,8 +38,9 @@ namespace bb::searching {
       const int maxDepth;
       PositionHistory& history;
       uint64_t nodes;
-      uint64_t probes = 0;
-      uint64_t hits = 0;
+      uint64_t probes;
+      uint64_t hits;
+      int plyReached;
     };
 
     struct SearchFrame {
@@ -231,6 +232,7 @@ namespace bb::searching {
     Eval searchInternal(SearchContext& context, SearchFrame* frame, const int depth, const int32_t alpha, const int32_t beta) {
       ++context.nodes;
       const int ply = getPly(frame);
+      context.plyReached = std::max(context.plyReached, ply);
       Move ttMove{};
       TTProbeResult ttEval{};
 
@@ -588,7 +590,7 @@ namespace bb::searching {
 
     template <Side side>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      SearchContext context{.state = state, .maxDepth = param.maxDepth, .history = param.history, .nodes = 1, .probes = 0, .hits = 0};
+      SearchContext context{.state = state, .maxDepth = param.maxDepth, .history = param.history, .nodes = 1, .probes = 0, .hits = 0, .plyReached = 0};
 
       constexpr NodeMeta meta(side, NodeMeta::NodeType::Internal, true, true, true);
       SearchFrame* frame = frames_.data();
@@ -611,7 +613,7 @@ namespace bb::searching {
       const bool inCheck = *frame->inCheck;
       if (rootMoves_.empty()) [[unlikely]] {
         const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
-        return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits};
+        return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits, .plyReached = context.plyReached};
       }
 
       // Root node invariants: ply is guaranteed 0, prev1 and prev2 are empty.
@@ -726,7 +728,7 @@ namespace bb::searching {
         bestEval.isUnreliable = false;
         storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, context.maxDepth, bestEval, bestMove, inCheck);
         const std::span<const Move> pvSpan{pvMoves(frame), frame->pvLength};
-        return SearchResult{.score = bestEval.score, .move = bestMove, .pvLine = pvSpan, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits};
+        return SearchResult{.score = bestEval.score, .move = bestMove, .pvLine = pvSpan, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits, .plyReached = context.plyReached};
       }
     }
   };

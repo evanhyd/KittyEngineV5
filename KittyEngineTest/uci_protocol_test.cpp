@@ -206,6 +206,7 @@ namespace {
 
   struct ParsedInfo {
     int depth;
+    int reachedPly;
     std::string scoreKind;
     int64_t score;
     int64_t timeMs;
@@ -216,15 +217,23 @@ namespace {
 
   std::optional<ParsedInfo> parseInfoLine(const std::string& line) {
     std::istringstream stream{line};
-    std::string info, depth, score, time, nodes, nps, extra;
+    std::string info, depth, depthToken, score, time, nodes, nps, extra;
     ParsedInfo parsed{};
-    if (!(stream >> info >> depth >> parsed.depth >> score >> parsed.scoreKind >> parsed.score
+    if (!(stream >> info >> depth >> depthToken >> score >> parsed.scoreKind >> parsed.score
                  >> time >> parsed.timeMs >> nodes >> parsed.nodes >> nps >> parsed.nps)) {
       return std::nullopt;
     }
     if (info != "info" || depth != "depth" || score != "score" ||
         time != "time" || nodes != "nodes" || nps != "nps") {
       return std::nullopt;
+    }
+    const auto slashPos = depthToken.find('/');
+    if (slashPos != std::string::npos) {
+      parsed.depth = std::stoi(depthToken.substr(0, slashPos));
+      parsed.reachedPly = std::stoi(depthToken.substr(slashPos + 1));
+    } else {
+      parsed.depth = std::stoi(depthToken);
+      parsed.reachedPly = parsed.depth;
     }
     if (stream >> extra) {
       if (extra == "hashfull") {
