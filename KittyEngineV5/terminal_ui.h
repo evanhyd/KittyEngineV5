@@ -43,6 +43,12 @@ namespace bb::user_interface {
       }
     }
 
+    static constexpr auto kSearchFlushInterval = std::chrono::seconds{1};
+
+    void flushUci() {
+      uciOutput_.flush();
+    }
+
     void reportProtocolError(std::string_view message) {
       uciBuffer_.clear();
       uciBuffer_ += "info string error: ";
@@ -51,7 +57,7 @@ namespace bb::user_interface {
       }
       uciBuffer_.push_back('\n');
       uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));
-      uciOutput_.flush();
+      flushUci();
     }
 
     void renderState(const BoardState& state) {
@@ -114,12 +120,12 @@ namespace bb::user_interface {
         [this] {
           static constexpr std::string_view kUciOk = "id name KittyEngineV5\nid author UnboxTheCat\nuciok\n";
           uciOutput_.write(kUciOk.data(), static_cast<std::streamsize>(kUciOk.size()));
-          uciOutput_.flush();
+          flushUci();
         },
         [this] {
           static constexpr std::string_view kReadyOk = "readyok\n";
           uciOutput_.write(kReadyOk.data(), static_cast<std::streamsize>(kReadyOk.size()));
-          uciOutput_.flush();
+          flushUci();
         },
         [this] {
           board_.newGame();
@@ -198,9 +204,10 @@ namespace bb::user_interface {
           uint64_t totalProbes = 0;
           uint64_t totalHits = 0;
           const auto searchStart = std::chrono::steady_clock::now();
+          auto lastFlushTime = searchStart;
           const int searchDepth = std::min(depth.value_or(searching::kMaxDepthHardCutoff), searching::kMaxDepthHardCutoff);
           searching::SearchResult lastResult{};
-          board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, &totalProbes, &totalHits, &lastResult, searchStart](const auto& result) {
+          board_.search(searchDepth, timeControl, [this, &completedDepth, &totalNodes, &totalProbes, &totalHits, &lastResult, searchStart, &lastFlushTime](const auto& result) {
             lastResult = result;
             ++completedDepth;
             totalNodes += result.nodes;
@@ -240,9 +247,17 @@ namespace bb::user_interface {
             }
             uciBuffer_.push_back('\n');
             uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));
-            uciOutput_.flush();
+
+            // Intermediate flush point: throttle flushes during deep/long searches (>= 1s)
+            // to keep GUIs updated without stalling fast microsecond depths.
+            const auto now = std::chrono::steady_clock::now();
+            if (now - lastFlushTime >= kSearchFlushInterval) {
+              flushUci();
+              lastFlushTime = now;
+            }
           });
 
+          // Definitive flush point: finished searching all depths / PV lines for this position.
           uciBuffer_.clear();
           uciBuffer_ += "bestmove ";
           if (lastResult.move) {
@@ -252,7 +267,7 @@ namespace bb::user_interface {
           }
           uciBuffer_.push_back('\n');
           uciOutput_.write(uciBuffer_.data(), static_cast<std::streamsize>(uciBuffer_.size()));
-          uciOutput_.flush();
+          flushUci();
         },
         [this] {
           running_ = false;
@@ -279,7 +294,7 @@ namespace bb::user_interface {
         } catch (const std::exception& error) {
           reportProtocolError(error.what());
         }
-        uciOutput_.flush();
+        flushUci();
       }
     }
   };
