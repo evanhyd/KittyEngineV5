@@ -7,6 +7,7 @@
 #include "position_fens.h"
 #include "terminal_ui.h"
 #include "test_move_callback.h"
+#include "test_search_config.h"
 #include <cstddef>
 #include <sstream>
 #include <stdexcept>
@@ -22,7 +23,7 @@ namespace {
   constexpr float kTestTimePercentage = 0.05f;
 
   auto makeTestSearch(int32_t aspirationWindow) {
-    return TestSearch{evaluation::HandCraftEvaluationPolicy{}, searching::NegamaxSearchConfig{}, aspirationWindow, kTestTranspositionEntries};
+    return TestSearch{evaluation::HandCraftEvaluationPolicy{}, testing_support::makeTestSearchConfig(), aspirationWindow, kTestTranspositionEntries};
   }
 
   struct StatefulEvaluator {
@@ -135,7 +136,7 @@ TEST(Board, RetainsStatefulEvaluatorAcrossSearches) {
   const void* firstAddress = nullptr;
   bool stableAddress = true;
   Board board{searching::NegamaxSearchPolicy{
-    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, searching::NegamaxSearchConfig{}, 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
+    StatefulEvaluator{calls, copies, firstAddress, stableAddress}, testing_support::makeTestSearchConfig(), 50, kTestTranspositionEntries}, TestTimePolicy{kTestTimePercentage}};
   const int copiesBeforeSearch = copies;
 
   searching::SearchResult res1{};

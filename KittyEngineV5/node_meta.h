@@ -12,14 +12,15 @@ namespace bb::searching {
     const NodeType type;
     const bool isPV;
     const bool canNullMove;
+    const bool canSingularExtend;
 
-    consteval NodeMeta(Side side, NodeType type, bool isPV, bool canNullMove) noexcept
-      : side(side), type(type), isPV(isPV), canNullMove(canNullMove) {}
-    consteval NodeMeta flip() const noexcept { return NodeMeta{ getOtherSide(side), type, isPV, canNullMove }; }
-    consteval NodeMeta enableNullMove() const noexcept { return NodeMeta{ side, type, isPV, true }; }
-    consteval NodeMeta disableNullMove() const noexcept { return NodeMeta{ side, type, isPV, false }; }
-    consteval NodeMeta toQuiescence() const noexcept { return NodeMeta{ side, NodeType::Quiescence, false, false }; }
-    consteval NodeMeta setPV(bool pv) const noexcept { return NodeMeta{ side, type, pv, canNullMove }; }
+    consteval NodeMeta(Side side, NodeType type, bool isPV, bool canNullMove, bool canSingularExtend) noexcept
+      : side(side), type(type), isPV(isPV), canNullMove(canNullMove), canSingularExtend(canSingularExtend) {}
+    consteval NodeMeta flip() const noexcept { return NodeMeta{ getOtherSide(side), type, isPV, canNullMove, canSingularExtend }; }
+    consteval NodeMeta toQuiescence() const noexcept { return NodeMeta{ side, NodeType::Quiescence, false, false, false }; }
+    consteval NodeMeta setPV(bool pv) const noexcept { return NodeMeta{ side, type, pv, canNullMove, canSingularExtend }; }
+    consteval NodeMeta setCanNullMove(bool enable) const noexcept { return NodeMeta{ side, type, isPV, enable, canSingularExtend }; }
+    consteval NodeMeta setCanSingularExtend(bool enable) const noexcept { return NodeMeta{ side, type, isPV, canNullMove, enable }; }
     consteval bool isInternal() const noexcept { return type == NodeType::Internal; }
     consteval bool isQuiescence() const noexcept { return type == NodeType::Quiescence; }
   };
