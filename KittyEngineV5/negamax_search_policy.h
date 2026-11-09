@@ -256,22 +256,19 @@ namespace bb::searching {
       Eval bestEval(alpha, false);
       const bool inCheck = isInCheck<meta.side>(context, frame);
 
-      const int32_t currentStaticScore = (!inCheck ? getStaticScore(context, frame) : 0);
+      const int32_t staticScore = (!inCheck ? getStaticScore(context, frame) : 0);
       const int32_t staticScoreGained = [&]() noexcept -> int32_t {
-        if (inCheck) {
-          return 0;
-        }
         if (ply >= 2 && (frame - 2)->staticScore.has_value()) {
-          return currentStaticScore - *(frame - 2)->staticScore;
+          return staticScore - *(frame - 2)->staticScore;
         }
         if (ply >= 4 && (frame - 4)->staticScore.has_value()) {
-          return currentStaticScore - *(frame - 4)->staticScore;
+          return staticScore - *(frame - 4)->staticScore;
         }
         return 0;
       }();
 
       const bool isImproved = !inCheck && (staticScoreGained >= config_.improvingThreshold);
-      int singularExtension = 0;
+      //int singularExtension = 0;
 
       if constexpr (meta.isInternal()) {
         if constexpr (!meta.isPV) {
@@ -281,7 +278,7 @@ namespace bb::searching {
             // Reverse Futility Pruning.
             if (depth <= config_.reverseFutilityDepth) {
               const int32_t margin = config_.reverseFutilityMultiplier * depth + config_.reverseFutilityBase + (isImproved ? 0 : config_.reverseFutilityImprovingBonus);
-              if (currentStaticScore >= beta + margin) {
+              if (staticScore >= beta + margin) {
                 const Eval eval(beta, false);
                 storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttEval.move, inCheck);
                 return eval;
@@ -290,8 +287,8 @@ namespace bb::searching {
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
             if constexpr (meta.canNullMove) {
-              if (depth >= config_.nullMoveDepth && currentStaticScore >= beta) {
-                const int32_t evalMargin = currentStaticScore - beta;
+              if (depth >= config_.nullMoveDepth && staticScore >= beta) {
+                const int32_t evalMargin = staticScore - beta;
                 const int evalBonus = isImproved ? std::min(config_.nullMoveMaxEvalBonus, static_cast<int>(evalMargin / config_.nullMoveEvalDivisor)) : 0;
                 int reduction = config_.nullMoveBase + depth / config_.nullMoveDepthDivisor + evalBonus;
                 reduction = std::clamp(reduction, 1, depth - 1);
@@ -323,38 +320,34 @@ namespace bb::searching {
         }
 
         // Singular extension.
-        if constexpr (!meta.isPV && meta.canSingularExtend) {
-          if (!inCheck && !isCheckmateScore(ttEval.score) && ttEval.move &&
-              depth >= config_.singularExtensionDepth && depth - ttEval.depth <= config_.singularExtensionDepthMargin &&
-              ttEval.type == TTProbeResult::Type::Staled && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound && ttEval.score >= beta) {
-            const int childDepth = (depth - 1) / 2;
-            const int depthDiff = ttEval.depth - childDepth;
-            const int32_t rejectScore = ttEval.score - (config_.singularExtensionBase + depthDiff * config_.singularExtensionMultiplier);
-            movePicker.pick<meta>(ttEval.move, context.state); // filter out the singular move.
-
-            bool rejected = false;
-            for (size_t i = 1; i < moves.size(); ++i) {
-              const auto [move, _] = movePicker.pick<meta>(ttEval.move, context.state);
-              frame->move = move;
-              const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
-              context.history.push(context.state.getHash());
-              Eval eval = searchChild<meta.flip().setCanSingularExtend(false)>(context, frame + 1, childDepth, rejectScore, rejectScore + 1);
-              context.history.pop();
-              context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
-
-              if (eval.score > rejectScore) {
-                rejected = true;
-                break;
-              }
-            }
-
-            if (!rejected) {
-              singularExtension = 1;
-            }
-
-            movePicker.rePick();
-          }
-        }
+        //if constexpr (!meta.isPV && meta.canSingularExtend) {
+        //  if (!inCheck && !isCheckmateScore(ttEval.score) && ttEval.move &&
+        //      depth >= config_.singularExtensionDepth && depth - ttEval.depth <= config_.singularExtensionDepthMargin &&
+        //      ttEval.type == TTProbeResult::Type::Staled && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound && ttEval.score >= beta) {
+        //    const int childDepth = (depth - 1) / 2;
+        //    const int depthDiff = ttEval.depth - childDepth;
+        //    const int32_t rejectScore = ttEval.score - (config_.singularExtensionBase + depthDiff * config_.singularExtensionMultiplier);
+        //    movePicker.pick<meta>(ttEval.move, context.state); // filter out the singular move.
+        //    bool rejected = false;
+        //    for (size_t i = 1; i < moves.size(); ++i) {
+        //      const auto [move, _] = movePicker.pick<meta>(ttEval.move, context.state);
+        //      frame->move = move;
+        //      const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
+        //      context.history.push(context.state.getHash());
+        //      Eval eval = searchChild<meta.flip().setCanSingularExtend(false)>(context, frame + 1, childDepth, rejectScore, rejectScore + 1);
+        //      context.history.pop();
+        //      context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+        //      if (eval.score > rejectScore) {
+        //        rejected = true;
+        //        break;
+        //      }
+        //    }
+        //    if (!rejected) {
+        //      singularExtension = 1;
+        //    }
+        //    movePicker.rePick();
+        //  }
+        //}
 
       } else {
         // Quiescence search: no stand-pat when in check.
@@ -418,7 +411,7 @@ namespace bb::searching {
               if (depth <= config_.futilityDepth &&
                   !historyHeuristics_.isKillerMove(ply, move)) {
                 const int32_t margin = config_.futilityMultiplier * depth + config_.futilityBase + (isImproved ? config_.futilityImprovingBonus : 0);
-                if (currentStaticScore + margin <= bestEval.score) {
+                if (staticScore + margin <= bestEval.score) {
                   continue;
                 }
               }
@@ -449,12 +442,12 @@ namespace bb::searching {
 
             // First move: full window. Subsequent moves: scout search.
             if (i == 0) {
-              if constexpr (!meta.isPV && meta.canSingularExtend) {
-                if (singularExtension) {
-                  childDepth += singularExtension;
-                  return searchChild<childMeta.setPV(meta.isPV).setCanSingularExtend(false)>(context, frame + 1, childDepth, bestEval.score, beta);
-                }
-              }
+              //if constexpr (!meta.isPV && meta.canSingularExtend) {
+              //  if (singularExtension) {
+              //    childDepth += singularExtension;
+              //    return searchChild<childMeta.setPV(meta.isPV).setCanSingularExtend(false)>(context, frame + 1, childDepth, bestEval.score, beta);
+              //  }
+              //}
               return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, childDepth, bestEval.score, beta);
             }
 
