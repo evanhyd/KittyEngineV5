@@ -256,18 +256,13 @@ namespace bb::searching {
       Eval bestEval(alpha, false);
       const bool inCheck = isInCheck<meta.side>(context, frame);
 
-      const int32_t staticScore = (!inCheck ? getStaticScore(context, frame) : 0);
-      const int32_t staticScoreGained = [&]() noexcept -> int32_t {
-        if (ply >= 2 && (frame - 2)->staticScore.has_value()) {
-          return staticScore - *(frame - 2)->staticScore;
-        }
-        if (ply >= 4 && (frame - 4)->staticScore.has_value()) {
-          return staticScore - *(frame - 4)->staticScore;
-        }
-        return 0;
+      const int32_t staticScore = !inCheck ? getStaticScore(context, frame) : 0;
+      const bool isImproved = !inCheck && [&]() noexcept {
+        const auto prevStatic = (ply >= 2 && (frame - 2)->staticScore) ? (frame - 2)->staticScore
+                              : (ply >= 4 && (frame - 4)->staticScore) ? (frame - 4)->staticScore
+                              : std::nullopt;
+        return prevStatic && (staticScore - *prevStatic >= config_.improvingThreshold);
       }();
-
-      const bool isImproved = !inCheck && (staticScoreGained >= config_.improvingThreshold);
       //int singularExtension = 0;
 
       if constexpr (meta.isInternal()) {
