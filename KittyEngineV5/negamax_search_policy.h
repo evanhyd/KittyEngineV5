@@ -27,10 +27,12 @@ namespace bb::searching {
     };
 
     struct TTProbeResult {
-      enum class Type : uint8_t { Invalid, Cutoff, NonCutoff };
+      enum class Type : uint8_t { None, Staled, Cutoff};
       Type type;
       TranspositionTable::ScoreType scoreType;
       int32_t score;
+      int depth;
+      Move move;
     };
 
     struct SearchContext {
@@ -176,16 +178,15 @@ namespace bb::searching {
       }
     }
 
-    template <NodeMeta meta, bool isRoot = false>
-    TTProbeResult probeTT(SearchContext& context, SearchFrame* frame, int depth,
-                          int32_t alpha, int32_t beta, Move& ttMove) noexcept {
+    template <NodeMeta meta>
+    TTProbeResult probeTT(SearchContext& context, SearchFrame* frame, int depth, int32_t alpha, int32_t beta) noexcept {
       ++context.probes;
       auto ttEntry = ttTable_.get(context.state.getHash());
       if (!ttEntry) {
-        return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
+        return TTProbeResult{ .type = TTProbeResult::Type::None };
       }
+      ++context.hits;
 
-      ttMove = ttEntry->bestMove;
       if (ttEntry->hasStaticScore) {
         frame->staticScore = ttEntry->staticScore;
       }
@@ -193,28 +194,17 @@ namespace bb::searching {
         frame->inCheck = ttEntry->inCheck;
       }
 
-      if constexpr (isRoot) {
-        ++context.hits;
-        return TTProbeResult{ .type = TTProbeResult::Type::NonCutoff, .scoreType = ttEntry->scoreType, .score = ttEntry->score };
+      const int ply = getPly(frame);
+      const int32_t score = denormalizeScore(ttEntry->score, ply);
+      typename TTProbeResult::Type type = TTProbeResult::Type::None;
+
+      if (meta.isPV) {
+        type = TTProbeResult::Type::Staled;
+      } else if ((ttEntry->isLowerBound() && score >= beta) || (ttEntry->isUpperBound() && score <= alpha) || ttEntry->isExact()) {
+        type = (ttEntry->depth >= depth) ? TTProbeResult::Type::Cutoff : TTProbeResult::Type::Staled;
       }
 
-      // Ignore lower depth.
-      if (ttEntry->depth < depth) {
-        return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
-      }
-
-      // Always full search pv nodes to avoid pruning and pathe dependent evaluations.
-      // This also popualtes the PV.
-      if constexpr (!meta.isPV) {
-        ++context.hits;
-        const int ply = getPly(frame);
-        const int32_t score = denormalizeScore(ttEntry->score, ply);
-        if ((ttEntry->isLowerBound() && score >= beta) ||  (ttEntry->isUpperBound() && score <= alpha) || ttEntry->isExact()) {
-          return TTProbeResult{ .type = TTProbeResult::Type::Cutoff, .scoreType = ttEntry->scoreType, .score = score };
-        }
-        return TTProbeResult{ .type = TTProbeResult::Type::NonCutoff, .scoreType = ttEntry->scoreType, .score = score };
-      }
-      return TTProbeResult{ .type = TTProbeResult::Type::Invalid };
+      return TTProbeResult{ .type = type, .scoreType = ttEntry->scoreType, .score = score, .depth = ttEntry->depth, .move = ttEntry->bestMove };
     }
 
     //////////////////
@@ -233,7 +223,6 @@ namespace bb::searching {
       ++context.nodes;
       const int ply = getPly(frame);
       context.plyReached = std::max(context.plyReached, ply);
-      Move ttMove{};
       TTProbeResult ttEval{};
 
       if (ply >= kMaxDepthHardCutoff) {
@@ -248,15 +237,15 @@ namespace bb::searching {
           --context.nodes;
           return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
         }
-        if (ttEval = probeTT<meta>(context, frame, depth, alpha, beta, ttMove); ttEval.type == TTProbeResult::Type::Cutoff) {
+        if (ttEval = probeTT<meta>(context, frame, depth, alpha, beta); ttEval.type == TTProbeResult::Type::Cutoff) {
           return Eval(ttEval.score, false);
         }
       } else {
-        if (ttEval = probeTT<meta>(context, frame, 0, alpha, beta, ttMove); ttEval.type == TTProbeResult::Type::Cutoff) {
+        if (ttEval = probeTT<meta>(context, frame, 0, alpha, beta); ttEval.type == TTProbeResult::Type::Cutoff) {
           return Eval(ttEval.score, false);
         }
-        if (ttMove && !ttMove.isViolentMove() && !isInCheck<meta.side>(context, frame)) {
-          ttMove = Move{};
+        if (ttEval.move && !ttEval.move.isViolentMove() && !isInCheck<meta.side>(context, frame)) {
+          ttEval.move = Move{};
         }
       }
 
@@ -289,12 +278,12 @@ namespace bb::searching {
           // Disable in check, or with low material (zugzwang risk).
           if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= config_.kNullMoveMinPieces) {
 
-            // Reverse Futility Pruning (Static Null Move Pruning).
+            // Reverse Futility Pruning.
             if (depth <= config_.reverseFutilityDepth) {
               const int32_t margin = config_.reverseFutilityMultiplier * depth + config_.reverseFutilityBase + (isImproved ? 0 : config_.reverseFutilityImprovingBonus);
               if (currentStaticScore >= beta + margin) {
                 const Eval eval(beta, false);
-                storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
+                storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttEval.move, inCheck);
                 return eval;
               }
             }
@@ -318,7 +307,7 @@ namespace bb::searching {
                   if (isCheckmateScore(eval.score)) {
                     eval.score = beta;
                   }
-                  storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttMove, inCheck);
+                  storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttEval.move, inCheck);
                   return eval;
                 }
               }
@@ -335,18 +324,17 @@ namespace bb::searching {
 
         // Singular extension.
         if constexpr (!meta.isPV && meta.canSingularExtend) {
-          constexpr int kSingularExtension = 1;
-
-          if (!inCheck && !isCheckmateScore(ttEval.score) && depth >= config_.singularExtensionDepth &&
-              ttMove && ttEval.type == TTProbeResult::Type::NonCutoff && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
+          if (!inCheck && !isCheckmateScore(ttEval.score) && ttEval.move &&
+              depth >= config_.singularExtensionDepth && depth - ttEval.depth <= config_.singularExtensionDepthMargin &&
+              ttEval.type == TTProbeResult::Type::Staled && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound && ttEval.score >= beta) {
             const int childDepth = (depth - 1) / 2;
-            const int depthDiff = depth - childDepth;
+            const int depthDiff = ttEval.depth - childDepth;
             const int32_t rejectScore = ttEval.score - (config_.singularExtensionBase + depthDiff * config_.singularExtensionMultiplier);
-            movePicker.pick<meta>(ttMove, context.state); // filter out the singular move.
+            movePicker.pick<meta>(ttEval.move, context.state); // filter out the singular move.
 
             bool rejected = false;
             for (size_t i = 1; i < moves.size(); ++i) {
-              const auto [move, _] = movePicker.pick<meta>(ttMove, context.state);
+              const auto [move, _] = movePicker.pick<meta>(ttEval.move, context.state);
               frame->move = move;
               const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
               context.history.push(context.state.getHash());
@@ -361,7 +349,7 @@ namespace bb::searching {
             }
 
             if (!rejected) {
-              singularExtension = kSingularExtension;
+              singularExtension = 1;
             }
 
             movePicker.rePick();
@@ -394,7 +382,7 @@ namespace bb::searching {
       Move bestMove{};
       int quietCount = 0;
       for (size_t i = 0; i < moves.size(); ++i) {
-        const auto [move, heuristicScore] = movePicker.pick<meta>(ttMove, context.state);
+        const auto [move, heuristicScore] = movePicker.pick<meta>(ttEval.move, context.state);
         frame->move = move;
         const bool isViolent = move.isViolentMove();
 
@@ -462,7 +450,10 @@ namespace bb::searching {
             // First move: full window. Subsequent moves: scout search.
             if (i == 0) {
               if constexpr (!meta.isPV && meta.canSingularExtend) {
-                childDepth += singularExtension;
+                if (singularExtension) {
+                  childDepth += singularExtension;
+                  return searchChild<childMeta.setPV(meta.isPV).setCanSingularExtend(false)>(context, frame + 1, childDepth, bestEval.score, beta);
+                }
               }
               return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, childDepth, bestEval.score, beta);
             }
@@ -531,7 +522,7 @@ namespace bb::searching {
       }
       
       if constexpr (meta.isInternal()) {
-        const Move storedMove = bestMove ? bestMove : ttMove;
+        const Move storedMove = bestMove ? bestMove : ttEval.move;
         if constexpr (meta.isPV) {
           if (bestEval.score <= alpha) {
             storeTT<true, TranspositionTable::ScoreType::UpperBound>(context, frame, depth, bestEval, storedMove, inCheck);
@@ -618,8 +609,7 @@ namespace bb::searching {
 
       // Root node invariants: ply is guaranteed 0, prev1 and prev2 are empty.
       constexpr int ply = 0;
-      Move ttMove{};
-      TTProbeResult ttEval = probeTT<meta, true>(context, frame, context.maxDepth, 0, 0, ttMove);
+      TTProbeResult ttEval = probeTT<meta>(context, frame, context.maxDepth, 0, 0);
 
       // Aspiration window.
       int searchAttempt = 0;
@@ -627,7 +617,7 @@ namespace bb::searching {
         if (context.maxDepth <= 4) {
           return std::pair{ evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore };
         }
-        const int32_t score = (ttEval.type != TTProbeResult::Type::Invalid ? ttEval.score : 0);
+        const int32_t score = (ttEval.type != TTProbeResult::Type::None ? ttEval.score : 0);
         return std::pair{ score - aspirationWindow_, score + aspirationWindow_ };
       }();
 
@@ -643,7 +633,7 @@ namespace bb::searching {
         movePicker.rePick();
         const size_t totalMoves = movePicker.size();
         for (size_t i = 0; i < totalMoves; ++i) {
-          const auto [move, heuristicScore] = movePicker.pick<meta>(ttMove, state);
+          const auto [move, heuristicScore] = movePicker.pick<meta>(ttEval.move, state);
 
           const MoveUndo undo = state.template makeMove<side>(move, evalPolicy_);
           context.history.push(state.getHash());
@@ -702,7 +692,7 @@ namespace bb::searching {
               } else if (undo.capturedPiece != NoPiece) {
                 historyHeuristics_.template recordCaptureCutoff<meta.side>(move.getMovedPiece(), move.to(), undo.capturedPiece, context.maxDepth);
               }
-              ttMove = bestMove;
+              ttEval.move = bestMove;
               break;
             }
           }

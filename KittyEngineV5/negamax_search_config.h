@@ -55,6 +55,7 @@ namespace bb::searching {
 
     // Singular Extension
     int singularExtensionDepth;
+    int singularExtensionDepthMargin;
     int32_t singularExtensionMultiplier;
     int32_t singularExtensionBase;
 
@@ -113,6 +114,7 @@ namespace bb::searching {
         "  history_b: {}\n\n"
         "singular_extension:\n"
         "  depth: {}\n"
+        "  depth_margin: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n\n"
         "history_heuristics:\n"
@@ -150,6 +152,7 @@ namespace bb::searching {
         lateMoveReductionHistoryK,
         lateMoveReductionHistoryB,
         singularExtensionDepth,
+        singularExtensionDepthMargin,
         singularExtensionMultiplier,
         singularExtensionBase,
         maxQuietHistory,
@@ -302,6 +305,8 @@ namespace bb::searching {
         // Singular Extension
         else if (matchesKey(section, rawKey, "singularextensiondepth")) {
           parseInt(rawVal, singularExtensionDepth);
+        } else if (matchesKey(section, rawKey, "singularextensiondepthmargin")) {
+          parseInt(rawVal, singularExtensionDepthMargin);
         } else if (matchesKey(section, rawKey, "singularextensionmultiplier")) {
           parseInt(rawVal, singularExtensionMultiplier);
         } else if (matchesKey(section, rawKey, "singularextensionbase")) {

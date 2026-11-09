@@ -64,8 +64,9 @@ late_move_reductions:
 
 singular_extension:
   depth: 8
+  depth_margin: 3
   multiplier: 2
-  base: 20
+  base: 15
 
 history_heuristics:
   max_quiet_history: 770
