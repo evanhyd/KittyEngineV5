@@ -7,6 +7,7 @@
 #include "staged_move_picker.h"
 #include "history_heuristics.h"
 #include "negamax_search_config.h"
+#include "aspiration_window.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -149,14 +150,6 @@ namespace bb::searching {
       }
       return std::nullopt;
     }
-
-    int32_t expandWindow(int attempt) const noexcept {
-      switch (attempt) {
-      case 1: return 6 * aspirationWindow_;
-      case 2: return 12 * aspirationWindow_;
-      default: return evaluation::kCheckmateWinScore;
-      }
-    };
 
     template <bool isPV, TranspositionTable::ScoreType scoreType>
     void storeTT(const SearchContext& context, SearchFrame* frame, int depth,
@@ -597,21 +590,15 @@ namespace bb::searching {
       TTProbeResult ttEval = probeTT<meta>(context, frame, context.maxDepth, 0, 0);
 
       // Aspiration window.
-      int searchAttempt = 0;
-      auto [alpha, beta] = [&]() {
-        if (context.maxDepth <= 4) {
-          return std::pair{ evaluation::kCheckmateLossScore, evaluation::kCheckmateWinScore };
-        }
-        const int32_t score = (ttEval.type != TTProbeResult::Type::None ? ttEval.score : 0);
-        return std::pair{ score - aspirationWindow_, score + aspirationWindow_ };
-      }();
+      const int32_t ttScore = (ttEval.type != TTProbeResult::Type::None ? ttEval.score : 0);
+      AspirationWindow window(context.maxDepth, ttScore, aspirationWindow_);
 
       StagedMovePicker movePicker(0, {}, {}, historyHeuristics_);
       movePicker.moves() = rootMoves_;
 
       // Search for the best move.
       for (;;) {
-        Eval bestEval(alpha, false);
+        Eval bestEval(window.alpha(), false);
         Move bestMove{};
         frame->pvLength = 0;
 
@@ -632,7 +619,7 @@ namespace bb::searching {
 
             // Full search if not enough depth to perform reduced depth search or on first move.
             if (i == 0 || depth < config_.lateMoveReductionDepth) {
-              return searchChild<childMeta.setPV(true)>(context, frame + 1, childDepth, bestEval.score, beta);
+              return searchChild<childMeta.setPV(true)>(context, frame + 1, childDepth, bestEval.score, window.beta());
             }
 
             // Late move reduction.
@@ -657,8 +644,8 @@ namespace bb::searching {
             }
 
             // If within window, full search.
-            if (bestEval.score < result.score && result.score < beta) {
-              result = searchChild<childMeta.setPV(true)>(context, frame + 1, childDepth, bestEval.score, beta);
+            if (bestEval.score < result.score && result.score < window.beta()) {
+              result = searchChild<childMeta.setPV(true)>(context, frame + 1, childDepth, bestEval.score, window.beta());
             }
             return result;
           }();
@@ -671,7 +658,7 @@ namespace bb::searching {
             bestEval = eval;
             bestMove = move;
             acceptChildPVLine(frame, bestMove);
-            if (bestEval.score >= beta) {
+            if (bestEval.score >= window.beta()) {
               if (!move.isViolentMove()) {
                 historyHeuristics_.template recordQuietCutoff<meta.side>(ply, context.maxDepth, movePicker.moves(), i);
               } else if (undo.capturedPiece != NoPiece) {
@@ -683,15 +670,8 @@ namespace bb::searching {
           }
         }
 
-        if (!isCheckmateScore(bestEval.score)) {
-          ++searchAttempt;
-          if (bestEval.score >= beta) {
-            beta = std::min(evaluation::kCheckmateWinScore, beta + expandWindow(searchAttempt));
-            continue;
-          } else if (bestEval.score <= alpha) {
-            alpha = std::max(evaluation::kCheckmateLossScore, alpha - expandWindow(searchAttempt));
-            continue;
-          }
+        if (window.expand(bestEval.score)) {
+          continue;
         }
 
         // Update TT and PV.

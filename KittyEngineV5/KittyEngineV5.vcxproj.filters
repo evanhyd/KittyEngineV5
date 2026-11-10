@@ -132,6 +132,9 @@
     <ClInclude Include="negamax_search_config.h">
       <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
+    <ClInclude Include="aspiration_window.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="weights.bin">
