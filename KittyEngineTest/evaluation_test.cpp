@@ -1109,10 +1109,10 @@ TEST(StagedMovePicker, PreservesMoveCountAndIntegrityAcrossStages) {
 
   searching::HistoryHeuristics history = makeTestHistory();
   searching::StagedMovePicker picker(0, {}, {}, history);
-  state.generateMoves<White>(picker.getMoveBuffer());
+  state.generateMoves<White>(picker.moves());
   ASSERT_GT(picker.size(), 0);
 
-  const MoveList originalMoves = picker.getMoveBuffer();
+  const MoveList originalMoves = picker.moves();
 
   MoveList pickedMoves;
   for (size_t i = 0; i < originalMoves.size(); ++i) {
@@ -1139,10 +1139,10 @@ TEST(StagedMovePicker, YieldsTTMoveFirstWithCorrectSEE) {
 
   searching::HistoryHeuristics history = makeTestHistory();
   searching::StagedMovePicker picker(0, {}, {}, history);
-  state.generateMoves<White>(picker.getMoveBuffer());
+  state.generateMoves<White>(picker.moves());
 
   Move ttMove{};
-  for (const auto m : picker.getMoveBuffer()) {
+  for (const auto m : picker.moves()) {
     if (m.isCapture()) {
       ttMove = m;
       break;
@@ -1164,7 +1164,7 @@ TEST(StagedMovePicker, CachesExactSEEForViolentMoves) {
 
   searching::HistoryHeuristics history = makeTestHistory();
   searching::StagedMovePicker picker(0, {}, {}, history);
-  state.generateMoves<White>(picker.getMoveBuffer());
+  state.generateMoves<White>(picker.moves());
   const size_t totalMoves = picker.size();
 
   for (size_t i = 0; i < totalMoves; ++i) {
@@ -1195,7 +1195,7 @@ TEST(StagedMovePicker, StrictStageOrderMaintained) {
     state.setPosition(fenStr);
 
     searching::StagedMovePicker picker(0, {}, {}, history);
-    state.generateMoves<White>(picker.getMoveBuffer());
+    state.generateMoves<White>(picker.moves());
     const size_t totalMoves = picker.size();
     if (totalMoves == 0) continue;
 
@@ -1236,9 +1236,9 @@ TEST(StagedMovePicker, BadViolentAtEndOfListIsNotClassifiedAsQuiet) {
 
   searching::HistoryHeuristics history = makeTestHistory();
   searching::StagedMovePicker picker(0, {}, {}, history);
-  state.generateMoves<White>(picker.getMoveBuffer());
+  state.generateMoves<White>(picker.moves());
 
-  MoveList& moves = picker.getMoveBuffer();
+  MoveList& moves = picker.moves();
   // Find a quiet move and a bad capture (SEE < 0)
   std::optional<Move> quietMove;
   std::optional<Move> badCapture;
@@ -1257,9 +1257,9 @@ TEST(StagedMovePicker, BadViolentAtEndOfListIsNotClassifiedAsQuiet) {
   ASSERT_TRUE(badCapture.has_value());
 
   // Set up picker with exactly [quietMove, badCapture]
-  picker.getMoveBuffer().clear();
-  picker.getMoveBuffer().push(*quietMove);
-  picker.getMoveBuffer().push(*badCapture);
+  picker.moves().clear();
+  picker.moves().push(*quietMove);
+  picker.moves().push(*badCapture);
 
   // First pick must be the quiet move (since there are no good violent moves)
   const auto pick1 = picker.pick<kMeta>(Move{}, state);
@@ -1281,7 +1281,7 @@ TEST(StagedMovePicker, RePickRestoresStageAndPointersWithoutLosingMoves) {
 
   searching::HistoryHeuristics history = makeTestHistory();
   searching::StagedMovePicker picker(0, {}, {}, history);
-  state.generateMoves<White>(picker.getMoveBuffer());
+  state.generateMoves<White>(picker.moves());
   const size_t totalMoves = picker.size();
   ASSERT_GT(totalMoves, 0);
 

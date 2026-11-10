@@ -184,9 +184,9 @@ namespace bb::searching {
     explicit StagedMovePicker(int ply, Move prev1, Move prev2, const HistoryHeuristics& history) noexcept
       : ply_(ply), prev1_(prev1), prev2_(prev2), historyHeuristics_(history) {}
 
-    MoveList& getMoveBuffer() noexcept { return moves_; }
+    MoveList& moves() noexcept { return moves_; }
 
-    const MoveList& getMoveBuffer() const noexcept { return moves_; }
+    const MoveList& moves() const noexcept { return moves_; }
 
     size_t size() const noexcept { return moves_.size(); }
 
