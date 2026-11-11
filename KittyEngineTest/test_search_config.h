@@ -18,7 +18,8 @@ namespace bb::testing_support {
     }
 
     constexpr std::string_view baselineYaml = R"(
-aspiration_window: 80
+aspiration_window: 100
+aspiration_window_divisor: 5
 improving_threshold: 20
 
 reverse_futility_pruning:

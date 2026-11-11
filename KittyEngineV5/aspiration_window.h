@@ -9,15 +9,15 @@ namespace bb::searching {
 
   class AspirationWindow {
    public:
-    AspirationWindow(int depth, int32_t score, int32_t aspirationWindow) noexcept
-      : window_(aspirationWindow) {
+    AspirationWindow(int depth, int32_t score, int32_t aspirationWindow, int32_t divisor) noexcept
+      : window_(aspirationWindow), divisor_(divisor) {
       if (depth <= 4) {
         alpha_ = evaluation::kCheckmateLossScore;
         beta_  = evaluation::kCheckmateWinScore;
         return;
       }
 
-      const int32_t delta = std::max(aspirationWindow, std::abs(score) / 4);
+      const int32_t delta = std::max(aspirationWindow, std::abs(score) / divisor_);
       if (score >= 30'000) {
         alpha_ = score - delta;
         beta_  = evaluation::kCheckmateWinScore;
@@ -46,8 +46,8 @@ namespace bb::searching {
       }
 
       const int32_t delta = (attempt_ == 1)
-        ? std::max(window_ * 2, std::abs(score) / 2)
-        : std::max(window_ * 4, std::abs(score));
+        ? std::max(window_ * 2, (std::abs(score) * 2) / divisor_)
+        : std::max(window_ * 4, (std::abs(score) * 4) / divisor_);
 
       if (score >= beta_) {
         beta_ = (score >= 30'000)
@@ -64,7 +64,8 @@ namespace bb::searching {
    private:
     int32_t alpha_ = evaluation::kCheckmateLossScore;
     int32_t beta_  = evaluation::kCheckmateWinScore;
-    int32_t window_ = 0;
+    const int32_t window_;
+    const int32_t divisor_;
     int attempt_ = 0;
 
     static bool isCheckmate(int32_t score) noexcept {

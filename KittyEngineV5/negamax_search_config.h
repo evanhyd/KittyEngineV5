@@ -11,6 +11,7 @@ namespace bb::searching {
   struct NegamaxSearchConfig {
     // Aspiration Window
     int32_t aspirationWindow;
+    int32_t aspirationWindowDivisor;
 
     // Reverse Futility Pruning (Static Null Move Pruning)
     int reverseFutilityDepth;
@@ -77,6 +78,7 @@ namespace bb::searching {
       std::format_to(std::back_inserter(out),
         "# KittyEngine Negamax Search Configuration\n"
         "aspiration_window: {}\n"
+        "aspiration_window_divisor: {}\n"
         "improving_threshold: {}\n\n"
         "reverse_futility_pruning:\n"
         "  depth: {}\n"
@@ -123,6 +125,7 @@ namespace bb::searching {
         "  max_followup_history: {}\n"
         "  max_capture_history: {}\n",
         aspirationWindow,
+        aspirationWindowDivisor,
         improvingThreshold,
         reverseFutilityDepth,
         reverseFutilityMultiplier,
@@ -229,7 +232,9 @@ namespace bb::searching {
         const std::string_view section = currentSection;
 
         // Top-level
-        if (matchesKey(section, rawKey, "aspirationwindow")) {
+        if (matchesKey(section, rawKey, "aspirationwindowdivisor")) {
+          parseInt(rawVal, aspirationWindowDivisor);
+        } else if (matchesKey(section, rawKey, "aspirationwindow")) {
           parseInt(rawVal, aspirationWindow);
         } else if (matchesKey(section, rawKey, "improvingthreshold")) {
           parseInt(rawVal, improvingThreshold);

@@ -591,7 +591,7 @@ namespace bb::searching {
 
       // Aspiration window.
       const int32_t ttScore = (ttEval.type != TTProbeResult::Type::None ? ttEval.score : 0);
-      AspirationWindow window(context.maxDepth, ttScore, aspirationWindow_);
+      AspirationWindow window(context.maxDepth, ttScore, aspirationWindow_, config_.aspirationWindowDivisor);
 
       StagedMovePicker movePicker(0, {}, {}, historyHeuristics_);
       movePicker.moves() = rootMoves_;
