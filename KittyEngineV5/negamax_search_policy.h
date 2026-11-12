@@ -44,6 +44,8 @@ namespace bb::searching {
       uint64_t probes;
       uint64_t hits;
       int plyReached;
+      bool aborted;
+      const std::function<bool()>* isTimeUpHard;
     };
 
     struct SearchFrame {
@@ -205,8 +207,14 @@ namespace bb::searching {
     //////////////////
     template <NodeMeta meta>
     Eval searchChild(SearchContext& context, SearchFrame* childFrame, const int childDepth, const int32_t childAlpha, const int32_t childBeta) {
+      if (context.aborted) [[unlikely]] {
+        return {};
+      }
       childFrame->clear();
       Eval result = searchInternal<meta>(context, childFrame, childDepth, -childBeta, -childAlpha);
+      if (context.aborted) [[unlikely]] {
+        return {};
+      }
       result.score = -result.score;
       return result;
     }
@@ -214,6 +222,10 @@ namespace bb::searching {
     template <NodeMeta meta>
     Eval searchInternal(SearchContext& context, SearchFrame* frame, const int depth, const int32_t alpha, const int32_t beta) {
       ++context.nodes;
+      if (context.isTimeUpHard && (*context.isTimeUpHard)()) [[unlikely]] {
+        context.aborted = true;
+        return {};
+      }
       const int ply = getPly(frame);
       context.plyReached = std::max(context.plyReached, ply);
       TTProbeResult ttEval{};
@@ -286,6 +298,10 @@ namespace bb::searching {
                 context.history.pop();
                 context.state.template unmakeMove<meta.side, true>(Move{}, undo, evalPolicy_);
 
+                if (context.aborted) [[unlikely]] {
+                  return {};
+                }
+
                 if (eval.score >= beta) {
                   if (isCheckmateScore(eval.score)) {
                     eval.score = beta;
@@ -323,6 +339,9 @@ namespace bb::searching {
               Eval eval = searchChild<meta.flip().setCanSingularExtend(false)>(context, frame + 1, childDepth, rejectScore, rejectScore + 1);
               context.history.pop();
               context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+              if (context.aborted) [[unlikely]] {
+                return {};
+              }
               if (eval.score > rejectScore) {
                 rejected = true;
                 break;
@@ -420,7 +439,7 @@ namespace bb::searching {
         context.history.push(context.state.getHash());
         //ttTable_.prefetch(context.state.getHash());
 
-        const Eval eval = [&] {
+        const Eval eval = [&]() -> Eval {
           if constexpr (meta.isInternal()) {
             constexpr auto childMeta = meta.flip().setCanNullMove(true);
             const int extension = (inCheck ? 1 : 0);
@@ -454,10 +473,16 @@ namespace bb::searching {
               reduction = std::clamp(reduction, 0, childDepth - 1);
             }
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);
+            if (context.aborted) [[unlikely]] {
+              return {};
+            }
 
             // If LMR improves alpha, research with scout.
             if (reduction > 0 && result.score > bestEval.score) {
               result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth, bestEval.score, bestEval.score + 1);
+              if (context.aborted) [[unlikely]] {
+                return {};
+              }
             }
 
             // If within window, full search.
@@ -475,6 +500,10 @@ namespace bb::searching {
 
         context.history.pop();
         context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
+
+        if (context.aborted) [[unlikely]] {
+          return {};
+        }
 
         if (eval.score >= beta) {
           if constexpr (meta.isInternal()) {
@@ -559,7 +588,17 @@ namespace bb::searching {
 
     template <Side side>
     SearchResult search(BoardState& state, const SearchParam& param) {
-      SearchContext context{.state = state, .maxDepth = param.maxDepth, .history = param.history, .nodes = 1, .probes = 0, .hits = 0, .plyReached = 0};
+      SearchContext context{
+        .state = state,
+        .maxDepth = param.maxDepth,
+        .history = param.history,
+        .nodes = 1,
+        .probes = 0,
+        .hits = 0,
+        .plyReached = 0,
+        .aborted = false,
+        .isTimeUpHard = param.isTimeUpHard ? &param.isTimeUpHard : nullptr
+      };
 
       constexpr NodeMeta meta(side, NodeMeta::NodeType::Internal, true, true, true);
       SearchFrame* frame = frames_.data();
@@ -582,7 +621,17 @@ namespace bb::searching {
       const bool inCheck = *frame->inCheck;
       if (rootMoves_.empty()) [[unlikely]] {
         const int32_t score = inCheck ? evaluation::kCheckmateLossScore : evaluation::kStalemateScore;
-        return SearchResult{.score = score, .move = Move{}, .pvLine = {}, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits, .plyReached = context.plyReached};
+        return SearchResult{
+          .score = score,
+          .move = Move{},
+          .pvLine = {},
+          .nodes = context.nodes,
+          .searchingTime = {},
+          .probes = context.probes,
+          .hits = context.hits,
+          .plyReached = context.plyReached,
+          .aborted = false
+        };
       }
 
       // Root node invariants: ply is guaranteed 0, prev1 and prev2 are empty.
@@ -611,7 +660,7 @@ namespace bb::searching {
           context.history.push(state.getHash());
           frame->move = move;
 
-          const Eval eval = [&] {
+          const Eval eval = [&]() -> Eval {
             constexpr auto childMeta = meta.flip().setCanNullMove(true);
             const int extension = inCheck ? 1 : 0;
             const int depth = context.maxDepth;
@@ -637,10 +686,16 @@ namespace bb::searching {
             }
 
             Eval result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth - reduction, bestEval.score, bestEval.score + 1);
+            if (context.aborted) [[unlikely]] {
+              return {};
+            }
 
             // If LMR improves alpha, research with scout.
             if (reduction > 0 && result.score > bestEval.score) {
               result = searchChild<childMeta.setPV(false)>(context, frame + 1, childDepth, bestEval.score, bestEval.score + 1);
+              if (context.aborted) [[unlikely]] {
+                return {};
+              }
             }
 
             // If within window, full search.
@@ -652,6 +707,10 @@ namespace bb::searching {
 
           context.history.pop();
           state.template unmakeMove<side>(move, undo, evalPolicy_);
+
+          if (context.aborted) [[unlikely]] {
+            return SearchResult{.aborted = true};
+          }
 
           // Check cutoff.
           if (eval.score > bestEval.score) {
@@ -683,7 +742,17 @@ namespace bb::searching {
         bestEval.isUnreliable = false;
         storeTT<true, TranspositionTable::ScoreType::Exact>(context, frame, context.maxDepth, bestEval, bestMove, inCheck);
         const std::span<const Move> pvSpan{pvMoves(frame), frame->pvLength};
-        return SearchResult{.score = bestEval.score, .move = bestMove, .pvLine = pvSpan, .nodes = context.nodes, .searchingTime = {}, .probes = context.probes, .hits = context.hits, .plyReached = context.plyReached};
+        return SearchResult{
+          .score = bestEval.score,
+          .move = bestMove,
+          .pvLine = pvSpan,
+          .nodes = context.nodes,
+          .searchingTime = {},
+          .probes = context.probes,
+          .hits = context.hits,
+          .plyReached = context.plyReached,
+          .aborted = false
+        };
       }
     }
   };

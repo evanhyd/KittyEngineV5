@@ -34,7 +34,7 @@ namespace bb::time_control {
       }
     }
 
-    bool isTimeUp(Side side) {
+    bool isTimeUpSoft(Side side) {
       if (!isTimeControlSet_) {
         return false;
       }
@@ -53,6 +53,13 @@ namespace bb::time_control {
       // Continue searching. Update the last searching time.
       lastSearchStart_ = now;
       return false;
+    }
+
+    bool isTimeUpHard(Side side) const noexcept {
+      if (!isTimeControlSet_) {
+        return false;
+      }
+      return (std::chrono::high_resolution_clock::now() - start_) >= searchingTime[side];
     }
   };
 

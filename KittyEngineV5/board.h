@@ -87,16 +87,22 @@ namespace bb {
         searching::SearchResult result{};
 
         for (int depth = 1; depth <= maxDepth; ++depth) {
-          const searching::SearchParam param{.maxDepth = depth, .history = history_};
+          const searching::SearchParam param{
+            .maxDepth = depth,
+            .history = history_,
+            .isTimeUpHard = (depth > 10) ? std::function<bool()>([&] { return timePolicy_.isTimeUpHard(side); }) : nullptr
+          };
 
           const auto startTime = std::chrono::steady_clock::now();
           result = searchPolicy_.template search<side>(state_, param);
+          if (result.aborted) [[unlikely]] {
+            break;
+          }
           result.searchingTime = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - startTime);
-
           resultCallback(result);
 
           // Stop if times up or have winning mate.
-          if (timePolicy_.isTimeUp(side) || (searchPolicy_.isCheckmateScore(result.score) && result.score > 0)) {
+          if (timePolicy_.isTimeUpSoft(side) || (searchPolicy_.isCheckmateScore(result.score) && result.score > 0)) {
             break;
           }
         }

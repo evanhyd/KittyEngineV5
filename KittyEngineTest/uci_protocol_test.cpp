@@ -478,7 +478,7 @@ TEST(SearchFrame, MateDistanceUsesActualPlyAcrossDepths) {
   history.push(state.getHash());
 
   for (const int depth : {1, 4}) {
-    const searching::SearchParam param{.maxDepth = depth, .history = history};
+    const searching::SearchParam param{.maxDepth = depth, .history = history, .isTimeUpHard = nullptr};
     const auto result = search.search<White>(state, param);
     ASSERT_TRUE(static_cast<bool>(result.move));
     EXPECT_EQ(result.score, evaluation::kCheckmateWinScore - 1);
@@ -1096,4 +1096,195 @@ null_move_pruning:
   const std::string roundTrip2 = os2.str();
 
   EXPECT_EQ(roundTrip1, roundTrip2);
+}
+
+TEST(InSearchTimeCheck, SearchAbortsMidDepthWhenTimeExpires) {
+  BoardState state{fen::kStartPosition};
+  UciSearch search{makeUciSearch(80, 1u << 16)};
+  searching::PositionHistory history;
+  history.push(state.getHash());
+
+  int checkCount = 0;
+  const searching::SearchParam param{
+    .maxDepth = 20,
+    .history = history,
+    .isTimeUpHard = [&checkCount]() {
+      ++checkCount;
+      return true;
+    }
+  };
+
+  const auto result = search.search<White>(state, param);
+  EXPECT_TRUE(result.aborted);
+  EXPECT_GT(checkCount, 0);
+}
+
+TEST(TimeControlPolicyTest, SoftAndHardTimeLimits) {
+  TestTimePolicy policy{0.05f};
+  time_control::TimeControl tc;
+  tc.moveTime = std::chrono::milliseconds{40};
+  policy.set(tc);
+
+  EXPECT_FALSE(policy.isTimeUpHard(White));
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{45});
+  EXPECT_TRUE(policy.isTimeUpHard(White));
+}
+
+namespace {
+  struct TimeParamRecordingPolicy {
+    std::vector<bool>* hasTimeCheckPerDepth = nullptr;
+
+    void reset() {}
+    void resetTurn() {}
+    bool isCheckmateScore(int32_t) const noexcept { return false; }
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+
+    template <Side ally>
+    searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
+      if (hasTimeCheckPerDepth) {
+        hasTimeCheckPerDepth->push_back(static_cast<bool>(param.isTimeUpHard));
+      }
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+      return searching::SearchResult{
+        .score = 0,
+        .move = moves.empty() ? Move{} : moves[0],
+        .pvLine = {},
+        .nodes = 1,
+        .searchingTime = std::chrono::nanoseconds{1},
+        .probes = 0,
+        .hits = 0,
+        .plyReached = param.maxDepth,
+        .aborted = false
+      };
+    }
+  };
+}
+
+TEST(InSearchTimeCheck, Depth10PreconditionEnforced) {
+  std::vector<bool> hasTimeCheckPerDepth;
+  TimeParamRecordingPolicy policy{&hasTimeCheckPerDepth};
+  TestTimePolicy timePolicy{kTestTimePercentage};
+  Board board{policy, timePolicy};
+
+  board.search(12, std::nullopt, [](const searching::SearchResult&) {});
+
+  ASSERT_EQ(hasTimeCheckPerDepth.size(), 12u);
+  for (size_t i = 0; i < 10; ++i) {
+    EXPECT_FALSE(hasTimeCheckPerDepth[i]) << "Depth " << (i + 1) << " should not have hard time check";
+  }
+  EXPECT_TRUE(hasTimeCheckPerDepth[10]) << "Depth 11 should have hard time check";
+  EXPECT_TRUE(hasTimeCheckPerDepth[11]) << "Depth 12 should have hard time check";
+}
+
+namespace {
+  struct AbortAtDepth2Policy {
+    void reset() {}
+    void resetTurn() {}
+    bool isCheckmateScore(int32_t) const noexcept { return false; }
+    template <bool Add>
+    void markPiece(Side, Piece, Square) {}
+
+    template <Side ally>
+    searching::SearchResult search(BoardState& state, const searching::SearchParam& param) {
+      MoveList moves;
+      state.generateMoves<ally>(moves);
+      if (param.maxDepth == 1) {
+        return searching::SearchResult{
+          .score = 50,
+          .move = moves.empty() ? Move{} : moves[0],
+          .pvLine = {},
+          .nodes = 20,
+          .searchingTime = std::chrono::milliseconds{1},
+          .probes = 0,
+          .hits = 0,
+          .plyReached = 1,
+          .aborted = false
+        };
+      }
+      return searching::SearchResult{
+        .score = 0,
+        .move = Move{},
+        .pvLine = {},
+        .nodes = 100,
+        .searchingTime = std::chrono::milliseconds{10},
+        .probes = 0,
+        .hits = 0,
+        .plyReached = 1,
+        .aborted = true
+      };
+    }
+  };
+}
+
+TEST(InSearchTimeCheck, BoardIterativeDeepeningDiscardsAbortedDepth) {
+  Board board{AbortAtDepth2Policy{}, TestTimePolicy{kTestTimePercentage}};
+  int callbackCount = 0;
+  searching::SearchResult lastResult{};
+  board.search(5, std::nullopt, [&](const searching::SearchResult& r) {
+    ++callbackCount;
+    lastResult = r;
+  });
+
+  EXPECT_EQ(callbackCount, 1);
+  EXPECT_EQ(lastResult.score, 50);
+  EXPECT_FALSE(lastResult.aborted);
+}
+
+TEST(InSearchTimeCheck, AbortReturnPathPreservesBoardAndHistoryState) {
+  BoardState state{fen::kKiwipete};
+  const uint64_t expectedHash = state.getHash();
+  const Side expectedSide = state.getSide();
+  std::array<std::array<Bitboard, kPieceSize>, kSideSize> expectedBitboards{};
+  for (Side s : {White, Black}) {
+    for (Piece p : {Pawn, Knight, Bishop, Rook, Queen, King}) {
+      expectedBitboards[s][p] = state.getPieces(s, p);
+    }
+  }
+
+  UciSearch search{makeUciSearch(80, 1u << 16)};
+  searching::PositionHistory history;
+  history.push(expectedHash);
+  const size_t expectedHistorySize = history.size();
+
+  // Abort mid-search after exploring many nodes deep in the tactical tree
+  int nodeCounter = 0;
+  const searching::SearchParam param{
+    .maxDepth = 20,
+    .history = history,
+    .isTimeUpHard = [&nodeCounter]() {
+      ++nodeCounter;
+      return nodeCounter >= 500;
+    }
+  };
+
+  const auto result = search.search<White>(state, param);
+  EXPECT_TRUE(result.aborted);
+  EXPECT_GE(nodeCounter, 500);
+
+  // 1. Verify hash, side, and history are completely unchanged
+  EXPECT_EQ(state.getHash(), expectedHash);
+  EXPECT_EQ(state.getSide(), expectedSide);
+  EXPECT_EQ(history.size(), expectedHistorySize);
+  EXPECT_EQ(history.front(), expectedHash);
+
+  // 2. Verify all piece bitboards are completely intact
+  for (Side s : {White, Black}) {
+    for (Piece p : {Pawn, Knight, Bishop, Rook, Queen, King}) {
+      EXPECT_EQ(state.getPieces(s, p), expectedBitboards[s][p]);
+    }
+  }
+
+  // 3. Verify that a subsequent normal search runs correctly and cleanly on this state
+  const searching::SearchParam normalParam{
+    .maxDepth = 3,
+    .history = history,
+    .isTimeUpHard = nullptr
+  };
+  const auto normalResult = search.search<White>(state, normalParam);
+  EXPECT_FALSE(normalResult.aborted);
+  EXPECT_TRUE(static_cast<bool>(normalResult.move));
+  EXPECT_GT(normalResult.nodes, 0u);
 }

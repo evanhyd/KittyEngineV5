@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <chrono>
+#include <functional>
 #include <span>
 
 namespace bb {
@@ -18,6 +19,7 @@ namespace bb {
     struct SearchParam {
       int maxDepth;
       PositionHistory& history;
+      std::function<bool()> isTimeUpHard;
     };
 
     struct SearchResult {
@@ -29,6 +31,7 @@ namespace bb {
       uint64_t probes;
       uint64_t hits;
       int plyReached;
+      bool aborted;
     };
 
 
