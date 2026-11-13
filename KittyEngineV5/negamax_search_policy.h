@@ -328,7 +328,7 @@ namespace bb::searching {
 
         // Singular extension.
         if constexpr (!meta.isPV && meta.canSingularExtend) {
-          if (!inCheck && ttEval.move && isImproved && 
+          if (!inCheck && ttEval.move && ttEval.score >= beta && 
               depth >= config_.singularExtensionDepth && depth - ttEval.depth <= config_.singularExtensionDepthMargin &&
               ttEval.type == TTProbeResult::Type::Staled && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
             const int childDepth = (depth - 1) / 2;
