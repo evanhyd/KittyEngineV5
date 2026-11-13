@@ -528,8 +528,6 @@ namespace bb::searching {
             bestMove = move;
             acceptChildPVLine(frame, bestMove);
           }
-        } else {
-          bestEval.isUnreliable |= eval.isUnreliable;
         }
       }
       
