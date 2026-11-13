@@ -1044,6 +1044,7 @@ TEST(SearchConfigYaml, SerializesDefaultConfigToStream) {
   EXPECT_NE(yaml.find("reverse_futility_pruning:"), std::string::npos);
   EXPECT_NE(yaml.find("null_move_pruning:"), std::string::npos);
   EXPECT_NE(yaml.find("late_move_reductions:"), std::string::npos);
+  EXPECT_NE(yaml.find("internal_iterative_deepening:"), std::string::npos);
   EXPECT_NE(yaml.find("singular_extension:"), std::string::npos);
 }
 
@@ -1066,6 +1067,9 @@ null_move_pruning:
   depth_divisor: 5
   eval_divisor: 250
   max_eval_bonus: 3
+
+internal_iterative_deepening:
+  depth: 4
 )";
 
   std::istringstream is{std::string(customYaml)};
@@ -1082,6 +1086,7 @@ null_move_pruning:
   EXPECT_EQ(config.nullMoveDepthDivisor, 5);
   EXPECT_EQ(config.nullMoveEvalDivisor, 250);
   EXPECT_EQ(config.nullMoveMaxEvalBonus, 3);
+  EXPECT_EQ(config.internalIterativeDeepeningDepth, 4);
 
   std::ostringstream os1;
   config.serialize(os1);
@@ -1287,4 +1292,60 @@ TEST(InSearchTimeCheck, AbortReturnPathPreservesBoardAndHistoryState) {
   EXPECT_FALSE(normalResult.aborted);
   EXPECT_TRUE(static_cast<bool>(normalResult.move));
   EXPECT_GT(normalResult.nodes, 0u);
+}
+
+TEST(InternalIterativeDeepening, ConfigControlsIidActivationDepth) {
+  searching::NegamaxSearchConfig config = testing_support::makeTestSearchConfig();
+  EXPECT_EQ(config.internalIterativeDeepeningDepth, 4);
+
+  // Verify configurable to other depths via YAML without hardcoded fallback
+  constexpr std::string_view testYaml = R"(
+internal_iterative_deepening:
+  depth: 6
+)";
+  std::istringstream stream{std::string(testYaml)};
+  config.deserialize(stream);
+  EXPECT_EQ(config.internalIterativeDeepeningDepth, 6);
+}
+
+TEST(InternalIterativeDeepening, ReducesSearchTreeWhenNoTTMovePresent) {
+  BoardState state{fen::kStartPosition};
+  searching::PositionHistory history;
+  history.push(state.getHash());
+
+  // Search with IID active at depth 4
+  auto configWithIid = testing_support::makeTestSearchConfig();
+  configWithIid.internalIterativeDeepeningDepth = 4;
+  searching::NegamaxSearchPolicy searchWithIid{
+    evaluation::HandCraftEvaluationPolicy{},
+    configWithIid,
+    80,
+    1u << 16
+  };
+
+  // Search with IID effectively disabled (depth 99)
+  auto configNoIid = testing_support::makeTestSearchConfig();
+  configNoIid.internalIterativeDeepeningDepth = 99;
+  searching::NegamaxSearchPolicy searchNoIid{
+    evaluation::HandCraftEvaluationPolicy{},
+    configNoIid,
+    80,
+    1u << 16
+  };
+
+  const searching::SearchParam param{
+    .maxDepth = 5,
+    .history = history,
+    .isTimeUpHard = nullptr
+  };
+
+  const auto resultWithIid = searchWithIid.search<White>(state, param);
+  const auto resultNoIid = searchNoIid.search<White>(state, param);
+
+  EXPECT_FALSE(resultWithIid.aborted);
+  EXPECT_FALSE(resultNoIid.aborted);
+  EXPECT_TRUE(static_cast<bool>(resultWithIid.move));
+  EXPECT_TRUE(static_cast<bool>(resultNoIid.move));
+  // Without a TT move, IID reduces depth by 1, exploring fewer nodes than full search
+  EXPECT_LT(resultWithIid.nodes, resultNoIid.nodes);
 }

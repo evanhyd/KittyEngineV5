@@ -220,7 +220,7 @@ namespace bb::searching {
     }
 
     template <NodeMeta meta>
-    Eval searchInternal(SearchContext& context, SearchFrame* frame, const int depth, const int32_t alpha, const int32_t beta) {
+    Eval searchInternal(SearchContext& context, SearchFrame* frame, int depth, const int32_t alpha, const int32_t beta) {
       ++context.nodes;
       if (context.isTimeUpHard && (*context.isTimeUpHard)()) [[unlikely]] {
         context.aborted = true;
@@ -244,6 +244,11 @@ namespace bb::searching {
         }
         if (ttEval = probeTT<meta>(context, frame, depth, alpha, beta); ttEval.type == TTProbeResult::Type::Cutoff) {
           return Eval(ttEval.score, false);
+        }
+
+        // Internal Iterative Deepening.
+        if (!ttEval.move && depth >= config_.internalIterativeDeepeningDepth) {
+          --depth;
         }
       } else {
         if (ttEval = probeTT<meta>(context, frame, 0, alpha, beta); ttEval.type == TTProbeResult::Type::Cutoff) {

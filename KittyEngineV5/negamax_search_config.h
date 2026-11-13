@@ -54,6 +54,9 @@ namespace bb::searching {
     double lateMoveReductionHistoryK;
     double lateMoveReductionHistoryB;
 
+    // Internal Iterative Deepening
+    int internalIterativeDeepeningDepth;
+
     // Singular Extension
     int singularExtensionDepth;
     int singularExtensionDepthMargin;
@@ -114,6 +117,8 @@ namespace bb::searching {
         "  divisor: {}\n"
         "  history_k: {}\n"
         "  history_b: {}\n\n"
+        "internal_iterative_deepening:\n"
+        "  depth: {}\n\n"
         "singular_extension:\n"
         "  depth: {}\n"
         "  depth_margin: {}\n"
@@ -154,6 +159,7 @@ namespace bb::searching {
         lateMoveReductionDivisor,
         lateMoveReductionHistoryK,
         lateMoveReductionHistoryB,
+        internalIterativeDeepeningDepth,
         singularExtensionDepth,
         singularExtensionDepthMargin,
         singularExtensionMultiplier,
@@ -306,6 +312,10 @@ namespace bb::searching {
           parseDouble(rawVal, lateMoveReductionHistoryK);
         } else if (matchesKey(section, rawKey, "latemovereductionshistoryb")) {
           parseDouble(rawVal, lateMoveReductionHistoryB);
+        }
+        // Internal Iterative Deepening
+        else if (matchesKey(section, rawKey, "internaliterativedeepeningdepth")) {
+          parseInt(rawVal, internalIterativeDeepeningDepth);
         }
         // Singular Extension
         else if (matchesKey(section, rawKey, "singularextensiondepth")) {

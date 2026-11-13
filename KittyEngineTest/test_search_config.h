@@ -20,7 +20,7 @@ namespace bb::testing_support {
     constexpr std::string_view baselineYaml = R"(
 aspiration_window: 100
 aspiration_window_divisor: 5
-improving_threshold: 20
+improving_threshold: 40
 
 reverse_futility_pruning:
   depth: 3
@@ -63,11 +63,14 @@ late_move_reductions:
   history_k: 0.001
   history_b: 0.0
 
+internal_iterative_deepening:
+  depth: 4
+
 singular_extension:
   depth: 8
   depth_margin: 3
   multiplier: 2
-  base: 15
+  base: 30
 
 history_heuristics:
   max_quiet_history: 770
