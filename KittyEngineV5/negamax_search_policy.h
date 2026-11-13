@@ -64,6 +64,7 @@ namespace bb::searching {
 
     // PRIVATE MEMBERS
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
+    static constexpr uint64_t kTimeCheckNodeMask = (1ULL << 19) - 1; // 524,288 nodes (~0.5s at 1M NPS)
 
     EvalPolicy evalPolicy_;
     const NegamaxSearchConfig config_;
@@ -78,6 +79,13 @@ namespace bb::searching {
 
     int getPly(const SearchFrame* frame) const noexcept {
       return static_cast<int>(frame - frames_.data());
+    }
+
+    static bool mustAbort(SearchContext& context) noexcept {
+      if (context.isTimeUpHard && (context.nodes & kTimeCheckNodeMask) == 0 && (*context.isTimeUpHard)()) [[unlikely]] {
+        return true;
+      }
+      return false;
     }
     
     int32_t getStaticScore(const SearchContext& context, SearchFrame* frame) noexcept {
@@ -222,7 +230,7 @@ namespace bb::searching {
     template <NodeMeta meta>
     Eval searchInternal(SearchContext& context, SearchFrame* frame, int depth, const int32_t alpha, const int32_t beta) {
       ++context.nodes;
-      if (context.isTimeUpHard && (*context.isTimeUpHard)()) [[unlikely]] {
+      if (mustAbort(context)) [[unlikely]] {
         context.aborted = true;
         return {};
       }

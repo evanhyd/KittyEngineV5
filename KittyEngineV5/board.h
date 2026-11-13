@@ -17,6 +17,7 @@
 namespace bb {
   template <searching::SearchingPolicy SearchPolicy, time_control::TimeControlPolicy TimePolicy>
   class Board {
+    static constexpr int kMinTimeCheckDepth = 10;
     BoardState state_;
     SearchPolicy searchPolicy_;
     TimePolicy timePolicy_;
@@ -90,7 +91,7 @@ namespace bb {
           const searching::SearchParam param{
             .maxDepth = depth,
             .history = history_,
-            .isTimeUpHard = (depth > 10) ? std::function<bool()>([&] { return timePolicy_.isTimeUpHard(side); }) : nullptr
+            .isTimeUpHard = (depth > kMinTimeCheckDepth) ? std::function<bool()>([&] { return timePolicy_.isTimeUpHard(side); }) : nullptr
           };
 
           const auto startTime = std::chrono::steady_clock::now();
