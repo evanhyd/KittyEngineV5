@@ -98,7 +98,7 @@ namespace {
                         evaluation::NNUEEvaluationPolicy& fresh,
                         const BoardState& state) {
     fresh.reset();
-    EXPECT_NEAR(incremental.evaluate(state), fresh.evaluate(state), 1);
+    EXPECT_EQ(incremental.evaluate(state), fresh.evaluate(state));
   }
 }
 
@@ -482,7 +482,7 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
     incremental.reset();
     fresh.reset();
     const int32_t rootScore = incremental.evaluate(state);
-    EXPECT_NEAR(rootScore, fresh.evaluate(state), 1);
+    EXPECT_EQ(rootScore, fresh.evaluate(state));
 
     if (state.getSide() == White) {
       const MoveUndo undo = state.makeMove<White>(testCase.move, incremental);
@@ -493,7 +493,7 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
       expectFreshScore(incremental, fresh, state);
       state.unmakeMove<Black>(testCase.move, undo, incremental);
     }
-    EXPECT_NEAR(incremental.evaluate(state), rootScore, 1);
+    EXPECT_EQ(incremental.evaluate(state), rootScore);
 
     incremental.reset();
     if (state.getSide() == White) {
@@ -503,7 +503,7 @@ TEST(Nnue, DeferredMovesAndUndosMatchFreshInference) {
       const MoveUndo undo = state.makeMove<Black>(testCase.move, incremental);
       state.unmakeMove<Black>(testCase.move, undo, incremental);
     }
-    EXPECT_NEAR(incremental.evaluate(state), rootScore, 1);
+    EXPECT_EQ(incremental.evaluate(state), rootScore);
   }
 }
 
@@ -669,6 +669,105 @@ TEST(Nnue, SearchRootInCheckInitializesAccumulatorSafely) {
   const int32_t freshScore = fresh.evaluate(startState);
   EXPECT_LT(std::abs(freshScore), 300);
   EXPECT_EQ(fresh.evaluate(startState), freshScore);
+}
+
+TEST(Nnue, HorizontalAdd32MatchesScalarMath) {
+  uint32_t rng = 0xDEADBEEFu;
+  const auto random32 = [&] {
+    rng = rng * 1664525u + 1013904223u;
+    return static_cast<int32_t>(rng);
+  };
+
+  // 1. Extreme and edge cases
+  const std::array<std::array<int32_t, 8>, 6> edgeCases = {{
+    {0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 1, 1, 1, 1, 1, 1, 1},
+    {-1, -1, -1, -1, -1, -1, -1, -1},
+    {1000, -2000, 3000, -4000, 5000, -6000, 7000, -8000},
+    {1000000, 2000000, -500000, -1500000, 300000, -200000, 100000, -50000},
+    {-123456, 654321, -987654, 456789, -321654, 789123, -147258, 369258}
+  }};
+
+  for (const auto& arr : edgeCases) {
+    const __m256i vec = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(arr.data()));
+    const int32_t expected = arr[0] + arr[1] + arr[2] + arr[3] + arr[4] + arr[5] + arr[6] + arr[7];
+    EXPECT_EQ(nnue::horizontalAdd32(vec), expected);
+  }
+
+  // 2. 10,000 random vectors within typical NNUE accumulator ranges
+  for (size_t trial = 0; trial < 10000; ++trial) {
+    alignas(32) std::array<int32_t, 8> vals{};
+    int32_t expected = 0;
+    for (size_t i = 0; i < 8; ++i) {
+      // Scale to prevent 32-bit overflow
+      vals[i] = static_cast<int32_t>(random32() % 500000);
+      expected += vals[i];
+    }
+    const __m256i vec = _mm256_load_si256(reinterpret_cast<const __m256i*>(vals.data()));
+    EXPECT_EQ(nnue::horizontalAdd32(vec), expected);
+  }
+}
+
+TEST(Nnue, IncrementalMatchesRebuildExactOnProductionWeights) {
+  const auto path = weightsPath();
+  if (!std::filesystem::exists(path)) {
+    GTEST_SKIP() << "weights.bin not found at " << path;
+  }
+
+  evaluation::NNUEEvaluationPolicy incremental{path};
+  evaluation::NNUEEvaluationPolicy fresh{path};
+
+  const std::vector<std::string_view> fens = {
+    fen::kStartPosition,
+    fen::kKiwipete,
+    fen::kRookEndgame,
+    "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+    "r1bqk2r/pp2bppp/2n1pn2/2pp4/3P4/2PBPN2/PP1N1PPP/R1BQK2R w KQkq - 0 7",
+    "3r2k1/5ppp/2p1p1b1/1p6/2Pq1P2/1P1PN2P/rP1Q1RP1/3R2K1 b - - 0 26",
+    "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+    "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+  };
+
+  auto verifyTree = [&](auto& self, BoardState& state, int depth) -> void {
+    fresh.reset();
+    ASSERT_EQ(incremental.evaluate(state), fresh.evaluate(state))
+      << "Mismatch on FEN: " << notation::boardToFen(state);
+
+    if (depth <= 0) return;
+
+    const Side side = state.getSide();
+    MoveList moves;
+    if (side == White) {
+      state.generateMoves<White>(moves);
+      const size_t limit = std::min<size_t>(moves.size(), 8);
+      for (size_t i = 0; i < limit; ++i) {
+        const MoveUndo undo = state.makeMove<White>(moves[i], incremental);
+        self(self, state, depth - 1);
+        state.unmakeMove<White>(moves[i], undo, incremental);
+        fresh.reset();
+        ASSERT_EQ(incremental.evaluate(state), fresh.evaluate(state))
+          << "Mismatch after unmake on FEN: " << notation::boardToFen(state);
+      }
+    } else {
+      state.generateMoves<Black>(moves);
+      const size_t limit = std::min<size_t>(moves.size(), 8);
+      for (size_t i = 0; i < limit; ++i) {
+        const MoveUndo undo = state.makeMove<Black>(moves[i], incremental);
+        self(self, state, depth - 1);
+        state.unmakeMove<Black>(moves[i], undo, incremental);
+        fresh.reset();
+        ASSERT_EQ(incremental.evaluate(state), fresh.evaluate(state))
+          << "Mismatch after unmake on FEN: " << notation::boardToFen(state);
+      }
+    }
+  };
+
+  for (const auto fen : fens) {
+    SCOPED_TRACE(fen);
+    BoardState state{fen};
+    incremental.reset();
+    verifyTree(verifyTree, state, 3);
+  }
 }
 
 
