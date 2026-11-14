@@ -62,22 +62,20 @@ namespace bb::evaluation {
       return kingBase(orientedKing) + pieceOffset(perspective, pieceSide, piece, pieceSquare, flip);
     }
 
-    static Square kingSquare(const BoardState& state, Side perspective) noexcept {
+    static Square kingSquare(const BoardState& state, Side perspective) {
       return peekPiece(state.getPieces(perspective, King));
     }
 
     static FeatureList encode(const BoardState& state, Side perspective,
                               uint32_t kBase, uint32_t flip) {
       FeatureList features;
-      const uint32_t totalXor = (perspective == White ? 0u : 56u) ^ flip;
       for (Side relativeSide = White; relativeSide <= Black; ++relativeSide) {
         const Side pieceSide = perspective ^ relativeSide;
         for (Piece piece = Pawn; piece <= King; ++piece) {
-          const uint32_t pieceBase = kBase + ((relativeSide * 6u + piece) << 6);
           for (Bitboard pieces = state.getPieces(pieceSide, piece);
                pieces != 0;
                pieces = popPiece(pieces)) {
-            features.push(pieceBase + (peekPiece(pieces) ^ totalXor));
+            features.push(kBase + pieceOffset(perspective, pieceSide, piece, peekPiece(pieces), flip));
           }
         }
       }
@@ -109,12 +107,12 @@ namespace bb::evaluation {
     size_t applied_ = 0;
     std::array<Square, 2> cachedKingSquares_{NoSquare, NoSquare};
     std::array<uint32_t, 2> cachedKingBases_{0, 0};
-    std::array<uint32_t, 2> cachedTotalXors_{0, 56};
+    std::array<uint32_t, 2> cachedFlipMasks_{0, 0};
 
     template <bool Add>
     void applyChange(Side perspective, Side side, Piece piece, Square square) noexcept {
-      const uint32_t pieceIdx = ((side ^ perspective) * 6u) + piece;
-      const uint32_t index = cachedKingBases_[perspective] + (pieceIdx << 6) + (square ^ cachedTotalXors_[perspective]);
+      const uint32_t index = cachedKingBases_[perspective] + NnueLayout::pieceOffset(
+        perspective, side, piece, square, cachedFlipMasks_[perspective]);
       model_->feedIncremental<Add>(index, perspective);
     }
 
@@ -124,7 +122,7 @@ namespace bb::evaluation {
       const uint32_t kBase = NnueLayout::kingBase(orientedKing);
       const uint32_t flip = NnueLayout::getFlipMask(orientedKing);
       cachedKingBases_[perspective] = kBase;
-      cachedTotalXors_[perspective] = (perspective == White ? 0u : 56u) ^ flip;
+      cachedFlipMasks_[perspective] = flip;
 
       const auto features = NnueLayout::encode(state, perspective, kBase, flip);
       model_->feedFull({features.begin(), features.size()}, perspective);
@@ -199,17 +197,17 @@ namespace bb::evaluation {
         }
 
         const uint32_t kingBase = cachedKingBases_[perspective];
-        const uint32_t totalXor = cachedTotalXors_[perspective];
+        const uint32_t flipMask = cachedFlipMasks_[perspective];
         const size_t pendingCount = history_.size() - firstPending;
 
         // Fast-path 1 for quiet moves: apply piece removal and addition in a single memory pass.
         if (pendingCount == kQuietMovePieceChanges && !history_[firstPending].add && history_[firstPending + 1].add) {
           const auto& removedChange = history_[firstPending];
           const auto& addedChange = history_[firstPending + 1];
-          const uint32_t pieceIdx = ((removedChange.side ^ perspective) * 6u) + removedChange.piece;
-          const uint32_t moverBase = kingBase + (pieceIdx << 6);
-          const uint32_t subIndex = moverBase + (removedChange.square ^ totalXor);
-          const uint32_t addIndex = moverBase + (addedChange.square ^ totalXor);
+          const uint32_t subIndex = kingBase + NnueLayout::pieceOffset(
+            perspective, removedChange.side, removedChange.piece, removedChange.square, flipMask);
+          const uint32_t addIndex = kingBase + NnueLayout::pieceOffset(
+            perspective, addedChange.side, addedChange.piece, addedChange.square, flipMask);
           model_->feedIncrementalPair(subIndex, addIndex, perspective);
         } else if (pendingCount == kCaptureMovePieceChanges &&
                    !history_[firstPending].add &&
@@ -219,22 +217,19 @@ namespace bb::evaluation {
           const auto& sub0 = history_[firstPending];
           const auto& sub1 = history_[firstPending + 1];
           const auto& add0 = history_[firstPending + 2];
-
-          const uint32_t victimPieceIdx = ((sub0.side ^ perspective) * 6u) + sub0.piece;
-          const uint32_t moverPieceIdx = ((sub1.side ^ perspective) * 6u) + sub1.piece;
-          const uint32_t victimBase = kingBase + (victimPieceIdx << 6);
-          const uint32_t moverBase = kingBase + (moverPieceIdx << 6);
-
-          const uint32_t subIndex0 = victimBase + (sub0.square ^ totalXor);
-          const uint32_t subIndex1 = moverBase + (sub1.square ^ totalXor);
-          const uint32_t addIndex = moverBase + (add0.square ^ totalXor);
+          const uint32_t subIndex0 = kingBase + NnueLayout::pieceOffset(
+            perspective, sub0.side, sub0.piece, sub0.square, flipMask);
+          const uint32_t subIndex1 = kingBase + NnueLayout::pieceOffset(
+            perspective, sub1.side, sub1.piece, sub1.square, flipMask);
+          const uint32_t addIndex = kingBase + NnueLayout::pieceOffset(
+            perspective, add0.side, add0.piece, add0.square, flipMask);
           model_->feedIncrementalCapture(subIndex0, subIndex1, addIndex, perspective);
         } else {
           // Fallback path: apply all pending piece additions and subtractions sequentially.
           for (size_t i = firstPending; i < history_.size(); ++i) {
             const PieceChange& change = history_[i];
-            const uint32_t pieceIdx = ((change.side ^ perspective) * 6u) + change.piece;
-            const uint32_t index = kingBase + (pieceIdx << 6) + (change.square ^ totalXor);
+            const uint32_t index = kingBase + NnueLayout::pieceOffset(
+              perspective, change.side, change.piece, change.square, flipMask);
             if (change.add) {
               model_->feedIncremental<true>(index, perspective);
             } else {
