@@ -86,31 +86,34 @@ namespace nnue {
 
         __m256i acc0 = internal::loadVec(&acc[offset0]);
         __m256i acc1 = internal::loadVec(&acc[offset1]);
-        __m256i acc2 = internal::loadVec(&acc[offset2]);
-        __m256i acc3 = internal::loadVec(&acc[offset3]);
 
         acc0 = _mm256_min_epi16(_mm256_max_epi16(acc0, zero), clampMax);
         acc1 = _mm256_min_epi16(_mm256_max_epi16(acc1, zero), clampMax);
-        acc2 = _mm256_min_epi16(_mm256_max_epi16(acc2, zero), clampMax);
-        acc3 = _mm256_min_epi16(_mm256_max_epi16(acc3, zero), clampMax);
 
         __m256i sq0 = _mm256_mullo_epi16(acc0, acc0);
         __m256i sq1 = _mm256_mullo_epi16(acc1, acc1);
-        __m256i sq2 = _mm256_mullo_epi16(acc2, acc2);
-        __m256i sq3 = _mm256_mullo_epi16(acc3, acc3);
 
         __m256i shift0 = _mm256_min_epi16(_mm256_srai_epi16(sq0, internal::kAccumulatorSquareShift), clampMaxActivation);
         __m256i shift1 = _mm256_min_epi16(_mm256_srai_epi16(sq1, internal::kAccumulatorSquareShift), clampMaxActivation);
-        __m256i shift2 = _mm256_min_epi16(_mm256_srai_epi16(sq2, internal::kAccumulatorSquareShift), clampMaxActivation);
-        __m256i shift3 = _mm256_min_epi16(_mm256_srai_epi16(sq3, internal::kAccumulatorSquareShift), clampMaxActivation);
 
         __m256i packed0 = _mm256_packus_epi16(shift0, shift1);
         packed0 = _mm256_permute4x64_epi64(packed0, internal::kAccumulatorPermute);
+        internal::storeVec(&out[offset0], packed0);
+
+        __m256i acc2 = internal::loadVec(&acc[offset2]);
+        __m256i acc3 = internal::loadVec(&acc[offset3]);
+
+        acc2 = _mm256_min_epi16(_mm256_max_epi16(acc2, zero), clampMax);
+        acc3 = _mm256_min_epi16(_mm256_max_epi16(acc3, zero), clampMax);
+
+        __m256i sq2 = _mm256_mullo_epi16(acc2, acc2);
+        __m256i sq3 = _mm256_mullo_epi16(acc3, acc3);
+
+        __m256i shift2 = _mm256_min_epi16(_mm256_srai_epi16(sq2, internal::kAccumulatorSquareShift), clampMaxActivation);
+        __m256i shift3 = _mm256_min_epi16(_mm256_srai_epi16(sq3, internal::kAccumulatorSquareShift), clampMaxActivation);
 
         __m256i packed1 = _mm256_packus_epi16(shift2, shift3);
         packed1 = _mm256_permute4x64_epi64(packed1, internal::kAccumulatorPermute);
-
-        internal::storeVec(&out[offset0], packed0);
         internal::storeVec(&out[offset2], packed1);
       }
     }
@@ -227,87 +230,57 @@ namespace nnue {
     void feedIncrementalPair(uint32_t subIndex, uint32_t addIndex, uint32_t perspectiveIndex) noexcept {
       isComputed[perspectiveIndex] = false;
       int16_t* acc = accumulators_[perspectiveIndex].data();
-      for (size_t i = 0; i < Shape::kBlockSize; i += 4) {
+      for (size_t i = 0; i < Shape::kBlockSize; i += 2) {
         const size_t offset0 = i * internal::kInt16PerBlock;
         const size_t offset1 = (i + 1) * internal::kInt16PerBlock;
-        const size_t offset2 = (i + 2) * internal::kInt16PerBlock;
-        const size_t offset3 = (i + 3) * internal::kInt16PerBlock;
 
         __m256i weightSub0 = internal::loadVec(&weights_(subIndex, offset0));
         __m256i weightSub1 = internal::loadVec(&weights_(subIndex, offset1));
-        __m256i weightSub2 = internal::loadVec(&weights_(subIndex, offset2));
-        __m256i weightSub3 = internal::loadVec(&weights_(subIndex, offset3));
 
         __m256i weightAdd0 = internal::loadVec(&weights_(addIndex, offset0));
         __m256i weightAdd1 = internal::loadVec(&weights_(addIndex, offset1));
-        __m256i weightAdd2 = internal::loadVec(&weights_(addIndex, offset2));
-        __m256i weightAdd3 = internal::loadVec(&weights_(addIndex, offset3));
 
         __m256i diff0 = _mm256_sub_epi16(weightAdd0, weightSub0);
         __m256i diff1 = _mm256_sub_epi16(weightAdd1, weightSub1);
-        __m256i diff2 = _mm256_sub_epi16(weightAdd2, weightSub2);
-        __m256i diff3 = _mm256_sub_epi16(weightAdd3, weightSub3);
 
         __m256i acc0 = internal::loadVec(&acc[offset0]);
         __m256i acc1 = internal::loadVec(&acc[offset1]);
-        __m256i acc2 = internal::loadVec(&acc[offset2]);
-        __m256i acc3 = internal::loadVec(&acc[offset3]);
 
         acc0 = _mm256_add_epi16(acc0, diff0);
         acc1 = _mm256_add_epi16(acc1, diff1);
-        acc2 = _mm256_add_epi16(acc2, diff2);
-        acc3 = _mm256_add_epi16(acc3, diff3);
 
         internal::storeVec(&acc[offset0], acc0);
         internal::storeVec(&acc[offset1], acc1);
-        internal::storeVec(&acc[offset2], acc2);
-        internal::storeVec(&acc[offset3], acc3);
       }
     }
 
     void feedIncrementalCapture(uint32_t subIndex0, uint32_t subIndex1, uint32_t addIndex, uint32_t perspectiveIndex) noexcept {
       isComputed[perspectiveIndex] = false;
       int16_t* acc = accumulators_[perspectiveIndex].data();
-      for (size_t i = 0; i < Shape::kBlockSize; i += 4) {
+      for (size_t i = 0; i < Shape::kBlockSize; i += 2) {
         const size_t offset0 = i * internal::kInt16PerBlock;
         const size_t offset1 = (i + 1) * internal::kInt16PerBlock;
-        const size_t offset2 = (i + 2) * internal::kInt16PerBlock;
-        const size_t offset3 = (i + 3) * internal::kInt16PerBlock;
 
         __m256i wSub0_0 = internal::loadVec(&weights_(subIndex0, offset0));
         __m256i wSub0_1 = internal::loadVec(&weights_(subIndex0, offset1));
-        __m256i wSub0_2 = internal::loadVec(&weights_(subIndex0, offset2));
-        __m256i wSub0_3 = internal::loadVec(&weights_(subIndex0, offset3));
 
         __m256i wSub1_0 = internal::loadVec(&weights_(subIndex1, offset0));
         __m256i wSub1_1 = internal::loadVec(&weights_(subIndex1, offset1));
-        __m256i wSub1_2 = internal::loadVec(&weights_(subIndex1, offset2));
-        __m256i wSub1_3 = internal::loadVec(&weights_(subIndex1, offset3));
 
         __m256i wAdd_0 = internal::loadVec(&weights_(addIndex, offset0));
         __m256i wAdd_1 = internal::loadVec(&weights_(addIndex, offset1));
-        __m256i wAdd_2 = internal::loadVec(&weights_(addIndex, offset2));
-        __m256i wAdd_3 = internal::loadVec(&weights_(addIndex, offset3));
 
         __m256i diff0 = _mm256_sub_epi16(wAdd_0, _mm256_add_epi16(wSub0_0, wSub1_0));
         __m256i diff1 = _mm256_sub_epi16(wAdd_1, _mm256_add_epi16(wSub0_1, wSub1_1));
-        __m256i diff2 = _mm256_sub_epi16(wAdd_2, _mm256_add_epi16(wSub0_2, wSub1_2));
-        __m256i diff3 = _mm256_sub_epi16(wAdd_3, _mm256_add_epi16(wSub0_3, wSub1_3));
 
         __m256i acc0 = internal::loadVec(&acc[offset0]);
         __m256i acc1 = internal::loadVec(&acc[offset1]);
-        __m256i acc2 = internal::loadVec(&acc[offset2]);
-        __m256i acc3 = internal::loadVec(&acc[offset3]);
 
         acc0 = _mm256_add_epi16(acc0, diff0);
         acc1 = _mm256_add_epi16(acc1, diff1);
-        acc2 = _mm256_add_epi16(acc2, diff2);
-        acc3 = _mm256_add_epi16(acc3, diff3);
 
         internal::storeVec(&acc[offset0], acc0);
         internal::storeVec(&acc[offset1], acc1);
-        internal::storeVec(&acc[offset2], acc2);
-        internal::storeVec(&acc[offset3], acc3);
       }
     }
 
@@ -375,30 +348,46 @@ namespace nnue {
     void feedFull(std::span<const uint8_t, Shape::kInputSize> inputs) noexcept {
       const __m256i ones = _mm256_set1_epi16(1);
 
-      for (size_t row = 0; row < neuronNum; row += 8) {
-        __m256i sum0 = _mm256_setzero_si256();
-        __m256i sum1 = _mm256_setzero_si256();
-        __m256i sum2 = _mm256_setzero_si256();
-        __m256i sum3 = _mm256_setzero_si256();
-        __m256i sum4 = _mm256_setzero_si256();
-        __m256i sum5 = _mm256_setzero_si256();
-        __m256i sum6 = _mm256_setzero_si256();
-        __m256i sum7 = _mm256_setzero_si256();
+      if constexpr (Shape::kInputSize == internal::kInt8PerBlock) {
+        const __m256i in = internal::loadVec(inputs.data());
+        for (size_t row = 0; row < neuronNum; row += 8) {
+          const __m256i sum0 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, 0))), ones);
+          const __m256i sum1 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, 0))), ones);
+          const __m256i sum2 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, 0))), ones);
+          const __m256i sum3 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, 0))), ones);
+          const __m256i sum4 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, 0))), ones);
+          const __m256i sum5 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, 0))), ones);
+          const __m256i sum6 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, 0))), ones);
+          const __m256i sum7 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, 0))), ones);
 
-        for (size_t col = 0; col < Shape::kInputSize; col += internal::kInt8PerBlock) {
-          __m256i in = internal::loadVec(&inputs[col]);
-
-          sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, col))), ones));
-          sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, col))), ones));
-          sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, col))), ones));
-          sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, col))), ones));
-          sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, col))), ones));
-          sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, col))), ones));
-          sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, col))), ones));
-          sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, col))), ones));
+          reduceAndActivate8(row, sum0, sum1, sum2, sum3, sum4, sum5, sum6, sum7);
         }
+      } else {
+        for (size_t row = 0; row < neuronNum; row += 8) {
+          __m256i sum0 = _mm256_setzero_si256();
+          __m256i sum1 = _mm256_setzero_si256();
+          __m256i sum2 = _mm256_setzero_si256();
+          __m256i sum3 = _mm256_setzero_si256();
+          __m256i sum4 = _mm256_setzero_si256();
+          __m256i sum5 = _mm256_setzero_si256();
+          __m256i sum6 = _mm256_setzero_si256();
+          __m256i sum7 = _mm256_setzero_si256();
 
-        reduceAndActivate8(row, sum0, sum1, sum2, sum3, sum4, sum5, sum6, sum7);
+          for (size_t col = 0; col < Shape::kInputSize; col += internal::kInt8PerBlock) {
+            __m256i in = internal::loadVec(&inputs[col]);
+
+            sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, col))), ones));
+            sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, col))), ones));
+            sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, col))), ones));
+            sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, col))), ones));
+            sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, col))), ones));
+            sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, col))), ones));
+            sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, col))), ones));
+            sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, col))), ones));
+          }
+
+          reduceAndActivate8(row, sum0, sum1, sum2, sum3, sum4, sum5, sum6, sum7);
+        }
       }
     }
 
@@ -410,33 +399,40 @@ namespace nnue {
       const __m256i ones = _mm256_set1_epi16(1);
 
       for (size_t row = 0; row < neuronNum; row += 8) {
-        __m256i sum0 = _mm256_setzero_si256();
-        __m256i sum1 = _mm256_setzero_si256();
-        __m256i sum2 = _mm256_setzero_si256();
-        __m256i sum3 = _mm256_setzero_si256();
-        __m256i sum4 = _mm256_setzero_si256();
-        __m256i sum5 = _mm256_setzero_si256();
-        __m256i sum6 = _mm256_setzero_si256();
-        __m256i sum7 = _mm256_setzero_si256();
+        __m256i in = internal::loadVec(&in0[0]);
+        __m256i sum0 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, 0))), ones);
+        __m256i sum1 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, 0))), ones);
+        __m256i sum2 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, 0))), ones);
+        __m256i sum3 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, 0))), ones);
+        __m256i sum4 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, 0))), ones);
+        __m256i sum5 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, 0))), ones);
+        __m256i sum6 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, 0))), ones);
+        __m256i sum7 = _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, 0))), ones);
 
-        auto accumulateBlock = [&](std::span<const uint8_t, HalfSize> inputSpan, size_t columnOffset) {
-          for (size_t col = 0; col < HalfSize; col += internal::kInt8PerBlock) {
-            const size_t weightColumn = columnOffset + col;
-            __m256i in = internal::loadVec(&inputSpan[col]);
+        for (size_t col = internal::kInt8PerBlock; col < HalfSize; col += internal::kInt8PerBlock) {
+          in = internal::loadVec(&in0[col]);
+          sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, col))), ones));
+          sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, col))), ones));
+          sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, col))), ones));
+          sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, col))), ones));
+          sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, col))), ones));
+          sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, col))), ones));
+          sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, col))), ones));
+          sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, col))), ones));
+        }
 
-            sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, weightColumn))), ones));
-            sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, weightColumn))), ones));
-            sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, weightColumn))), ones));
-            sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, weightColumn))), ones));
-            sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, weightColumn))), ones));
-            sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, weightColumn))), ones));
-            sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, weightColumn))), ones));
-            sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, weightColumn))), ones));
-          }
-        };
-
-        accumulateBlock(in0, 0);
-        accumulateBlock(in1, HalfSize);
+        for (size_t col = 0; col < HalfSize; col += internal::kInt8PerBlock) {
+          const size_t weightColumn = HalfSize + col;
+          in = internal::loadVec(&in1[col]);
+          sum0 = _mm256_add_epi32(sum0, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 0, weightColumn))), ones));
+          sum1 = _mm256_add_epi32(sum1, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 1, weightColumn))), ones));
+          sum2 = _mm256_add_epi32(sum2, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 2, weightColumn))), ones));
+          sum3 = _mm256_add_epi32(sum3, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 3, weightColumn))), ones));
+          sum4 = _mm256_add_epi32(sum4, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 4, weightColumn))), ones));
+          sum5 = _mm256_add_epi32(sum5, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 5, weightColumn))), ones));
+          sum6 = _mm256_add_epi32(sum6, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 6, weightColumn))), ones));
+          sum7 = _mm256_add_epi32(sum7, _mm256_madd_epi16(_mm256_maddubs_epi16(in, internal::loadVec(&weights_(row + 7, weightColumn))), ones));
+        }
 
         reduceAndActivate8(row, sum0, sum1, sum2, sum3, sum4, sum5, sum6, sum7);
       }
@@ -477,22 +473,40 @@ namespace nnue {
       bucket = std::min<uint32_t>(bucket, static_cast<uint32_t>(bucketNum - 1));
       const auto& bWeights = weights_[bucket];
 
-      __m256i sumVec = _mm256_setzero_si256();
-      for (size_t col = 0; col < Shape::kInputSize; col += kInputsPerStep) {
-        const __m256i input256 = internal::loadVec(inputs.data() + col);
+      __m256i sumVec;
+      if constexpr (Shape::kInputSize == kInputsPerStep) {
+        const __m256i input256 = internal::loadVec(inputs.data());
         const __m128i inputLow128 = _mm256_castsi256_si128(input256);
         const __m128i inputHigh128 = _mm256_extracti128_si256(input256, 1);
 
         const __m256i inputLow16 = _mm256_cvtepu8_epi16(inputLow128);
         const __m256i inputHigh16 = _mm256_cvtepu8_epi16(inputHigh128);
 
-        const __m256i weightLow = internal::loadVec(bWeights.data() + col);
-        const __m256i weightHigh = internal::loadVec(bWeights.data() + col + kWeightsPerVector);
+        const __m256i weightLow = internal::loadVec(bWeights.data());
+        const __m256i weightHigh = internal::loadVec(bWeights.data() + kWeightsPerVector);
 
         const __m256i productLow = _mm256_madd_epi16(inputLow16, weightLow);
         const __m256i productHigh = _mm256_madd_epi16(inputHigh16, weightHigh);
 
-        sumVec = _mm256_add_epi32(sumVec, _mm256_add_epi32(productLow, productHigh));
+        sumVec = _mm256_add_epi32(productLow, productHigh);
+      } else {
+        sumVec = _mm256_setzero_si256();
+        for (size_t col = 0; col < Shape::kInputSize; col += kInputsPerStep) {
+          const __m256i input256 = internal::loadVec(inputs.data() + col);
+          const __m128i inputLow128 = _mm256_castsi256_si128(input256);
+          const __m128i inputHigh128 = _mm256_extracti128_si256(input256, 1);
+
+          const __m256i inputLow16 = _mm256_cvtepu8_epi16(inputLow128);
+          const __m256i inputHigh16 = _mm256_cvtepu8_epi16(inputHigh128);
+
+          const __m256i weightLow = internal::loadVec(bWeights.data() + col);
+          const __m256i weightHigh = internal::loadVec(bWeights.data() + col + kWeightsPerVector);
+
+          const __m256i productLow = _mm256_madd_epi16(inputLow16, weightLow);
+          const __m256i productHigh = _mm256_madd_epi16(inputHigh16, weightHigh);
+
+          sumVec = _mm256_add_epi32(sumVec, _mm256_add_epi32(productLow, productHigh));
+        }
       }
       const int32_t total = horizontalAdd32(sumVec) + biases_[bucket];
 
