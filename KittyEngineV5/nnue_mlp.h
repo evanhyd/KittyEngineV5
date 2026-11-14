@@ -9,30 +9,32 @@
 namespace nnue {
   class NnueModel {
   public:
-    static constexpr size_t kInputSize = 49'152;
+    static constexpr size_t kInputSize = 24'576;
     static constexpr size_t kAccumulatorSize = 256;
-    static constexpr size_t kHiddenSize = 32;
+    static constexpr size_t kHidden1Size = 32;
+    static constexpr size_t kHidden2Size = 32;
+    static constexpr size_t kOutputBuckets = 8;
 
   private:
     AccumulatorLayer<kAccumulatorSize, kInputSize> accumulator_;
-    DenseLayer<kHiddenSize, 2 * kAccumulatorSize> firstHidden_;
-    DenseLayer<kHiddenSize, kHiddenSize> secondHidden_;
-    OutputLayer<kHiddenSize, linear> output_;
+    DenseLayer<kHidden1Size, 2 * kAccumulatorSize> firstHidden_;
+    DenseLayer<kHidden2Size, kHidden1Size> secondHidden_;
+    OutputLayer<kHidden2Size, kOutputBuckets> output_;
 
   public:
     AccumulatorLayer<kAccumulatorSize, kInputSize>& accumulator() noexcept {
       return accumulator_;
     }
 
-    DenseLayer<kHiddenSize, 2 * kAccumulatorSize>& firstHidden() noexcept {
+    DenseLayer<kHidden1Size, 2 * kAccumulatorSize>& firstHidden() noexcept {
       return firstHidden_;
     }
 
-    DenseLayer<kHiddenSize, kHiddenSize>& secondHidden() noexcept {
+    DenseLayer<kHidden2Size, kHidden1Size>& secondHidden() noexcept {
       return secondHidden_;
     }
 
-    OutputLayer<kHiddenSize, linear>& outputLayer() noexcept {
+    OutputLayer<kHidden2Size, kOutputBuckets>& outputLayer() noexcept {
       return output_;
     }
 
@@ -57,7 +59,11 @@ namespace nnue {
       accumulator_.feedIncrementalPair(subIndex, addIndex, perspectiveIndex);
     }
 
-    int32_t evaluate(uint32_t perspectiveIndex) {
+    void feedIncrementalCapture(uint32_t subIndex0, uint32_t subIndex1, uint32_t addIndex, uint32_t perspectiveIndex) noexcept {
+      accumulator_.feedIncrementalCapture(subIndex0, subIndex1, addIndex, perspectiveIndex);
+    }
+
+    int32_t evaluate(uint32_t perspectiveIndex, uint32_t bucket) {
       // Retrieve activated accumulator outputs for both perspectives (side to move first, then opponent).
       const auto perspectives = accumulator_.output();
       const auto selected = perspectives[perspectiveIndex];
@@ -67,9 +73,8 @@ namespace nnue {
       firstHidden_.feedFull(selected, opposite);
       secondHidden_.feedFull(firstHidden_.output());
 
-      // Compute final output layer activation and return the centipawn score directly.
-      output_.feedFull(secondHidden_.output());
-      return output_.output();
+      // Compute final output layer activation for the selected material/piece bucket and return centipawns.
+      return output_.feedFull(secondHidden_.output(), bucket);
     }
   };
 }

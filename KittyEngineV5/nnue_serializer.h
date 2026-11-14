@@ -20,11 +20,29 @@ namespace nnue {
   class NnueSerializer {
     static_assert(std::endian::native == std::endian::little);
     static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
-    static constexpr std::array<char, 8> kMagicV5{'N', 'N', 'U', 'E', 'S', 'G', 'D', '5'};
-    static constexpr std::array<uint64_t, 4> kDimensions{
+    static constexpr std::array<char, 8> kMagicV6{'N', 'N', 'U', 'E', 'S', 'G', 'D', '6'};
+    static constexpr std::array<uint64_t, 5> kDimensions{
       NnueModel::kInputSize, NnueModel::kAccumulatorSize,
-      NnueModel::kHiddenSize, NnueModel::kHiddenSize
+      NnueModel::kHidden1Size, NnueModel::kHidden2Size,
+      NnueModel::kOutputBuckets
     };
+
+    static constexpr float kQuantScaleL0 = 64.0f;
+    static constexpr float kQuantScaleL1Bias = 8192.0f;
+    static constexpr float kQuantScaleL1Weight = 64.0f;
+    static constexpr float kQuantScaleL2Bias = 8192.0f;
+    static constexpr float kQuantScaleL2Weight = 64.0f;
+    static constexpr float kQuantScaleL3Bias = 2048.0f;
+    static constexpr float kQuantScaleL3Weight = 16.0f;
+
+    template <typename TargetInt, typename FloatType>
+    [[nodiscard]] static constexpr TargetInt quantize(FloatType value, FloatType scale) noexcept {
+      const auto quantized = static_cast<int32_t>(std::lround(value * scale));
+      return static_cast<TargetInt>(std::clamp<int32_t>(
+        quantized,
+        static_cast<int32_t>(std::numeric_limits<TargetInt>::min()),
+        static_cast<int32_t>(std::numeric_limits<TargetInt>::max())));
+    }
 
     class Reader {
       std::ifstream stream_;
@@ -88,9 +106,9 @@ namespace nnue {
       Reader reader(filename);
       std::array<char, 8> magic{};
       reader.value(magic, "header magic");
-      if (magic != kMagicV5) {
+      if (magic != kMagicV6) {
         throw std::runtime_error(std::format(
-          "NNUE checkpoint '{}', header magic at byte 0: expected NNUESGD5 (SCReLU); older checkpoints require retraining",
+          "NNUE checkpoint '{}', header magic at byte 0: expected NNUESGD6 (Folded SCReLU 8-Bucket); older checkpoints require retraining",
           filename.string()));
       }
 
@@ -113,9 +131,7 @@ namespace nnue {
       reader.floats(accumulatorBiasesRaw, "accumulator biases");
       auto accumulatorBiases = model->accumulator().biases();
       for (size_t i = 0; i < NnueModel::kAccumulatorSize; ++i) {
-        const auto quantizedValue = static_cast<int32_t>(std::lround(accumulatorBiasesRaw[i] * 64.0f));
-        accumulatorBiases[i] = static_cast<int16_t>(std::clamp<int32_t>(
-          quantizedValue, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+        accumulatorBiases[i] = quantize<int16_t>(accumulatorBiasesRaw[i], kQuantScaleL0);
       }
 
       // 2. Quantize L0 Weights (float * 64 -> int16_t, streamed row-by-row)
@@ -125,62 +141,56 @@ namespace nnue {
         reader.floats(rowFloats, "accumulator weights");
         const size_t rowOffset = row * NnueModel::kAccumulatorSize;
         for (size_t col = 0; col < NnueModel::kAccumulatorSize; ++col) {
-          const auto quantizedValue = static_cast<int32_t>(std::lround(rowFloats[col] * 64.0f));
-          accumulatorWeights[rowOffset + col] = static_cast<int16_t>(std::clamp<int32_t>(
-            quantizedValue, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+          accumulatorWeights[rowOffset + col] = quantize<int16_t>(rowFloats[col], kQuantScaleL0);
         }
       }
 
       // 3. Quantize L1 Biases (float * 8192 -> int32_t)
-      std::array<float, NnueModel::kHiddenSize> firstHiddenBiasesRaw{};
+      std::array<float, NnueModel::kHidden1Size> firstHiddenBiasesRaw{};
       reader.floats(firstHiddenBiasesRaw, "first hidden biases");
       auto firstHiddenBiases = model->firstHidden().biases();
-      for (size_t i = 0; i < NnueModel::kHiddenSize; ++i) {
-        firstHiddenBiases[i] = static_cast<int32_t>(std::lround(firstHiddenBiasesRaw[i] * 8192.0f));
+      for (size_t i = 0; i < NnueModel::kHidden1Size; ++i) {
+        firstHiddenBiases[i] = static_cast<int32_t>(std::lround(firstHiddenBiasesRaw[i] * kQuantScaleL1Bias));
       }
 
       // 4. Quantize L1 Weights (float * 64 -> int8_t)
-      std::vector<float> firstHiddenWeightsRaw(NnueModel::kHiddenSize * 2 * NnueModel::kAccumulatorSize);
+      std::vector<float> firstHiddenWeightsRaw(NnueModel::kHidden1Size * 2 * NnueModel::kAccumulatorSize);
       reader.floats(firstHiddenWeightsRaw, "first hidden weights");
       auto firstHiddenWeights = model->firstHidden().weights();
       for (size_t i = 0; i < firstHiddenWeightsRaw.size(); ++i) {
-        const auto quantizedValue = static_cast<int32_t>(std::lround(firstHiddenWeightsRaw[i] * 64.0f));
-        firstHiddenWeights[i] = static_cast<int8_t>(std::clamp<int32_t>(
-          quantizedValue, std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()));
+        firstHiddenWeights[i] = quantize<int8_t>(firstHiddenWeightsRaw[i], kQuantScaleL1Weight);
       }
 
       // 5. Quantize L2 Biases (float * 8192 -> int32_t)
-      std::array<float, NnueModel::kHiddenSize> secondHiddenBiasesRaw{};
+      std::array<float, NnueModel::kHidden2Size> secondHiddenBiasesRaw{};
       reader.floats(secondHiddenBiasesRaw, "second hidden biases");
       auto secondHiddenBiases = model->secondHidden().biases();
-      for (size_t i = 0; i < NnueModel::kHiddenSize; ++i) {
-        secondHiddenBiases[i] = static_cast<int32_t>(std::lround(secondHiddenBiasesRaw[i] * 8192.0f));
+      for (size_t i = 0; i < NnueModel::kHidden2Size; ++i) {
+        secondHiddenBiases[i] = static_cast<int32_t>(std::lround(secondHiddenBiasesRaw[i] * kQuantScaleL2Bias));
       }
 
       // 6. Quantize L2 Weights (float * 64 -> int8_t)
-      std::array<float, NnueModel::kHiddenSize * NnueModel::kHiddenSize> secondHiddenWeightsRaw{};
+      std::array<float, NnueModel::kHidden2Size * NnueModel::kHidden1Size> secondHiddenWeightsRaw{};
       reader.floats(secondHiddenWeightsRaw, "second hidden weights");
       auto secondHiddenWeights = model->secondHidden().weights();
       for (size_t i = 0; i < secondHiddenWeightsRaw.size(); ++i) {
-        const auto quantizedValue = static_cast<int32_t>(std::lround(secondHiddenWeightsRaw[i] * 64.0f));
-        secondHiddenWeights[i] = static_cast<int8_t>(std::clamp<int32_t>(
-          quantizedValue, std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()));
+        secondHiddenWeights[i] = quantize<int8_t>(secondHiddenWeightsRaw[i], kQuantScaleL2Weight);
       }
 
-      // 7. Quantize L3 Bias (float * 2048 -> int32_t)
-      std::array<float, 1> outputBiasRaw{};
-      reader.floats(outputBiasRaw, "output bias");
-      model->outputLayer().biases()[0] = static_cast<int32_t>(
-        std::lround(outputBiasRaw[0] * 2048.0f));
+      // 7. Quantize L3 Biases (8 floats * 2048 -> int32_t)
+      std::array<float, NnueModel::kOutputBuckets> outputBiasesRaw{};
+      reader.floats(outputBiasesRaw, "output biases");
+      auto outputBiases = model->outputLayer().biases();
+      for (size_t b = 0; b < NnueModel::kOutputBuckets; ++b) {
+        outputBiases[b] = static_cast<int32_t>(std::lround(outputBiasesRaw[b] * kQuantScaleL3Bias));
+      }
 
-      // 8. Quantize L3 Weights (float * 16 -> int16_t)
-      std::array<float, NnueModel::kHiddenSize> outputWeightsRaw{};
+      // 8. Quantize L3 Weights (8 * 32 floats * 16 -> int16_t)
+      std::array<float, NnueModel::kOutputBuckets * NnueModel::kHidden2Size> outputWeightsRaw{};
       reader.floats(outputWeightsRaw, "output weights");
       auto outputWeights = model->outputLayer().weights();
-      for (size_t i = 0; i < NnueModel::kHiddenSize; ++i) {
-        const auto quantizedValue = static_cast<int32_t>(std::lround(outputWeightsRaw[i] * 16.0f));
-        outputWeights[i] = static_cast<int16_t>(std::clamp<int32_t>(
-          quantizedValue, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+      for (size_t i = 0; i < outputWeightsRaw.size(); ++i) {
+        outputWeights[i] = quantize<int16_t>(outputWeightsRaw[i], kQuantScaleL3Weight);
       }
 
       reader.finish();

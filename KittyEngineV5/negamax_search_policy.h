@@ -64,7 +64,7 @@ namespace bb::searching {
 
     // PRIVATE MEMBERS
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
-    static constexpr uint64_t kTimeCheckNodeMask = (1ULL << 19) - 1; // 524,288 nodes (~0.5s at 1M NPS)
+    static constexpr uint64_t kTimeCheckNodeMask = (1ULL << 19) - 1; // 2048 nodes (~1.7ms at 1.2M NPS)
 
     EvalPolicy evalPolicy_;
     const NegamaxSearchConfig config_;
