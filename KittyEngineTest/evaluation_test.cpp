@@ -309,8 +309,8 @@ TEST(Nnue, KingRelativeFeaturesUseBothPerspectives) {
 
   ASSERT_EQ(white.size(), 3u);
   ASSERT_EQ(black.size(), 3u);
-  EXPECT_EQ(white[0], 23'859u);
-  EXPECT_EQ(black[1], 24'203u);
+  EXPECT_EQ(white[0], 46'132u);
+  EXPECT_EQ(black[1], 46'476u);
   EXPECT_EQ(white[0], evaluation::NnueLayout::pieceIndex(White, White, Pawn, E1, E2));
   EXPECT_EQ(black[1], evaluation::NnueLayout::pieceIndex(Black, White, Pawn, E8, E2));
 
@@ -388,7 +388,7 @@ TEST(Nnue, CheckpointRequiresSCReLUVersion) {
 TEST(Nnue, NewCheckpointLoadsAndReportsCorruption) {
   const auto trainedWeights = testWeightsPath();
   ASSERT_TRUE(std::filesystem::exists(trainedWeights));
-  EXPECT_EQ(std::filesystem::file_size(trainedWeights), 25'237'864u);
+  EXPECT_EQ(std::filesystem::file_size(trainedWeights), 50'473'448u);
   EXPECT_NO_THROW((void)nnue::NnueSerializer::load(trainedWeights));
 
   TemporaryFile malformed;

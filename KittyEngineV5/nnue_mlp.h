@@ -9,9 +9,9 @@
 namespace nnue {
   class NnueModel {
   public:
-    static constexpr size_t kInputSize = 24'576;
+    static constexpr size_t kInputSize = 49'152;
     static constexpr size_t kAccumulatorSize = 256;
-    static constexpr size_t kHidden1Size = 32;
+    static constexpr size_t kHidden1Size = 64;
     static constexpr size_t kHidden2Size = 32;
     static constexpr size_t kOutputBuckets = 8;
 

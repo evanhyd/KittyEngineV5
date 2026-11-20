@@ -108,7 +108,7 @@ namespace nnue {
       reader.value(magic, "header magic");
       if (magic != kMagicV6) {
         throw std::runtime_error(std::format(
-          "NNUE checkpoint '{}', header magic at byte 0: expected NNUESGD6 (Folded SCReLU 8-Bucket); older checkpoints require retraining",
+          "NNUE checkpoint '{}', header magic at byte 0: expected NNUESGD6 (HalfKA SCReLU 8-Bucket); older checkpoints require retraining",
           filename.string()));
       }
 
