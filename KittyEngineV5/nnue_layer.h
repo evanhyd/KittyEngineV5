@@ -52,6 +52,31 @@ namespace nnue {
     };
   }
 
+  // Vectorized pairwise interaction (Hadamard product) between first and second halves of an accumulator.
+  // Computes: out[i] = (acc[i] * acc[AccumSize / 2 + i]) >> 7 for i in 0 .. AccumSize / 2.
+  template <size_t AccumSize>
+  inline void pairwisePerspectiveHadamard(const uint8_t* acc, uint8_t* out) noexcept {
+    static_assert(AccumSize % 64 == 0, "AccumSize must be a multiple of 64 for pairwise Hadamard");
+    constexpr size_t HalfSize = AccumSize / 2;
+    const __m256i zero = _mm256_setzero_si256();
+
+    for (size_t i = 0; i < HalfSize; i += internal::kInt8PerBlock) {
+      const __m256i lo = internal::loadVec(&acc[i]);
+      const __m256i hi = internal::loadVec(&acc[HalfSize + i]);
+
+      const __m256i lo_0 = _mm256_unpacklo_epi8(lo, zero);
+      const __m256i lo_1 = _mm256_unpackhi_epi8(lo, zero);
+      const __m256i hi_0 = _mm256_unpacklo_epi8(hi, zero);
+      const __m256i hi_1 = _mm256_unpackhi_epi8(hi, zero);
+
+      const __m256i prod_0 = _mm256_srli_epi16(_mm256_mullo_epi16(lo_0, hi_0), 7);
+      const __m256i prod_1 = _mm256_srli_epi16(_mm256_mullo_epi16(lo_1, hi_1), 7);
+
+      const __m256i res = _mm256_packus_epi16(prod_0, prod_1);
+      internal::storeVec(&out[i], res);
+    }
+  }
+
   // Dual-perspective accumulator layer storing int16_t weights and biases for pure AVX2 integer updates.
   template <size_t neuronNum, size_t previousNeuronNum>
   class AccumulatorLayer {
@@ -305,19 +330,33 @@ namespace nnue {
     alignas(32) std::array<uint8_t, neuronNum> output_{};
 
     // Vectorized 8-way reduction and activation pipeline into output_[row..row+7].
+    // Replaces high-latency _mm256_hadd_epi32 with an unrolled transpose & vertical addition pipeline.
     inline void reduceAndActivate8(size_t row,
                                    __m256i sum0, __m256i sum1, __m256i sum2, __m256i sum3,
                                    __m256i sum4, __m256i sum5, __m256i sum6, __m256i sum7) noexcept {
-      const __m256i s01 = _mm256_hadd_epi32(sum0, sum1);
-      const __m256i s23 = _mm256_hadd_epi32(sum2, sum3);
-      const __m256i s45 = _mm256_hadd_epi32(sum4, sum5);
-      const __m256i s67 = _mm256_hadd_epi32(sum6, sum7);
+      // Stage 1: Interleave 32-bit integers within each 128-bit lane
+      const __m256i t0 = _mm256_unpacklo_epi32(sum0, sum1);
+      const __m256i t1 = _mm256_unpackhi_epi32(sum0, sum1);
+      const __m256i t2 = _mm256_unpacklo_epi32(sum2, sum3);
+      const __m256i t3 = _mm256_unpackhi_epi32(sum2, sum3);
+      const __m256i t4 = _mm256_unpacklo_epi32(sum4, sum5);
+      const __m256i t5 = _mm256_unpackhi_epi32(sum4, sum5);
+      const __m256i t6 = _mm256_unpacklo_epi32(sum6, sum7);
+      const __m256i t7 = _mm256_unpackhi_epi32(sum6, sum7);
 
-      const __m256i h0123 = _mm256_hadd_epi32(s01, s23);
-      const __m256i h4567 = _mm256_hadd_epi32(s45, s67);
+      // Stage 2: Vertical additions to sum pairs
+      const __m256i a0 = _mm256_add_epi32(t0, t1);
+      const __m256i a1 = _mm256_add_epi32(t2, t3);
+      const __m256i a2 = _mm256_add_epi32(t4, t5);
+      const __m256i a3 = _mm256_add_epi32(t6, t7);
 
-      const __m128i dots0123 = _mm_add_epi32(_mm256_castsi256_si128(h0123), _mm256_extracti128_si256(h0123, 1));
-      const __m128i dots4567 = _mm_add_epi32(_mm256_castsi256_si128(h4567), _mm256_extracti128_si256(h4567, 1));
+      // Stage 3: Interleave 64-bit words and add
+      const __m256i b0 = _mm256_add_epi32(_mm256_unpacklo_epi64(a0, a1), _mm256_unpackhi_epi64(a0, a1));
+      const __m256i b1 = _mm256_add_epi32(_mm256_unpacklo_epi64(a2, a3), _mm256_unpackhi_epi64(a2, a3));
+
+      // Stage 4: Sum low and high 128-bit halves
+      const __m128i dots0123 = _mm_add_epi32(_mm256_castsi256_si128(b0), _mm256_extracti128_si256(b0, 1));
+      const __m128i dots4567 = _mm_add_epi32(_mm256_castsi256_si128(b1), _mm256_extracti128_si256(b1, 1));
 
       const __m256i dots8 = _mm256_set_m128i(dots4567, dots0123);
       const __m256i biases8 = internal::loadVec(&biases_[row]);

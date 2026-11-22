@@ -102,8 +102,8 @@ namespace bb {
           result.searchingTime = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - startTime);
           resultCallback(result);
 
-          // Stop if times up or have winning mate.
-          if (timePolicy_.isTimeUpSoft(side) || (searchPolicy_.isCheckmateScore(result.score) && result.score > 0)) {
+          // Stop if times up.
+          if (timePolicy_.isTimeUpSoft(side)) {
             break;
           }
         }

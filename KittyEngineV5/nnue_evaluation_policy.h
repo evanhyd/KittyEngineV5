@@ -18,7 +18,12 @@ namespace bb::evaluation {
     static constexpr uint32_t kPieceTypes = 6; // 6 piece types (Pawn, Knight, Bishop, Rook, Queen, King)
     static constexpr uint32_t kKingPlaneStride = 2 * kPieceTypes * kSquareSize; // 768 inputs per king square
     static constexpr uint32_t kPiecePlaneStride = kSquareSize;                  // 64 squares per piece plane
-    static constexpr uint32_t kInputSize = nnue::NnueModel::kInputSize;         // 49,152 total sparse inputs
+    static constexpr uint32_t kInputSize = nnue::NnueModel::kInputSize;         // 24,576 total sparse inputs
+    static constexpr uint32_t kFileMask = 7;
+    static constexpr uint32_t kFoldCutoffFile = 3;
+    static constexpr uint32_t kHorizontalFlipMask = 7;
+    static constexpr uint32_t kRankShift = 3;
+    static constexpr uint32_t kFoldedFiles = 4;
     using FeatureList = SmallVec<uint32_t, kSquareSize>;
 
     static constexpr Square orient(Side perspective, Square square) noexcept {
@@ -28,30 +33,44 @@ namespace bb::evaluation {
       return static_cast<Square>(square ^ kRankFlipMask);
     }
 
+    static constexpr uint32_t kingFlipMask(Side perspective, Square kingSquare) noexcept {
+      const Square orientedKing = orient(perspective, kingSquare);
+      return ((orientedKing & kFileMask) > kFoldCutoffFile) ? kHorizontalFlipMask : 0;
+    }
+
+    static constexpr uint32_t kingFlipMask(Square orientedKingSquare) noexcept {
+      return ((orientedKingSquare & kFileMask) > kFoldCutoffFile) ? kHorizontalFlipMask : 0;
+    }
+
+    static constexpr uint32_t kingIndex(Side perspective, Square kingSquare) noexcept {
+      const Square orientedKing = orient(perspective, kingSquare);
+      const uint32_t flipMask = ((orientedKing & kFileMask) > kFoldCutoffFile) ? kHorizontalFlipMask : 0;
+      const Square foldedKing = static_cast<Square>(orientedKing ^ flipMask);
+      return ((foldedKing >> kRankShift) * kFoldedFiles) + (foldedKing & kFileMask);
+    }
+
     static constexpr uint32_t kingBase(Side perspective, Square kingSquare) noexcept {
-      const uint32_t orientedKing = orient(perspective, kingSquare);
-      return orientedKing * kKingPlaneStride;
+      return kingIndex(perspective, kingSquare) * kKingPlaneStride;
     }
 
     static constexpr uint32_t kingBase(Square orientedKingSquare) noexcept {
-      return orientedKingSquare * kKingPlaneStride;
+      const uint32_t flipMask = ((orientedKingSquare & kFileMask) > kFoldCutoffFile) ? kHorizontalFlipMask : 0;
+      const Square foldedKing = static_cast<Square>(orientedKingSquare ^ flipMask);
+      const uint32_t idx = ((foldedKing >> kRankShift) * kFoldedFiles) + (foldedKing & kFileMask);
+      return idx * kKingPlaneStride;
     }
 
-    static constexpr uint32_t pieceOffset(Side perspective, Side pieceSide, Piece piece, Square pieceSquare) noexcept {
+    static constexpr uint32_t pieceOffset(Side perspective, Side pieceSide, Piece piece, Square pieceSquare, uint32_t flipMask = 0) noexcept {
       const uint32_t relativeSide = pieceSide ^ perspective;
       const Square orientedPiece = orient(perspective, pieceSquare);
+      const Square flippedPiece = static_cast<Square>(orientedPiece ^ flipMask);
       const uint32_t pieceIdx = relativeSide * kPieceTypes + piece;
-      return pieceIdx * kPiecePlaneStride + orientedPiece;
+      return pieceIdx * kPiecePlaneStride + flippedPiece;
     }
 
-    // Backwards-compatible overload for 5 arguments (ignores unused flipMask in full Half KA)
-    static constexpr uint32_t pieceOffset(Side perspective, Side pieceSide, Piece piece, Square pieceSquare, [[maybe_unused]] uint32_t flipMask) noexcept {
-      return pieceOffset(perspective, pieceSide, piece, pieceSquare);
-    }
-
-    // Input Index: [own king square: 64] * 768 + [piece index: 12] * 64 + [piece square: 64]
     static constexpr uint32_t pieceIndex(Side perspective, Side pieceSide, Piece piece, Square kingSquare, Square pieceSquare) noexcept {
-      return kingBase(perspective, kingSquare) + pieceOffset(perspective, pieceSide, piece, pieceSquare);
+      const uint32_t flipMask = kingFlipMask(perspective, kingSquare);
+      return kingBase(perspective, kingSquare) + pieceOffset(perspective, pieceSide, piece, pieceSquare, flipMask);
     }
 
     static Square kingSquare(const BoardState& state, Side perspective) {
@@ -60,6 +79,7 @@ namespace bb::evaluation {
 
     static FeatureList encode(const BoardState& state, Side perspective, Square kingSquare) {
       FeatureList features;
+      const uint32_t flipMask = kingFlipMask(perspective, kingSquare);
       const uint32_t kBase = kingBase(perspective, kingSquare);
       for (Side relativeSide = White; relativeSide <= Black; ++relativeSide) {
         const Side pieceSide = perspective ^ relativeSide;
@@ -67,7 +87,7 @@ namespace bb::evaluation {
           for (Bitboard pieces = state.getPieces(pieceSide, piece);
                pieces != 0;
                pieces = popPiece(pieces)) {
-            features.push(kBase + pieceOffset(perspective, pieceSide, piece, peekPiece(pieces)));
+            features.push(kBase + pieceOffset(perspective, pieceSide, piece, peekPiece(pieces), flipMask));
           }
         }
       }
@@ -93,16 +113,18 @@ namespace bb::evaluation {
     size_t applied_ = 0;
     std::array<Square, 2> cachedKingSquares_{NoSquare, NoSquare};
     std::array<uint32_t, 2> cachedKingBases_{0, 0};
+    std::array<uint32_t, 2> cachedFlipMasks_{0, 0};
 
     template <bool Add>
     void applyChange(Side perspective, Side side, Piece piece, Square square) noexcept {
       const uint32_t index = cachedKingBases_[perspective] + NnueLayout::pieceOffset(
-        perspective, side, piece, square);
+        perspective, side, piece, square, cachedFlipMasks_[perspective]);
       model_->feedIncremental<Add>(index, perspective);
     }
 
     void rebuild(const BoardState& state, Side perspective, Square kingSquare) {
       cachedKingSquares_[perspective] = kingSquare;
+      cachedFlipMasks_[perspective] = NnueLayout::kingFlipMask(perspective, kingSquare);
       const uint32_t kBase = NnueLayout::kingBase(perspective, kingSquare);
       cachedKingBases_[perspective] = kBase;
 
@@ -177,6 +199,7 @@ namespace bb::evaluation {
         }
 
         const uint32_t kingBase = cachedKingBases_[perspective];
+        const uint32_t flipMask = cachedFlipMasks_[perspective];
         const size_t pendingCount = history_.size() - firstPending;
 
         // Fast-path 1 for quiet moves: apply piece removal and addition in a single memory pass.
@@ -184,9 +207,9 @@ namespace bb::evaluation {
           const auto& removedChange = history_[firstPending];
           const auto& addedChange = history_[firstPending + 1];
           const uint32_t subIndex = kingBase + NnueLayout::pieceOffset(
-            perspective, removedChange.side, removedChange.piece, removedChange.square);
+            perspective, removedChange.side, removedChange.piece, removedChange.square, flipMask);
           const uint32_t addIndex = kingBase + NnueLayout::pieceOffset(
-            perspective, addedChange.side, addedChange.piece, addedChange.square);
+            perspective, addedChange.side, addedChange.piece, addedChange.square, flipMask);
           model_->feedIncrementalPair(subIndex, addIndex, perspective);
         } else if (pendingCount == kCaptureMovePieceChanges &&
                    !history_[firstPending].add &&
@@ -197,18 +220,18 @@ namespace bb::evaluation {
           const auto& sub1 = history_[firstPending + 1];
           const auto& add0 = history_[firstPending + 2];
           const uint32_t subIndex0 = kingBase + NnueLayout::pieceOffset(
-            perspective, sub0.side, sub0.piece, sub0.square);
+            perspective, sub0.side, sub0.piece, sub0.square, flipMask);
           const uint32_t subIndex1 = kingBase + NnueLayout::pieceOffset(
-            perspective, sub1.side, sub1.piece, sub1.square);
+            perspective, sub1.side, sub1.piece, sub1.square, flipMask);
           const uint32_t addIndex = kingBase + NnueLayout::pieceOffset(
-            perspective, add0.side, add0.piece, add0.square);
+            perspective, add0.side, add0.piece, add0.square, flipMask);
           model_->feedIncrementalCapture(subIndex0, subIndex1, addIndex, perspective);
         } else {
           // Fallback path: apply all pending piece additions and subtractions sequentially.
           for (size_t i = firstPending; i < history_.size(); ++i) {
             const PieceChange& change = history_[i];
             const uint32_t index = kingBase + NnueLayout::pieceOffset(
-              perspective, change.side, change.piece, change.square);
+              perspective, change.side, change.piece, change.square, flipMask);
             if (change.add) {
               model_->feedIncremental<true>(index, perspective);
             } else {

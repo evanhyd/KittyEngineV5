@@ -9,24 +9,26 @@
 namespace nnue {
   class NnueModel {
   public:
-    static constexpr size_t kInputSize = 49'152;
+    static constexpr size_t kInputSize = 24'576;
     static constexpr size_t kAccumulatorSize = 256;
+    static constexpr size_t kPairwiseSize = 256;
     static constexpr size_t kHidden1Size = 64;
     static constexpr size_t kHidden2Size = 32;
     static constexpr size_t kOutputBuckets = 8;
 
   private:
     AccumulatorLayer<kAccumulatorSize, kInputSize> accumulator_;
-    DenseLayer<kHidden1Size, 2 * kAccumulatorSize> firstHidden_;
+    DenseLayer<kHidden1Size, kPairwiseSize> firstHidden_;
     DenseLayer<kHidden2Size, kHidden1Size> secondHidden_;
     OutputLayer<kHidden2Size, kOutputBuckets> output_;
+    alignas(32) std::array<uint8_t, kPairwiseSize> pairwise_{};
 
   public:
     AccumulatorLayer<kAccumulatorSize, kInputSize>& accumulator() noexcept {
       return accumulator_;
     }
 
-    DenseLayer<kHidden1Size, 2 * kAccumulatorSize>& firstHidden() noexcept {
+    DenseLayer<kHidden1Size, kPairwiseSize>& firstHidden() noexcept {
       return firstHidden_;
     }
 
@@ -69,8 +71,12 @@ namespace nnue {
       const auto selected = perspectives[perspectiveIndex];
       const auto opposite = perspectives[perspectiveIndex ^ 1];
 
+      // Compute pairwise interaction (Hadamard product) for STM and NTM halves.
+      pairwisePerspectiveHadamard<kAccumulatorSize>(selected.data(), &pairwise_[0]);
+      pairwisePerspectiveHadamard<kAccumulatorSize>(opposite.data(), &pairwise_[kAccumulatorSize / 2]);
+
       // Forward activations through the first and second hidden layers.
-      firstHidden_.feedFull(selected, opposite);
+      firstHidden_.feedFull(pairwise_);
       secondHidden_.feedFull(firstHidden_.output());
 
       // Compute final output layer activation for the selected material/piece bucket and return centipawns.

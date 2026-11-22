@@ -154,7 +154,7 @@ namespace nnue {
       }
 
       // 4. Quantize L1 Weights (float * 64 -> int8_t)
-      std::vector<float> firstHiddenWeightsRaw(NnueModel::kHidden1Size * 2 * NnueModel::kAccumulatorSize);
+      std::vector<float> firstHiddenWeightsRaw(NnueModel::kHidden1Size * NnueModel::kPairwiseSize);
       reader.floats(firstHiddenWeightsRaw, "first hidden weights");
       auto firstHiddenWeights = model->firstHidden().weights();
       for (size_t i = 0; i < firstHiddenWeightsRaw.size(); ++i) {
