@@ -18,10 +18,11 @@ namespace bb::searching {
       }
 
       const int32_t delta = std::max(aspirationWindow, std::abs(score) / divisor_);
-      if (score >= 30'000) {
+      constexpr int kMateImplicationThreshold = 23'000; // varies by the evaluation
+      if (score >= kMateImplicationThreshold) {
         alpha_ = score - delta;
         beta_  = evaluation::kCheckmateWinScore;
-      } else if (score <= -30'000) {
+      } else if (score <= -kMateImplicationThreshold) {
         alpha_ = evaluation::kCheckmateLossScore;
         beta_  = score + delta;
       } else {
@@ -34,7 +35,9 @@ namespace bb::searching {
     [[nodiscard]] int32_t beta() const noexcept { return beta_; }
 
     bool expand(int32_t score) noexcept {
-      if (isCheckmate(score) || (score > alpha_ && score < beta_)) {
+      if ((score > alpha_ && score < beta_) ||
+          score >= evaluation::kCheckmateWinScore ||
+          score <= evaluation::kCheckmateLossScore) {
         return false;
       }
 
@@ -67,11 +70,6 @@ namespace bb::searching {
     const int32_t window_;
     const int32_t divisor_;
     int attempt_ = 0;
-
-    static bool isCheckmate(int32_t score) noexcept {
-      const int32_t absScore = std::abs(score);
-      return evaluation::kCheckmateWinScore - 2 * kMaxDepthHardCutoff <= absScore && absScore <= evaluation::kCheckmateWinScore;
-    }
   };
 
 }  // namespace bb::searching
