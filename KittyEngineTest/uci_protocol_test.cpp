@@ -1060,13 +1060,11 @@ aspiration_window: 85
 improving_threshold: 35
 
 reverse_futility_pruning:
-  depth: 5
   multiplier: 120
   base: 10
   improving_bonus: 45
 
 null_move_pruning:
-  depth: 6
   base: 4
   depth_divisor: 5
   eval_divisor: 250
@@ -1081,11 +1079,9 @@ internal_iterative_deepening:
 
   EXPECT_EQ(config.aspirationWindow, 85);
   EXPECT_EQ(config.improvingThreshold, 35);
-  EXPECT_EQ(config.reverseFutilityDepth, 5);
   EXPECT_EQ(config.reverseFutilityMultiplier, 120);
   EXPECT_EQ(config.reverseFutilityBase, 10);
   EXPECT_EQ(config.reverseFutilityImprovingBonus, 45);
-  EXPECT_EQ(config.nullMoveDepth, 6);
   EXPECT_EQ(config.nullMoveBase, 4);
   EXPECT_EQ(config.nullMoveDepthDivisor, 5);
   EXPECT_EQ(config.nullMoveEvalDivisor, 250);

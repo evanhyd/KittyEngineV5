@@ -23,41 +23,34 @@ aspiration_window_divisor: 5
 improving_threshold: 40
 
 reverse_futility_pruning:
-  depth: 3
   multiplier: 100
   base: 0
   improving_bonus: 30
 
 null_move_pruning:
-  depth: 4
   base: 3
   depth_divisor: 6
   eval_divisor: 200
   max_eval_bonus: 2
 
 futility_pruning:
-  depth: 3
   multiplier: 100
   base: 0
   improving_bonus: 20
 
 see_pruning:
-  depth: 3
   multiplier: -100
   base: 0
 
 late_move_pruning:
-  depth: 4
   multiplier: 2
   base: 6
 
 history_pruning:
-  depth: 3
   multiplier: -300
   base: -500
 
 late_move_reductions:
-  depth: 3
   base: 0.7844
   divisor: 2.69
   history_k: 0.001
@@ -68,7 +61,6 @@ internal_iterative_deepening:
 
 singular_extension:
   depth: 8
-  depth_margin: 3
   multiplier: 2
   base: 30
 

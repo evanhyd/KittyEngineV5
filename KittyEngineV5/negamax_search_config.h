@@ -14,41 +14,41 @@ namespace bb::searching {
     int32_t aspirationWindowDivisor;
 
     // Reverse Futility Pruning (Static Null Move Pruning)
-    int reverseFutilityDepth;
+    static constexpr int reverseFutilityDepth = 7;
     int32_t reverseFutilityMultiplier;
     int32_t reverseFutilityBase;
     int32_t reverseFutilityImprovingBonus;
 
     // Null Move Pruning
-    int nullMoveDepth;
+    static constexpr int nullMoveDepth = 3;
     int nullMoveBase;
     int nullMoveDepthDivisor;
     int32_t nullMoveEvalDivisor;
     int nullMoveMaxEvalBonus;
 
     // Futility Pruning
-    int futilityDepth;
+    static constexpr int futilityDepth = 6;
     int32_t futilityMultiplier;
     int32_t futilityBase;
     int32_t futilityImprovingBonus;
 
     // SEE Pruning
-    int seePruningDepth;
+    static constexpr int seePruningDepth = 6;
     int32_t seePruningMultiplier;
     int32_t seePruningBase;
 
     // Late Move Pruning
-    int lateMovePruningDepth;
+    static constexpr int lateMovePruningDepth = 6;
     int lateMovePruningMultiplier;
     int lateMovePruningBase;
 
     // History Pruning
-    int historyPruningDepth;
+    static constexpr int historyPruningDepth = 4;
     int32_t historyPruningMultiplier;
     int32_t historyPruningBase;
 
     // Late Move Reductions
-    int lateMoveReductionDepth;
+    static constexpr int lateMoveReductionDepth = 3;
     double lateMoveReductionBase;
     double lateMoveReductionDivisor;
     double lateMoveReductionHistoryK;
@@ -59,7 +59,7 @@ namespace bb::searching {
 
     // Singular Extension
     int singularExtensionDepth;
-    int singularExtensionDepthMargin;
+    static constexpr int singularExtensionDepthMargin = 3;
     int32_t singularExtensionMultiplier;
     int32_t singularExtensionBase;
 
@@ -84,35 +84,28 @@ namespace bb::searching {
         "aspiration_window_divisor: {}\n"
         "improving_threshold: {}\n\n"
         "reverse_futility_pruning:\n"
-        "  depth: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n"
         "  improving_bonus: {}\n\n"
         "null_move_pruning:\n"
-        "  depth: {}\n"
         "  base: {}\n"
         "  depth_divisor: {}\n"
         "  eval_divisor: {}\n"
         "  max_eval_bonus: {}\n\n"
         "futility_pruning:\n"
-        "  depth: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n"
         "  improving_bonus: {}\n\n"
         "see_pruning:\n"
-        "  depth: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n\n"
         "late_move_pruning:\n"
-        "  depth: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n\n"
         "history_pruning:\n"
-        "  depth: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n\n"
         "late_move_reductions:\n"
-        "  depth: {}\n"
         "  base: {}\n"
         "  divisor: {}\n"
         "  history_k: {}\n"
@@ -121,7 +114,6 @@ namespace bb::searching {
         "  depth: {}\n\n"
         "singular_extension:\n"
         "  depth: {}\n"
-        "  depth_margin: {}\n"
         "  multiplier: {}\n"
         "  base: {}\n\n"
         "history_heuristics:\n"
@@ -132,36 +124,28 @@ namespace bb::searching {
         aspirationWindow,
         aspirationWindowDivisor,
         improvingThreshold,
-        reverseFutilityDepth,
         reverseFutilityMultiplier,
         reverseFutilityBase,
         reverseFutilityImprovingBonus,
-        nullMoveDepth,
         nullMoveBase,
         nullMoveDepthDivisor,
         nullMoveEvalDivisor,
         nullMoveMaxEvalBonus,
-        futilityDepth,
         futilityMultiplier,
         futilityBase,
         futilityImprovingBonus,
-        seePruningDepth,
         seePruningMultiplier,
         seePruningBase,
-        lateMovePruningDepth,
         lateMovePruningMultiplier,
         lateMovePruningBase,
-        historyPruningDepth,
         historyPruningMultiplier,
         historyPruningBase,
-        lateMoveReductionDepth,
         lateMoveReductionBase,
         lateMoveReductionDivisor,
         lateMoveReductionHistoryK,
         lateMoveReductionHistoryB,
         internalIterativeDeepeningDepth,
         singularExtensionDepth,
-        singularExtensionDepthMargin,
         singularExtensionMultiplier,
         singularExtensionBase,
         maxQuietHistory,
@@ -246,9 +230,7 @@ namespace bb::searching {
           parseInt(rawVal, improvingThreshold);
         }
         // RFP
-        else if (matchesKey(section, rawKey, "reversefutilitypruningdepth")) {
-          parseInt(rawVal, reverseFutilityDepth);
-        } else if (matchesKey(section, rawKey, "reversefutilitypruningmultiplier")) {
+        else if (matchesKey(section, rawKey, "reversefutilitypruningmultiplier")) {
           parseInt(rawVal, reverseFutilityMultiplier);
         } else if (matchesKey(section, rawKey, "reversefutilitypruningbase")) {
           parseInt(rawVal, reverseFutilityBase);
@@ -256,9 +238,7 @@ namespace bb::searching {
           parseInt(rawVal, reverseFutilityImprovingBonus);
         }
         // NMP
-        else if (matchesKey(section, rawKey, "nullmovepruningdepth")) {
-          parseInt(rawVal, nullMoveDepth);
-        } else if (matchesKey(section, rawKey, "nullmovepruningbase")) {
+        else if (matchesKey(section, rawKey, "nullmovepruningbase")) {
           parseInt(rawVal, nullMoveBase);
         } else if (matchesKey(section, rawKey, "nullmovepruningdepthdivisor")) {
           parseInt(rawVal, nullMoveDepthDivisor);
@@ -268,9 +248,7 @@ namespace bb::searching {
           parseInt(rawVal, nullMoveMaxEvalBonus);
         }
         // FP
-        else if (matchesKey(section, rawKey, "futilitypruningdepth")) {
-          parseInt(rawVal, futilityDepth);
-        } else if (matchesKey(section, rawKey, "futilitypruningmultiplier")) {
+        else if (matchesKey(section, rawKey, "futilitypruningmultiplier")) {
           parseInt(rawVal, futilityMultiplier);
         } else if (matchesKey(section, rawKey, "futilitypruningbase")) {
           parseInt(rawVal, futilityBase);
@@ -278,33 +256,25 @@ namespace bb::searching {
           parseInt(rawVal, futilityImprovingBonus);
         }
         // SEE
-        else if (matchesKey(section, rawKey, "seepruningdepth")) {
-          parseInt(rawVal, seePruningDepth);
-        } else if (matchesKey(section, rawKey, "seepruningmultiplier")) {
+        else if (matchesKey(section, rawKey, "seepruningmultiplier")) {
           parseInt(rawVal, seePruningMultiplier);
         } else if (matchesKey(section, rawKey, "seepruningbase")) {
           parseInt(rawVal, seePruningBase);
         }
         // LMP
-        else if (matchesKey(section, rawKey, "latemovepruningdepth")) {
-          parseInt(rawVal, lateMovePruningDepth);
-        } else if (matchesKey(section, rawKey, "latemovepruningmultiplier")) {
+        else if (matchesKey(section, rawKey, "latemovepruningmultiplier")) {
           parseInt(rawVal, lateMovePruningMultiplier);
         } else if (matchesKey(section, rawKey, "latemovepruningbase")) {
           parseInt(rawVal, lateMovePruningBase);
         }
         // History Pruning
-        else if (matchesKey(section, rawKey, "historypruningdepth")) {
-          parseInt(rawVal, historyPruningDepth);
-        } else if (matchesKey(section, rawKey, "historypruningmultiplier")) {
+        else if (matchesKey(section, rawKey, "historypruningmultiplier")) {
           parseInt(rawVal, historyPruningMultiplier);
         } else if (matchesKey(section, rawKey, "historypruningbase")) {
           parseInt(rawVal, historyPruningBase);
         }
         // LMR
-        else if (matchesKey(section, rawKey, "latemovereductionsdepth")) {
-          parseInt(rawVal, lateMoveReductionDepth);
-        } else if (matchesKey(section, rawKey, "latemovereductionsbase")) {
+        else if (matchesKey(section, rawKey, "latemovereductionsbase")) {
           parseDouble(rawVal, lateMoveReductionBase);
         } else if (matchesKey(section, rawKey, "latemovereductionsdivisor")) {
           parseDouble(rawVal, lateMoveReductionDivisor);
@@ -320,8 +290,6 @@ namespace bb::searching {
         // Singular Extension
         else if (matchesKey(section, rawKey, "singularextensiondepth")) {
           parseInt(rawVal, singularExtensionDepth);
-        } else if (matchesKey(section, rawKey, "singularextensiondepthmargin")) {
-          parseInt(rawVal, singularExtensionDepthMargin);
         } else if (matchesKey(section, rawKey, "singularextensionmultiplier")) {
           parseInt(rawVal, singularExtensionMultiplier);
         } else if (matchesKey(section, rawKey, "singularextensionbase")) {
