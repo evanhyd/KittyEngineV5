@@ -203,6 +203,7 @@
     <ClInclude Include="position_fens.h" />
     <ClInclude Include="small_vec.h" />
     <ClInclude Include="searching_policy.h" />
+    <ClInclude Include="search_types.h" />
     <ClInclude Include="staged_move_picker.h" />
     <ClInclude Include="terminal_ui.h" />
     <ClInclude Include="time_control_policy.h" />

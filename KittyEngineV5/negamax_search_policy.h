@@ -8,6 +8,7 @@
 #include "history_heuristics.h"
 #include "negamax_search_config.h"
 #include "aspiration_window.h"
+#include "search_types.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -21,47 +22,6 @@
 namespace bb::searching {
   template <evaluation::EvaluationPolicy EvalPolicy>
   class NegamaxSearchPolicy {
-    // Data Structures Magic.
-    struct Eval {
-      int32_t score;
-      bool isUnreliable;
-    };
-
-    struct TTProbeResult {
-      enum class Type : uint8_t { None, Staled, Cutoff};
-      Type type;
-      TranspositionTable::ScoreType scoreType;
-      int32_t score;
-      int depth;
-      Move move;
-    };
-
-    struct SearchContext {
-      BoardState& state;
-      const int maxDepth;
-      PositionHistory& history;
-      uint64_t nodes;
-      uint64_t probes;
-      uint64_t hits;
-      int plyReached;
-      bool aborted;
-      const std::function<bool()>* isTimeUpHard;
-    };
-
-    struct SearchFrame {
-      Move move{};
-      uint32_t pvLength = 0;
-      std::optional<int32_t> staticScore;
-      std::optional<bool> inCheck;
-
-      void clear() noexcept {
-        move = Move{};
-        pvLength = 0;
-        staticScore = std::nullopt;
-        inCheck = std::nullopt;
-      }
-    };
-
     // PRIVATE MEMBERS
     static constexpr size_t kPvSlots = (kMaxDepthHardCutoff + 1) * (kMaxDepthHardCutoff + 2) / 2;
     static constexpr uint64_t kTimeCheckNodeMask = (1ULL << 19) - 1; // Every 500 ms
@@ -86,6 +46,73 @@ namespace bb::searching {
         return true;
       }
       return false;
+    }
+
+    bool canApplyInternalIterativeReduction(int depth, Move ttMove) const noexcept {
+      return depth >= config_.internalIterativeDeepeningDepth && !ttMove;
+    }
+
+    template <Side side>
+    bool canApplyStaticPruning(const BoardState& state, bool inCheck, int32_t beta) const noexcept {
+      return !inCheck &&
+             !isCheckmateScore(beta) &&
+             state.template countMMPiece<side>() >= config_.kNullMoveMinPieces;
+    }
+
+    bool canApplyReverseFutilityPruning(int depth, int32_t staticScore, int32_t beta, bool isImproved) const noexcept {
+      if (depth > config_.reverseFutilityDepth) {
+        return false;
+      }
+      const int32_t margin = config_.reverseFutilityMultiplier * depth + config_.reverseFutilityBase + (isImproved ? 0 : config_.reverseFutilityImprovingBonus);
+      return staticScore >= beta + margin;
+    }
+
+    bool canApplyNullMovePruning(int depth, int32_t staticScore, int32_t beta) const noexcept {
+      return depth >= config_.nullMoveDepth && staticScore >= beta;
+    }
+
+    bool canApplyLateMovePruning(int depth, int ply, int quietCount, bool isImproved, int32_t bestScore, Move move) const noexcept {
+      if (depth > config_.lateMovePruningDepth) {
+        return false;
+      }
+      const int lmpThreshold = (config_.lateMovePruningMultiplier * depth * depth + config_.lateMovePruningBase) * (isImproved ? 2 : 1);
+      return quietCount >= lmpThreshold &&
+             !isCheckmateScore(bestScore) &&
+             !historyHeuristics_.isKillerMove(ply, move);
+    }
+
+    bool canApplyFutilityPruning(int depth, int ply, int32_t staticScore, int32_t bestScore, bool isImproved, Move move) const noexcept {
+      if (depth > config_.futilityDepth) {
+        return false;
+      }
+      const int32_t margin = config_.futilityMultiplier * depth + config_.futilityBase + (isImproved ? config_.futilityImprovingBonus : 0);
+      return staticScore + margin <= bestScore &&
+             !historyHeuristics_.isKillerMove(ply, move);
+    }
+
+    bool canApplySeePruning(int depth, Move move, int32_t heuristicScore) const noexcept {
+      return depth <= config_.seePruningDepth &&
+             heuristicScore < config_.seePruningMultiplier * depth + config_.seePruningBase &&
+             move.getPromotedPieceType() == NoPiece;
+    }
+
+    bool canApplySingularExtension(size_t moveIndex, int depth, int ply, int maxDepth,
+                                   bool inCheck, int32_t beta, const TTProbeResult& ttEval) const noexcept {
+      return moveIndex == 0 &&
+             depth >= config_.singularExtensionDepth &&
+             ttEval.depth >= depth - config_.singularExtensionDepthMargin &&
+             ttEval.move &&
+             !inCheck &&
+             ttEval.score >= beta &&
+             ttEval.scoreType != TranspositionTable::ScoreType::UpperBound &&
+             !isCheckmateScore(ttEval.score) &&
+             ply < 2 * maxDepth;
+    }
+
+    bool canApplyLateMoveReduction(int depth, int ply, bool inCheck, bool isViolent, bool isBadViolent, Move move) const noexcept {
+      return depth >= config_.lateMoveReductionDepth &&
+             !inCheck &&
+             (isBadViolent || (!isViolent && !historyHeuristics_.isKillerMove(ply, move)));
     }
     
     int32_t getStaticScore(const SearchContext& context, SearchFrame* frame) noexcept {
@@ -229,6 +256,7 @@ namespace bb::searching {
 
     template <NodeMeta meta>
     Eval searchInternal(SearchContext& context, SearchFrame* frame, int depth, const int32_t alpha, const int32_t beta) {
+      // Update tracked stats and check search deadline.
       ++context.nodes;
       if (mustAbort(context)) [[unlikely]] {
         context.aborted = true;
@@ -236,41 +264,43 @@ namespace bb::searching {
       }
       const int ply = getPly(frame);
       context.plyReached = std::max(context.plyReached, ply);
-      TTProbeResult ttEval{};
-
       if (ply >= kMaxDepthHardCutoff) {
         return Eval(getStaticScore(context, frame), false);
       }
 
-      if constexpr (meta.isInternal()) {
-        if (auto drawEval = checkDraw(context, ply)) {
-          return *drawEval;
+
+      TTProbeResult ttEval{};
+      assert(!meta.isSingularSearch || depth > 0);
+      if constexpr (!meta.isSingularSearch) {
+        if constexpr (meta.isInternal()) {
+          if (auto drawEval = checkDraw(context, ply)) {
+            return *drawEval;
+          }
+          if (depth <= 0) {
+            --context.nodes;
+            return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
+          }
         }
-        if (depth <= 0) {
-          --context.nodes;
-          return searchInternal<meta.toQuiescence()>(context, frame, 0, alpha, beta);
-        }
-        if (ttEval = probeTT<meta>(context, frame, depth, alpha, beta); ttEval.type == TTProbeResult::Type::Cutoff) {
+
+        if (ttEval = probeTT<meta>(context, frame, meta.isInternal() ? depth : 0, alpha, beta);
+            ttEval.type == TTProbeResult::Type::Cutoff) {
           return Eval(ttEval.score, false);
         }
 
-        // Internal Iterative Deepening.
-        if (!ttEval.move && depth >= config_.internalIterativeDeepeningDepth) {
-          --depth;
-        }
-      } else {
-        if (ttEval = probeTT<meta>(context, frame, 0, alpha, beta); ttEval.type == TTProbeResult::Type::Cutoff) {
-          return Eval(ttEval.score, false);
-        }
-        if (ttEval.move && !ttEval.move.isViolentMove() && !isInCheck<meta.side>(context, frame)) {
+        if constexpr (meta.isInternal()) {
+          // Internal Iterative Reduction.
+          if (canApplyInternalIterativeReduction(depth, ttEval.move)) {
+            --depth;
+          }
+        } else if (ttEval.move && !ttEval.move.isViolentMove() && !isInCheck<meta.side>(context, frame)) {
           ttEval.move = Move{};
         }
       }
 
+      Eval bestEval(alpha, false);
       const Move prev1 = getPrevMove(frame, 1);
       const Move prev2 = getPrevMove(frame, 2);
       StagedMovePicker picker(ply, prev1, prev2, historyHeuristics_);
-      Eval bestEval(alpha, false);
       const bool inCheck = isInCheck<meta.side>(context, frame);
       const int32_t staticScore = !inCheck ? getStaticScore(context, frame) : 0;
       const bool isImproved = !inCheck && [&]() noexcept {
@@ -279,26 +309,23 @@ namespace bb::searching {
                               : std::nullopt;
         return prevStatic && (staticScore - *prevStatic >= config_.improvingThreshold);
       }();
-      int singularExtension = 0;
+
 
       if constexpr (meta.isInternal()) {
-        if constexpr (!meta.isPV) {
-          // Disable in check, or with low material (zugzwang risk).
-          if (!inCheck && !isCheckmateScore(beta) && context.state.template countMMPiece<meta.side>() >= config_.kNullMoveMinPieces) {
+        if constexpr (!meta.isPV && !meta.isSingularSearch) {
+          // Disable when in check, or low material (zugzwang risk).
+          if (canApplyStaticPruning<meta.side>(context.state, inCheck, beta)) {
 
             // Reverse Futility Pruning.
-            if (depth <= config_.reverseFutilityDepth) {
-              const int32_t margin = config_.reverseFutilityMultiplier * depth + config_.reverseFutilityBase + (isImproved ? 0 : config_.reverseFutilityImprovingBonus);
-              if (staticScore >= beta + margin) {
-                const Eval eval(beta, false);
-                storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttEval.move, inCheck);
-                return eval;
-              }
+            if (canApplyReverseFutilityPruning(depth, staticScore, beta, isImproved)) {
+              const Eval eval(beta, false);
+              storeTT<false, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, ttEval.move, inCheck);
+              return eval;
             }
 
             // Null Move Pruning. Disable near leaves. Disable consecutive null moves.
             if constexpr (meta.canNullMove) {
-              if (depth >= config_.nullMoveDepth && staticScore >= beta) {
+              if (canApplyNullMovePruning(depth, staticScore, beta)) {
                 const int32_t evalMargin = staticScore - beta;
                 const int evalBonus = isImproved ? std::min(config_.nullMoveMaxEvalBonus, static_cast<int>(evalMargin / config_.nullMoveEvalDivisor)) : 0;
                 int reduction = config_.nullMoveBase + depth / config_.nullMoveDepthDivisor + evalBonus;
@@ -333,40 +360,6 @@ namespace bb::searching {
         if (picker.moves().empty()) {
           return Eval(inCheck ? evaluation::kCheckmateLossScore + ply : evaluation::kStalemateScore, false);
         }
-
-        // Singular extension.
-        if constexpr (!meta.isPV && meta.canSingularExtend) {
-          if (!inCheck && ttEval.move && ttEval.score >= beta && 
-              depth >= config_.singularExtensionDepth && depth - ttEval.depth <= config_.singularExtensionDepthMargin &&
-              ttEval.type == TTProbeResult::Type::Staled && ttEval.scoreType != TranspositionTable::ScoreType::UpperBound) {
-            const int childDepth = (depth - 1) / 2;
-            const int depthDiff = ttEval.depth - childDepth;
-            const int32_t rejectScore = ttEval.score - (config_.singularExtensionBase + depthDiff * config_.singularExtensionMultiplier);
-            picker.pick<meta>(ttEval.move, context.state); // filter out the singular move.
-            bool rejected = false;
-            for (size_t i = 1; i < picker.moves().size(); ++i) {
-              const auto [move, _] = picker.pick<meta>(ttEval.move, context.state);
-              frame->move = move;
-              const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
-              context.history.push(context.state.getHash());
-              Eval eval = searchChild<meta.flip().setCanSingularExtend(false)>(context, frame + 1, childDepth, rejectScore, rejectScore + 1);
-              context.history.pop();
-              context.state.template unmakeMove<meta.side>(move, undo, evalPolicy_);
-              if (context.aborted) [[unlikely]] {
-                return {};
-              }
-              if (eval.score > rejectScore) {
-                rejected = true;
-                break;
-              }
-            }
-            if (!rejected) {
-              singularExtension = 1;
-            }
-            picker.rePick();
-          }
-        }
-
       } else {
         // Quiescence search: no stand-pat when in check.
         // Allow quiescence to ignore stalemate check, since it is too rare.
@@ -392,8 +385,14 @@ namespace bb::searching {
       // Main Search.
       Move bestMove{};
       int quietCount = 0;
+      int searchedMoves = 0;
       for (size_t i = 0; i < picker.moves().size(); ++i) {
         const auto [move, heuristicScore] = picker.pick<meta>(ttEval.move, context.state);
+        if constexpr (meta.isSingularSearch) {
+          if (move == frame->excludedMove) {
+            continue;
+          }
+        }
         frame->move = move;
         const bool isViolent = move.isViolentMove();
 
@@ -402,40 +401,18 @@ namespace bb::searching {
             ++quietCount;
           }
 
-          if (!inCheck && i > 0) {
+          if (!inCheck && searchedMoves > 0) {
             if (!isViolent) {
               // Late Move Pruning (LMP).
-              const int lmpThreshold = (config_.lateMovePruningMultiplier * depth * depth + config_.lateMovePruningBase) * (isImproved ? 2 : 1);
-              if (depth <= config_.lateMovePruningDepth &&
-                  quietCount >= lmpThreshold &&
-                  !historyHeuristics_.isKillerMove(ply, move) &&
-                  !isCheckmateScore(bestEval.score)) {
+              if (canApplyLateMovePruning(depth, ply, quietCount, isImproved, bestEval.score, move)) {
                 continue;
               }
 
-              // History Pruning disabled: Unreliable and blinds search to quiet defensive resources.
-              /*
-              if (depth <= config_.historyPruningDepth &&
-                  !isImproved &&
-                  !historyHeuristics_.isKillerMove(ply, move) &&
-                  !isCheckmateScore(bestEval.score)) {
-                if (heuristicScore < config_.historyPruningMultiplier * depth + config_.historyPruningBase) {
-                  continue;
-                }
-              }
-              */
-
               // Futility Pruning.
-              if (depth <= config_.futilityDepth &&
-                  !historyHeuristics_.isKillerMove(ply, move)) {
-                const int32_t margin = config_.futilityMultiplier * depth + config_.futilityBase + (isImproved ? config_.futilityImprovingBonus : 0);
-                if (staticScore + margin <= bestEval.score) {
-                  continue;
-                }
+              if (canApplyFutilityPruning(depth, ply, staticScore, bestEval.score, isImproved, move)) {
+                continue;
               }
-            } else if (depth <= config_.seePruningDepth &&
-                       move.getPromotedPieceType() == NoPiece &&
-                       heuristicScore < config_.seePruningMultiplier * depth + config_.seePruningBase) {
+            } else if (canApplySeePruning(depth, move, heuristicScore)) {
               // SEE Pruning.
               continue;
             }
@@ -447,6 +424,31 @@ namespace bb::searching {
           }
         }
 
+        int extension = (inCheck ? 1 : 0);
+        if constexpr (meta.isInternal() && !meta.isSingularSearch) {
+          if (canApplySingularExtension(i, depth, ply, context.maxDepth, inCheck, beta, ttEval)) {
+            const int32_t singularBeta = std::max(
+                ttEval.score - (config_.singularExtensionBase + depth * config_.singularExtensionMultiplier),
+                evaluation::kCheckmateLossScore + 1);
+            const int singularDepth = std::max(1, (depth - 1) / 2);
+
+            frame->excludedMove = move;
+            const Eval singularEval = searchInternal<meta.setPV(false).setCanNullMove(false).setSingularSearch(true)>(
+                context, frame, singularDepth, singularBeta - 1, singularBeta);
+            frame->excludedMove = Move{};
+            frame->move = move;
+
+            if (context.aborted) [[unlikely]] {
+              return {};
+            }
+
+            if (singularEval.score < singularBeta) {
+              extension = 1;
+            }
+          }
+        }
+
+        const bool isFirstMove = (searchedMoves++ == 0);
         const MoveUndo undo = context.state.template makeMove<meta.side>(move, evalPolicy_);
 
         context.history.push(context.state.getHash());
@@ -454,17 +456,11 @@ namespace bb::searching {
 
         const Eval eval = [&]() -> Eval {
           if constexpr (meta.isInternal()) {
-            constexpr auto childMeta = meta.flip().setCanNullMove(true);
-            const int extension = (inCheck ? 1 : 0);
+            constexpr auto childMeta = meta.flip().setCanNullMove(true).setSingularSearch(false);
             const int childDepth = depth - 1 + extension;
 
             // First move: full window. Subsequent moves: scout search.
-            if (i == 0) {
-              if constexpr (!meta.isPV && meta.canSingularExtend) {
-                if (singularExtension) {
-                  return searchChild<childMeta.setPV(meta.isPV).setCanSingularExtend(false)>(context, frame + 1, childDepth + singularExtension, bestEval.score, beta);
-                }
-              }
+            if (isFirstMove) {
               return searchChild<childMeta.setPV(meta.isPV)>(context, frame + 1, childDepth, bestEval.score, beta);
             }
 
@@ -472,7 +468,7 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (depth >= config_.lateMoveReductionDepth && !inCheck && (picker.isBadViolentMove() || (!isViolent && !historyHeuristics_.isKillerMove(ply, move)))) {
+            if (canApplyLateMoveReduction(depth, ply, inCheck, isViolent, picker.isBadViolentMove(), move)) {
               reduction = int(lateMoveReductions_[depth][i]);
               if (picker.isBadViolentMove()) {
                 ++reduction;
@@ -519,7 +515,7 @@ namespace bb::searching {
         }
 
         if (eval.score >= beta) {
-          if constexpr (meta.isInternal()) {
+          if constexpr (meta.isInternal() && !meta.isSingularSearch) {
             storeTT<meta.isPV, TranspositionTable::ScoreType::LowerBound>(context, frame, depth, eval, move, inCheck);
             if (!move.isViolentMove()) {
               historyHeuristics_.template recordQuietCutoff<meta.side>(ply, depth, picker.moves(), i, prev1, prev2);
@@ -534,12 +530,14 @@ namespace bb::searching {
           bestEval = eval;
           if constexpr (meta.isInternal()) {
             bestMove = move;
-            acceptChildPVLine(frame, bestMove);
+            if constexpr (meta.isPV) {
+              acceptChildPVLine(frame, bestMove);
+            }
           }
         }
       }
       
-      if constexpr (meta.isInternal()) {
+      if constexpr (meta.isInternal() && !meta.isSingularSearch) {
         const Move storedMove = bestMove ? bestMove : ttEval.move;
         if constexpr (meta.isPV) {
           if (bestEval.score <= alpha) {
@@ -611,7 +609,7 @@ namespace bb::searching {
         .isTimeUpHard = param.isTimeUpHard ? &param.isTimeUpHard : nullptr
       };
 
-      constexpr NodeMeta meta(side, NodeMeta::NodeType::Internal, true, true, true);
+      constexpr NodeMeta meta(side, NodeMeta::NodeType::Internal, true, true, false);
       SearchFrame* frame = frames_.data();
 
       // Lazy move generation.
@@ -686,7 +684,7 @@ namespace bb::searching {
             // If reduction > 0, then LMR (narrow window + reduced depth).
             // If reduction == 0, then scout (narrow window).
             int reduction = 0;
-            if (depth >= config_.lateMoveReductionDepth && !inCheck && (movePicker.isBadViolentMove() || (!move.isViolentMove() && !historyHeuristics_.isKillerMove(ply, move)))) {
+            if (canApplyLateMoveReduction(depth, ply, inCheck, move.isViolentMove(), movePicker.isBadViolentMove(), move)) {
               reduction = int(lateMoveReductions_[depth][i]);
               if (movePicker.isBadViolentMove()) {
                 ++reduction;

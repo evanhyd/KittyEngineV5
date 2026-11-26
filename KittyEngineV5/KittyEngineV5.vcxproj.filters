@@ -135,6 +135,9 @@
     <ClInclude Include="aspiration_window.h">
       <Filter>Cores\Searching Policies</Filter>
     </ClInclude>
+    <ClInclude Include="search_types.h">
+      <Filter>Cores\Searching Policies</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="weights.bin">

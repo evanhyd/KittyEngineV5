@@ -1108,43 +1108,49 @@ TEST(TranspositionTable, DepthComparisonReplacementRejectsShallowerCollisions) {
 }
 
 TEST(NodeMeta, CompileTimeMutationsAndInvariants) {
-  constexpr searching::NodeMeta meta{White, searching::NodeMeta::NodeType::Internal, true, true, true};
+  constexpr searching::NodeMeta meta{White, searching::NodeMeta::NodeType::Internal, true, true, false};
   static_assert(meta.side == White);
   static_assert(meta.isInternal());
   static_assert(!meta.isQuiescence());
   static_assert(meta.isPV);
   static_assert(meta.canNullMove);
-  static_assert(meta.canSingularExtend);
+  static_assert(!meta.isSingularSearch);
 
   constexpr auto flipped = meta.flip();
   static_assert(flipped.side == Black);
   static_assert(flipped.isInternal());
   static_assert(flipped.isPV);
   static_assert(flipped.canNullMove);
-  static_assert(flipped.canSingularExtend);
+  static_assert(!flipped.isSingularSearch);
 
-  constexpr auto qMeta = meta.toQuiescence();
+  constexpr auto singular = meta.setSingularSearch(true);
+  static_assert(singular.side == White);
+  static_assert(singular.isInternal());
+  static_assert(singular.isPV);
+  static_assert(singular.canNullMove);
+  static_assert(singular.isSingularSearch);
+
+  constexpr auto singularFlipped = singular.flip();
+  static_assert(singularFlipped.side == Black);
+  static_assert(singularFlipped.isSingularSearch);
+
+  constexpr auto qMeta = singular.toQuiescence();
   static_assert(qMeta.side == White);
   static_assert(!qMeta.isInternal());
   static_assert(qMeta.isQuiescence());
   static_assert(!qMeta.isPV);
   static_assert(!qMeta.canNullMove);
-  static_assert(!qMeta.canSingularExtend);
+  static_assert(!qMeta.isSingularSearch);
 
-  constexpr auto noPV = meta.setPV(false);
+  constexpr auto noPV = singular.setPV(false);
   static_assert(!noPV.isPV);
   static_assert(noPV.canNullMove);
-  static_assert(noPV.canSingularExtend);
+  static_assert(noPV.isSingularSearch);
 
-  constexpr auto noNull = meta.setCanNullMove(false);
+  constexpr auto noNull = singular.setCanNullMove(false);
   static_assert(noNull.isPV);
   static_assert(!noNull.canNullMove);
-  static_assert(noNull.canSingularExtend);
-
-  constexpr auto noSingular = meta.setCanSingularExtend(false);
-  static_assert(noSingular.isPV);
-  static_assert(noSingular.canNullMove);
-  static_assert(!noSingular.canSingularExtend);
+  static_assert(noNull.isSingularSearch);
 
   SUCCEED();
 }
